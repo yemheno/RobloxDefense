@@ -1,0 +1,31 @@
+# ── Roblox build artifacts ─────────────────────────────────
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# ── Rojo / Wally generated ─────────────────────────────────
+# Wally installs packages into Packages/ - these are reproducible
+# from wally.toml so we don't commit them.
+Packages/
+
+# Wally lock file (lock-in exact versions on your own branches)
+# wally.lock
+
+# ── Foreman managed binaries ───────────────────────────────
+# Foreman downloads tools to ~/.foreman; no binaries in project.
+.foreman/
+
+# ── Roblox Studio live-sync ────────────────────────────────
+.robloxlive
+.auth.json
+
+# ── OS noise ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editor noise ───────────────────────────────────────────
+.vscode/settings.json
+*.swp
+*~
