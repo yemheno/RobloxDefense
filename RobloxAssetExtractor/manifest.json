@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Roblox Asset ID Grabber",
+  "version": "1.1",
+  "description": "Auto-scrolls the page, grabs Roblox Asset IDs, and saves them to HTML.",
+  "action": {
+    "default_title": "Grab IDs!"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["activeTab", "scripting"],
+  "host_permissions": ["*://*.roblox.com/*"]
+}
