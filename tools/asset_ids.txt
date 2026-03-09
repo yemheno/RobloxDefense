@@ -1,0 +1,503 @@
+# asset_ids.txt
+# Paste your Roblox asset IDs here, one per line.
+# Lines starting with # are ignored.  Blank lines are ignored too.
+# IDs can be plain numbers or rbxassetid:// format — both work.
+#
+# After pasting all IDs, run:
+#     python tools/fill_asset_map.py
+#
+# The script will:
+#   1. Query the Roblox API for each ID's name + type
+#   2. Match the name to the corresponding key in AssetMap.lua
+#   3. Fill in the rbxassetid:// value in-place
+#   4. Print a summary of matched / unmatched IDs
+#
+# TIP  In Studio: Asset Manager → Recent Uploads
+#      Right-click an image → "Copy Asset ID"
+#      Paste it here (one per line).
+#
+# IDs for FBX/Mesh uploads will appear as "Mesh" type — they won't match
+# any key in AssetMap.lua (which is PNG-only) and will be listed as unmatched.
+# That's expected — just ignore those.
+#
+# ── Paste IDs below this line ────────────────────────────────────────────────
+
+Image	131660743054815
+Image	135773143395246
+Image	104711440613004
+Image	108661987376704
+Image	124004454949258
+Image	135236263027827
+Image	130339316972536
+Image	106014142004441
+Image	74173304001026
+Image	123059292821432
+Image	117571330628627
+Image	79113711620649
+Image	133491446640453
+Image	139073756151286
+Image	114794194105584
+Image	136191561133946
+Image	88555094818704
+Image	134802814578445
+Image	126870170649626
+Image	90995268575745
+Image	120936452237689
+Image	72474562540113
+Image	78271919259459
+Image	70694682322978
+Image	75397528612048
+Image	115487134538879
+Image	77220906672586
+Image	73905849830164
+Image	80351597411777
+Image	94870579372746
+Image	80956197255388
+Image	74594758079690
+Image	122095417673320
+Image	120355262297271
+Image	101966538080749
+Image	121791608989960
+Image	102740782563075
+Image	117219696063201
+Image	98868298550942
+Image	105956742903196
+Image	139862590082519
+Image	111160687188971
+Image	91364120204594
+Image	121896341734347
+Image	71442536892318
+Image	123421018742966
+Image	103612958294661
+Image	70953743456427
+Image	139968657298459
+Image	122077538745862
+Image	116796137258976
+Image	94161752066712
+Image	112424657009399
+Image	96615727915205
+Image	104688567518365
+Image	135449038179225
+Images/Mavuika_Body_Diffuse	95221877488739
+Images/Mavuika_Face_Diffuse	111635908123301
+Images/Mavuika_Hair_Diffuse	121364003794347
+Images/Mavuika_Skillobj_mavuika_glass_diffuse.png_	78595351451420
+Images/Mika_Body_Diffuse	106566543244975
+Images/Mika_Face_Diffuse	81477134806733
+Images/Mika_Hair_Diffuse	107140937136914
+Images/Nahida_Body_Diffuse	129548487840338
+Images/Nahida_Face_Diffuse	108599574579402
+Images/Nahida_Hair_Diffuse	82953060981468
+Images/Neuvillette_Body_Diffuse	96766855644440
+Images/Neuvillette_Face_Diffuse	128807223549812
+Images/Neuvillette_Hair_Diffuse	98992096324956
+Images/Neuvillette_Wing_Diffuse	130557350167100
+Images/Noelle_Body_Diffuse	121115515613426
+Images/Noelle_Face_Diffuse	100304385826790
+Images/Noelle_Hair_Diffuse	85983617421966
+Images/Paimon_Body_Diffuse	82619494469440
+Images/Paimon_Cloak_Diffuse	126157200094432
+Images/Paimon_Face_Diffuse	125550062535535
+Images/Paimon_Hair_Diffuse	74399492069284
+Images/Qiqi_Body_Diffuse	89099577211964
+Images/Qiqi_Face_Diffuse	112497126117954
+Images/Qiqi_Hair_Diffuse	135097856694278
+Images/Raiden Shogun_Body_Diffuse	75460801386744
+Images/Raiden Shogun_Face_Diffuse	78344689566858
+Images/Raiden Shogun_Hair_Diffuse	80717752872704
+Images/Razor_Body_Diffuse	101452299008336
+Images/Razor_Face_Diffuse	102493604126601
+Images/Razor_Hair_Diffuse	111534898245106
+Images/Sayu_Body_Diffuse	113934403715675
+Images/Sayu_Face_Diffuse	78066245138864
+Images/Sayu_Hair_Diffuse	110600652537432
+Images/Skirk_Body_Diffuse	90169425318723
+Images/Skirk_Effect_Diffuse	98044923479034
+Images/Skirk_Face_Diffuse	140526502663577
+Images/Skirk_Hair_Diffuse	131791204232584
+Images/Sucrose_Body_Diffuse	116436600314645
+Images/Sucrose_Face_Diffuse	114856853153920
+Images/Sucrose_Hair_Diffuse	77356381045763
+Images/Thoma_Body_Diffuse	97877921776316
+Images/Thoma_Face_Diffuse	95156498622594
+Images/Thoma_Hair_Diffuse	134009663635967
+Images/Venti_Body_Diffuse	137298376877831
+Images/Venti_Face_Diffuse	88625856385867
+Images/Venti_Hair_Diffuse	132333843210318
+Images/Wanderer_Body_Diffuse	82678116026190
+Images/Wanderer_Face_Diffuse	88299686043241
+Images/Wanderer_Hair_Diffuse	121775155660152
+Images/Wriothesley_Body_Diffuse	112750855459680
+Images/Wriothesley_Face_Diffuse	104254239526439
+Images/Wriothesley_Gauntlet_Diffuse	79314038946640
+Images/Wriothesley_Hair_Diffuse	126416419211710
+Images/Xiangling_Body_Diffuse	72273541888251
+Images/Xiangling_Face_Diffuse	81142792491117
+Images/Xiangling_Hair_Diffuse	123374513062229
+Images/Xiao_Body_Diffuse	118584819881440
+Images/Xiao_Face_Diffuse	102385798930969
+Images/Xiao_Hair_Diffuse	75212021908603
+Images/Yae Miko_Body_Diffuse	105853104394328
+Images/Yae Miko_Face_Diffuse	99080055088025
+Images/Yae Miko_Hair_Diffuse	119632205583008
+Images/YaoYao_Body_Diffuse	111101749819867
+Images/YaoYao_Face_Diffuse	109471712266467
+Images/YaoYao_Hair_Diffuse	118550747103963
+Images/Zhongli_Body_Diffuse	116131603500736
+Images/Zhongli_Face_Diffuse	103627628320933
+Images/Zhongli_Hair_Diffuse	75192321392581
+Image	120425288245953
+Image	124324865535650
+Image	83947090410822
+Image	137636212849895
+Image	121336741785048
+Image	77407815660016
+Image	96051049422435
+Image	88893319524999
+Image	98358475695346
+Image	117978104776007
+Image	135350446312770
+Image	73387333697382
+Image	77392125000502
+Image	131165209322668
+Image	74576646036378
+Image	116166014935659
+Image	71961547087394
+Image	96602164481093
+Image	130360147964705
+Image	129745461718096
+Image	120718717052343
+Image	87837080994170
+Image	103462452027773
+Image	87809775354530
+Image	123214108805877
+Image	125189806151290
+Image	84468710921455
+Image	124229259080804
+Image	135999959379204
+Image	101939587569172
+Image	122162077101463
+Image	124220976819855
+Image	87302959514338
+Image	87808612928514
+Image	84883648983671
+Image	101180194132519
+Image	93449986869403
+Image	131018597770891
+Image	72006378021871
+Image	134460963749610
+Image	75187601606299
+Image	74388813941193
+Image	90585218520470
+Image	88673439822821
+Image	110914364501130
+Image	97292210195351
+Image	103598933174863
+Image	132536650159547
+Image	129115321884527
+Image	124630958958544
+Image	92828051465837
+Images/Aether_Body_Diffuse	99757437909722
+Images/Aether_Face_Diffuse	97967498583127
+Images/Aether_Hair_Diffuse	128356655594578
+Images/Arlecchino_Body_Diffuse	120998603132548
+Images/Arlecchino_Face_Diffuse	77614425099165
+Images/Arlecchino_Hair_Diffuse	77840387605299
+Images/Asmoday_Body_Diffuse	118100788145357
+Images/Asmoday_Face_Diffuse	123821131321152
+Images/Asmoday_Hair_Diffuse	131337913586841
+Images/Bennett_Body_Diffuse	120809798536434
+Images/Bennett_Face_Diffuse	99211873774131
+Images/Bennett_Hair_Diffuse	124122494015745
+Images/Childe_Body_Diffuse	129890361810435
+Images/Childe_Face_Diffuse	126468444658820
+Images/Childe_Hair_Diffuse	119330092846071
+Images/Chongyun_Body_Diffuse	115182214470565
+Images/Chongyun_Face_Diffuse	113578259514901
+Images/Chongyun_Hair_Diffuse	80030186663297
+Images/Clorinde_Body_Diffuse	98026124817439
+Images/Clorinde_Face_Diffuse	105557430918907
+Images/Clorinde_Hair_Diffuse	139766916032553
+Images/Collei_Body_Diffuse	123206462133319
+Images/Collei_Face_Diffuse	95316648710809
+Images/Collei_Hair_Diffuse	136928951642132
+Images/Cyno_Body_Diffuse	110034893462752
+Images/Cyno_Face_Diffuse	84849538404291
+Images/Cyno_Hair_Diffuse	138982636242856
+Images/Cyno_Jackal_Diffuse	137557236578636
+Images/Diona_Body_Diffuse	82353019608056
+Images/Diona_Face_Diffuse	131125526650788
+Images/Diona_Hair_Diffuse	70762783350945
+Images/Dori_Body_Diffuse	79294796657662
+Images/Dori_Face_Diffuse	70829163855279
+Images/Dori_Hair_Diffuse	136970514503829
+Images/Dvalin_Body01_Diffuse	115242202130133
+Images/Dvalin_Body02_Diffuse	75180354940324
+Images/Dvalin_Wing_Diffuse	89927628968566
+Images/Eula_Body_Diffuse	95040655001903
+Images/Eula_Face_Diffuse	97994516831189
+Images/Eula_Hair_Diffuse	92069801035266
+Images/Faruzan_Body_Diffuse	88543876664819
+Images/Faruzan_Face_Diffuse	92121205872407
+Images/Faruzan_Hair_Diffuse	113714801943326
+Images/Gorou_Body_Diffuse	116560668931375
+Images/Gorou_Face_Diffuse	99368547263686
+Images/Gorou_Hair_Diffuse	106316772898869
+Images/Hu Tao_Body_Diffuse	76761740436703
+Images/Hu Tao_Face_Diffuse	97168488756700
+Images/Hu Tao_Hair_Diffuse	128784785812851
+Images/IlCapitano_Body_Diffuse	127671967059419
+Images/IlCapitano_Clothes_Diffuse	128967415611657
+Images/IlCapitano_Hair_Diffuse	109300758744349
+Images/IlDotorre_Body_Diffuse	91361221560892
+Images/IlDotorre_Face_Diffuse	89470462634293
+Images/IlDotorre_Hair_Diffuse	137451893301724
+Images/Kachina_Body_Diffuse	112870622373871
+Images/Kachina_Face_Diffuse	103981034306832
+Images/Kachina_Hair_Diffuse	97156039661429
+Images/Kachina_Top_Diffuse	73152059913329
+Images/Kujou Sara_Body_Diffuse	82547381708755
+Images/Kujou Sara_Face_Diffuse	133535807791715
+Images/Kujou Sara_Hair_Diffuse	73764922654718
+Images/La Signora_Body_Diffuse	129873153009248
+Images/La Signora_Face_Diffuse	110887823090311
+Images/La Signora_Hair_Diffuse	73322722379189
+Images/Layla_Body_Diffuse	88528126528608
+Images/Layla_Face_Diffuse	94313583226293
+Images/Layla_Hair_Diffuse	107169466628177
+Images/Linette_Body_Diffuse	118602731164148
+Images/Linette_Face_Diffuse	126979263099736
+Images/Linette_Hair_Diffuse	99887475674796
+Images/Lumine_Body_Diffuse	112521023504183
+Images/Lumine_Face_Diffuse	123682883595139
+Images/Lumine_Hair_Diffuse	80692307130215
+base_color_texture	98641863777650
+base_color_texture	83287928226558
+base_color_texture	116218703041068
+base_color_texture	111397676379784
+base_color_texture	71647691851418
+base_color_texture	121523426823674
+Texture	84429346238563
+Texture	79133453020890
+Texture	80331628581998
+Texture	100868060787232
+Texture	118148437798608
+Texture	139607420641806
+Texture	127986984099053
+
+Meshes/Aether_Head (1)	75419330958335
+Meshes/Mavuika_Head	82925157333749
+Meshes/Mavuika_LeftArm	103157486154002
+Meshes/Mavuika_LeftLeg	83158714794215
+Meshes/Mavuika_RightArm	77252685661419
+Meshes/Mavuika_RightLeg	87194734869888
+Meshes/Mavuika_Torso	135927420022958
+Meshes/Mika_NPC	71539505354165
+Meshes/Nahida_Head	96460363038484
+Meshes/Neuvillette_Head	140401737326324
+Meshes/Noelle_NPC	127696748827364
+Meshes/Paimon_NPC	139436608161860
+Meshes/Qiqi_NPC	111141172683280
+Meshes/Raiden Shogun_Head	126222835159434
+Meshes/Raiden Shogun_LeftArm	88425905149995
+Meshes/Raiden Shogun_LeftLeg	140638585452354
+Meshes/Raiden Shogun_RightArm	94949473006864
+Meshes/Raiden Shogun_RightLeg	89722674794943
+Meshes/Raiden Shogun_Torso	102771360457730
+Meshes/Razor_NPC	113022863358542
+Meshes/Sayu_NPC	72491127439886
+Meshes/Skirk_Head	91433155276341
+Meshes/Skirk_LeftArm	121518194088009
+Meshes/Skirk_LeftLeg	73498786371303
+Meshes/Skirk_RightArm	106595621008148
+Meshes/Skirk_RightLeg	106634574859269
+Meshes/Skirk_Torso	81054979420025
+Meshes/Sucrose_NPC	71823958868158
+Meshes/Thoma_NPC	138531254904493
+Meshes/Venti_Head	138341719496319
+Meshes/Venti_LeftArm	108932718989714
+Meshes/Venti_LeftLeg	74581520069858
+Meshes/Venti_RightArm	100639034835472
+Meshes/Venti_RightLeg	130275304392160
+Meshes/Venti_Torso	117848811691934
+Meshes/Wanderer_Head	97950742873683
+Meshes/Wriothesley_LeftArm	90116560248211
+Meshes/Wriothesley_LeftLeg	93546001603636
+Meshes/Wriothesley_RightArm	119557593907154
+Meshes/Wriothesley_RightLeg	85898766987410
+Meshes/Wriothesley_Torso	90418860094514
+Meshes/Xiangling_NPC	88153326825105
+Meshes/Xiao_Head	98897340758341
+Meshes/Xiao_LeftArm	70445348778446
+Meshes/Xiao_LeftLeg	83021598249886
+Meshes/Xiao_RightArm	96110738102190
+Meshes/Xiao_RightLeg	103751577853094
+Meshes/Xiao_Torso	112115272053934
+Meshes/Yae Miko_Yae_Miko_Head	106261884546827
+Meshes/YaoYao_NPC	77526536459343
+Meshes/Zhongli_Head	138026837717299
+Meshes/Zhongli_LeftArm	110796841365569
+Meshes/Zhongli_LeftLeg	125850411569682
+Meshes/Zhongli_RightArm	120572597947605
+Meshes/Zhongli_RightLeg	76172322494658
+Meshes/Zhongli_Torso	101166647341472
+Meshes/Aether_Head	95795111629262
+Meshes/Arlecchino_Head	95982831594432
+Meshes/Arlecchino_LeftArm	116776400327939
+Meshes/Arlecchino_LeftLeg	118014652119697
+Meshes/Arlecchino_RightArm	92939152673046
+Meshes/Arlecchino_RightLeg	125848937143629
+Meshes/Arlecchino_Torso	117085762369073
+Meshes/Asmoday_NPC	87967059026950
+Meshes/Bennett_NPC	83310593470099
+Meshes/Childe_LeftArm	76097278464080
+Meshes/Childe_LeftLeg	79959533390600
+Meshes/Childe_RightArm	101779156652324
+Meshes/Childe_RightLeg	92435503389991
+Meshes/Childe_Torso	73451208758000
+Meshes/Chongyun_NPC	128664582297101
+Meshes/Clorinde_Head	94096882992973
+Meshes/Collei_NPC	72891791530434
+Meshes/Cyno_LeftArm	78024775501058
+Meshes/Cyno_LeftLeg	103902796082626
+Meshes/Cyno_RightArm	88447974718013
+Meshes/Cyno_RightLeg	135067823708455
+Meshes/Cyno_Torso	72892303367509
+Meshes/Diona_NPC	83308433025880
+Meshes/Dori_NPC	102022582137494
+Meshes/Dvalin_NPC	118299761499272
+Meshes/Eula_Head	127128905965036
+Meshes/Eula_LeftArm	130844097571660
+Meshes/Eula_LeftLeg	96426478744645
+Meshes/Eula_RightArm	131479201792390
+Meshes/Eula_RightLeg	70429454596407
+Meshes/Eula_Torso	74923221354202
+Meshes/Faruzan_NPC	103519217532373
+Meshes/Gorou_NPC	94322496209468
+Meshes/Hu Tao_Head	92521300174886
+Meshes/Hu Tao_Hu_Tao_LeftArm	124210584143346
+Meshes/Hu Tao_Hu_Tao_LeftLeg	120570940465871
+Meshes/Hu Tao_Hu_Tao_RightArm	82942583111135
+Meshes/Hu Tao_Hu_Tao_RightLeg	132156614076796
+Meshes/Hu Tao_Hu_Tao_Torso	85563556073769
+Meshes/Hu Tao_LeftArm	109105282749854
+Meshes/Hu Tao_LeftLeg	77240630504209
+Meshes/Hu Tao_RightArm	70664062286380
+Meshes/Hu Tao_RightLeg	120595475073234
+Meshes/Hu Tao_Torso	131320228250256
+Meshes/IlCapitano_NPC	122536782366926
+Meshes/IlDotorre_NPC	101083664736303
+Meshes/Kachina_NPC	116227633360595
+Meshes/Kujou Sara_Kujou_Sara_Head	122706385380035
+Meshes/La Signora_La_Signora_NPC	83538656516177
+Meshes/Layla_NPC	124176032564962
+Meshes/Linette_NPC	121413156252226
+Meshes/Lumine_Head	121523047163798
+RenderMesh	117664845530250
+RenderMesh	133605517431117
+RenderMesh	74758229850226
+RenderMesh	87656122994139
+RenderMesh	117103231343776
+RenderMesh	111291348345015
+RenderMesh	121126840180237
+RenderMesh	113105654053049
+RenderMesh	104509664096244
+RenderMesh	92027770744289
+RenderMesh	137247078167383
+RenderMesh	96770020161601
+RenderMesh	130525936145214
+RenderMesh	126009980552550
+RenderMesh	89744732320710
+RenderMesh	116773526888111
+RenderMesh	101991515636521
+RenderMesh	91073299115497
+RenderMesh	107459068309055
+RenderMesh	79324932332795
+RenderMesh	88890153935515
+RenderMesh	131110545689046
+RenderMesh	94154115514163
+RenderMesh	92434226779623
+RenderMesh	125290192371476
+RenderMesh	100774943268424
+RenderMesh	134797757119317
+RenderMesh	103151793329490
+RenderMesh	84889283169648
+RenderMesh	102717732432534
+RenderMesh	80669350196205
+RenderMesh	94065229721237
+RenderMesh	140288246791202
+RenderMesh	71358103339655
+RenderMesh	90907682595019
+RenderMesh	119215031694335
+RenderMesh	136133064843943
+RenderMesh	104525796428295
+RenderMesh	121843252759245
+RenderMesh	86300976741599
+RenderMesh	123910696530780
+RenderMesh	131255090918733
+RenderMesh	98925758767759
+RenderMesh	127018498989879
+RenderMesh	134711118909881
+RenderMesh	127243361652103
+RenderMesh	121244413162550
+RenderMesh	110451696302769
+RenderMesh	130966730958930
+RenderMesh	122677941335028
+RenderMesh	138429395779055
+RenderMesh	85841065984464
+RenderMesh	130758540782776
+RenderMesh	72846842726991
+RenderMesh	88219314418573
+RenderMesh	83954575727280
+RenderMesh	114311695452401
+RenderMesh	89617356484372
+RenderMesh	130835076158388
+RenderMesh	110771091940356
+RenderMesh	98285394623564
+RenderMesh	124355076265304
+RenderMesh	83720127050826
+RenderMesh	98532479682968
+RenderMesh	92181957722107
+RenderMesh	125901622873866
+RenderMesh	138691672711145
+RenderMesh	111176735679806
+RenderMesh	76595380164497
+RenderMesh	79098507219095
+RenderMesh	95989313574495
+RenderMesh	74580180538874
+RenderMesh	108660117675871
+RenderMesh	107693064615032
+RenderMesh	104649779835036
+RenderMesh	130151905867721
+RenderMesh	79432967956994
+RenderMesh	92715960421682
+RenderMesh	96374124375634
+RenderMesh	110386613848824
+RenderMesh	76419317796388
+RenderMesh	73387517564949
+RenderMesh	71362428364848
+RenderMesh	112223219072436
+RenderMesh	136914759817310
+RenderMesh	84687023261216
+RenderMesh	139715302050824
+RenderMesh	115519442514567
+RenderMesh	78462189915686
+RenderMesh	122417249866687
+RenderMesh	90924264888372
+RenderMesh	99517881370108
+RenderMesh	80744854477170
+RenderMesh	135213428051129
+RenderMesh	80744317347625
+RenderMesh	139494731473718
+RenderMesh	108068343408738
+RenderMesh	86529875135043
+RenderMesh	76055257899802
+RenderMesh	121260061675406
+RenderMesh	79664721714212
+RenderMesh	101861672566008
+RenderMesh	123785670290591
+RenderMesh	91708196986366
+RenderMesh	132598092777062
+RenderMesh	73126239350248
+RenderMesh	116849851540688
+RenderMesh	139935791798514
