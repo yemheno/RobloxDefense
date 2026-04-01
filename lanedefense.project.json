@@ -1,0 +1,71 @@
+{
+  "name": "RobloxDefense_LaneDefense",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Packages": {
+        "$path": "Packages"
+      },
+      "Shared": {
+        "$path": "src/shared/ReplicatedStorage/Shared"
+      },
+      "AssetMap": {
+        "$path": "src/shared/ReplicatedStorage/AssetMap.lua"
+      },
+      "MeshMap": {
+        "$path": "src/shared/ReplicatedStorage/MeshMap.lua"
+      },
+      "Mobs": {
+        "$path": "src/shared/ServerStorage/Models/Mobs"
+      },
+      "Projectiles": {
+        "$path": "src/shared/ServerStorage/Models/Projectiles"
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Modules": {
+        "$path": "src/shared/ServerScriptService/Modules"
+      },
+      "LaneDefense": {
+        "$path": "src/lanedefense/ServerScriptService"
+      }
+    },
+
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "Weapons": {
+        "$path": "src/shared/ServerStorage/Weapons"
+      },
+      "Models": {
+        "$className": "Folder",
+        "Armors": {
+          "$path": "src/shared/ServerStorage/Models/Armors"
+        },
+        "Weapons": {
+          "$path": "src/shared/ServerStorage/Models/Weapons"
+        }
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Modules": {
+          "$path": "src/shared/StarterPlayer/StarterPlayerScripts/Modules"
+        },
+        "UI": {
+          "$path": "src/shared/StarterPlayer/StarterPlayerScripts/UI"
+        },
+        "LaneDefense": {
+          "$path": "src/lanedefense/StarterPlayer/StarterPlayerScripts"
+        },
+
+      }
+    }
+  }
+}
