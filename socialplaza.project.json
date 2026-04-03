@@ -1,0 +1,66 @@
+{
+  "name": "RobloxDefense_SocialPlaza",
+  "tree": {
+    "$className": "DataModel",
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "Packages": {
+        "$path": "Packages"
+      },
+      "Shared": {
+        "$path": "src/shared/ReplicatedStorage/Shared"
+      },
+      "AssetMap": {
+        "$path": "src/shared/ReplicatedStorage/AssetMap.lua"
+      },
+      "MeshMap": {
+        "$path": "src/shared/ReplicatedStorage/MeshMap.lua"
+      }
+    },
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "Modules": {
+        "$path": "src/shared/ServerScriptService/Modules"
+      },
+      "SocialPlaza": {
+        "$path": "src/socialplaza/ServerScriptService"
+      }
+    },
+
+    "ServerStorage": {
+      "$className": "ServerStorage",
+      "Models": {
+        "$path": "src/shared/ServerStorage/Models"
+      },
+      "Weapons": {
+        "$path": "src/shared/ServerStorage/Weapons"
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "Modules": {
+          "$path": "src/shared/StarterPlayer/StarterPlayerScripts/Modules"
+        },
+        "UI": {
+          "$path": "src/shared/StarterPlayer/StarterPlayerScripts/UI"
+        },
+        "SocialPlaza": {
+          "$path": "src/socialplaza/StarterPlayer/StarterPlayerScripts"
+        },
+
+      }
+    },
+
+    "StarterGui": {
+      "$className": "StarterGui",
+      "AppGui": {
+        "$path": "src/shared/StarterGui/AppGui"
+      }
+    }
+  }
+}
