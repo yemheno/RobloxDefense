@@ -29,3 +29,8 @@ desktop.ini
 .vscode/settings.json
 *.swp
 *~
+.env
+
+# ── Node modules (tools/) ──────────────────────────────────
+tools/node_modules/
+node_modules/
