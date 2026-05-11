@@ -54,6 +54,28 @@ local function getInventoryManager()
     return _InventoryManager
 end
 
+-- §NM-D2: lazy ReadyGate ref. The unlock toast push is fired in response
+-- to a kill / damage event, which CAN happen on the very first server
+-- frame after a player joins (achievements evaluate before client UI
+-- has subscribed). Routing through ReadyGate ensures the first-tier
+-- unlock toast actually lands on the client.
+local _ReadyGate = nil
+local function fireAchievementUnlocked(player, payload)
+    if _ReadyGate == nil then
+        local mod = Modules:FindFirstChild("ReadyGate")
+        if mod then
+            local ok, rg = pcall(require, mod)
+            if ok then _ReadyGate = rg end
+        end
+        if not _ReadyGate then _ReadyGate = false end
+    end
+    if _ReadyGate then
+        _ReadyGate.FireClient(player, "AchievementUnlocked", payload)
+    else
+        NetworkManager.FireClient(player, "AchievementUnlocked", payload)
+    end
+end
+
 -- In-memory per-player entry: [player] = { stats = {...}, unlocked = {...} }
 local playerCache = {}
 
@@ -245,7 +267,6 @@ function AchievementManager.Init()
         end
     end)
 
-    print("[AchievementManager] Initialized (25 achievements, 10 tiers each)")
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -555,7 +576,7 @@ function AchievementManager.Unlock(player, ach, tier)
         end
     end
 
-    NetworkManager.FireClient(player, "AchievementUnlocked", {
+    fireAchievementUnlocked(player, {
         id       = ach.id,
         name     = ach.name,
         desc     = ach.desc,

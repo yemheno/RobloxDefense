@@ -20,7 +20,6 @@ local NetworkManager = nil
 function LoreHandler.Init(npcMgr, netMgr)
 	NPCManager    = npcMgr
 	NetworkManager = netMgr
-	print("[LoreHandler] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

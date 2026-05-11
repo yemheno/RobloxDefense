@@ -42,7 +42,6 @@ function CameraSystem.Init()
 		end
 	end
 
-	print("[CameraSystem] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

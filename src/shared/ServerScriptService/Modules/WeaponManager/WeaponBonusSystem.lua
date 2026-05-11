@@ -3,7 +3,10 @@
 local WeaponBonusSystem = {}
 
 local Modules = script.Parent.Parent
-local WeaponConfig = require(Modules:WaitForChild("WeaponConfig"))
+-- §CFG-D1: tier slot/value tables + reroll cost are shared with armor —
+-- read them from GearUpgradeConfig. WeaponConfig retained for any
+-- weapon-specific reads added later.
+local GearUpgradeConfig = require(Modules:WaitForChild("GearUpgradeConfig"))
 local WeaponRegistry = require(Modules:WaitForChild("WeaponRegistry"))
 local CurrencyManager = require(Modules:WaitForChild("CurrencyManager"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
@@ -21,7 +24,6 @@ local rerollLock = setmetatable({}, { __mode = "k" })
 function WeaponBonusSystem.Init()
 	NetworkManager.GetEvent("WeaponRerollResult")
 
-	print("[WeaponBonusSystem] Initialized")
 end
 
 --============================================
@@ -29,7 +31,7 @@ end
 --============================================
 function WeaponBonusSystem.RollBonuses(weaponId, tier)
 	local availablePool = WeaponRegistry.GetAvailableBonusPool(weaponId, tier)
-	local slotCount = WeaponConfig.TIER_BONUS_SLOTS[tier] or 2
+	local slotCount = GearUpgradeConfig.TIER_BONUS_SLOTS[tier] or 2
 
 	local bonuses = {}
 	local usedStats = {}
@@ -65,7 +67,7 @@ function WeaponBonusSystem.RollSingleBonus(availablePool, usedStats, tier)
 	local chosen = validOptions[math.random(#validOptions)]
 
 	-- Roll value with tier multiplier
-	local valueMultiplier = WeaponConfig.TIER_VALUE_MULTIPLIER[tier] or 1.0
+	local valueMultiplier = GearUpgradeConfig.TIER_VALUE_MULTIPLIER[tier] or 1.0
 	local minVal = math.floor(chosen.min * valueMultiplier)
 	local maxVal = math.floor(chosen.max * valueMultiplier)
 	local value = math.random(minVal, maxVal)
@@ -91,7 +93,7 @@ function WeaponBonusSystem.Reroll(player)
 	end
 
 	local tier = weaponInstance.tier
-	local cost = WeaponConfig.GetRerollCost(tier)
+	local cost = GearUpgradeConfig.GetRerollCost(tier)
 
 	-- Check currency
 	if not CurrencyManager.CanAffordMerits(player, cost) then
@@ -135,7 +137,7 @@ function WeaponBonusSystem.GetRerollInfo(player)
 	end
 
 	local tier = weaponInstance.tier
-	local cost = WeaponConfig.GetRerollCost(tier)
+	local cost = GearUpgradeConfig.GetRerollCost(tier)
 
 	return {
 		cost = cost,

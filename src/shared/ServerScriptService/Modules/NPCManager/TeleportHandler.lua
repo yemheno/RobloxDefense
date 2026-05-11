@@ -19,7 +19,6 @@ function TeleportHandler.Init(npcMgr, netMgr, sceneMgr)
 	NPCManager    = npcMgr
 	NetworkManager = netMgr
 	SceneManager  = sceneMgr  -- may be nil in places that don't use scene switching
-	print("[TeleportHandler] Initialized (SceneManager:", SceneManager ~= nil and "yes" or "no", ")")
 end
 
 -- ═══════════════════════════════════════════════════════════

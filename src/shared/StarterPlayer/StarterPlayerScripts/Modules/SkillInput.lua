@@ -80,7 +80,6 @@ function SkillInput.Init()
 		end
 	end)
 
-	print("[SkillInput] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

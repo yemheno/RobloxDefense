@@ -12,7 +12,6 @@ DefenseAnimation.Config = nil
 -- ═══════════════════════════════════════════════════════════
 
 function DefenseAnimation.Init()
-	print("[DefenseAnimation] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

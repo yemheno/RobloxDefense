@@ -8,6 +8,8 @@ local ArmorRegistry = {}
 
 local Modules     = script.Parent
 local ArmorConfig = require(Modules:WaitForChild("ArmorConfig"))
+-- §CFG-D1: shared upgrade tables (level scaling, tier slots/pool/multiplier).
+local GearUpgradeConfig = require(Modules:WaitForChild("GearUpgradeConfig"))
 
 -- Storage
 local armors        = {}   -- [armorId] = armorData
@@ -75,7 +77,6 @@ function ArmorRegistry.Init()
 		totalArmors = totalArmors + 1
 	end
 
-	print("[ArmorRegistry] Initialized with", totalArmors, "total armors")
 end
 
 --============================================
@@ -126,7 +127,7 @@ function ArmorRegistry.CalculateDefense(armorId, level, refinement, tier)
 	local baseDefense = armor.baseDefense or 5
 
 	-- Level scaling: same formula as weapons
-	local levelMultiplier = (1 + ArmorConfig.LEVEL_SCALE_PERCENT) ^ math.floor(level / 10)
+	local levelMultiplier = (1 + GearUpgradeConfig.LEVEL_SCALE_PERCENT) ^ math.floor(level / 10)
 	local leveledDefense  = baseDefense * levelMultiplier
 
 	-- Refinement bonus (flat)
@@ -149,7 +150,7 @@ function ArmorRegistry.CalculateBonusHealth(armorId, level, tier)
 	local baseHealth = armor.baseHealth or 0
 
 	-- Level scaling
-	local levelMultiplier = (1 + ArmorConfig.LEVEL_SCALE_PERCENT) ^ math.floor(level / 10)
+	local levelMultiplier = (1 + GearUpgradeConfig.LEVEL_SCALE_PERCENT) ^ math.floor(level / 10)
 	local leveledHealth   = baseHealth * levelMultiplier
 
 	-- Tier bonus (same percentage as defense)
@@ -169,7 +170,7 @@ function ArmorRegistry.GetAvailableBonusPool(armorId, tier)
 	end
 
 	tier = tier or 1
-	local maxIndex = ArmorConfig.TIER_POOL_UNLOCKS[tier] or 3
+	local maxIndex = GearUpgradeConfig.TIER_POOL_UNLOCKS[tier] or 3
 
 	local available = {}
 	for i, bonus in ipairs(armor.bonusPool) do
@@ -187,11 +188,11 @@ function ArmorRegistry.GetAvailableBonusPool(armorId, tier)
 end
 
 function ArmorRegistry.GetBonusSlotCount(tier)
-	return ArmorConfig.TIER_BONUS_SLOTS[tier] or 2
+	return GearUpgradeConfig.TIER_BONUS_SLOTS[tier] or 2
 end
 
 function ArmorRegistry.GetTierValueMultiplier(tier)
-	return ArmorConfig.TIER_VALUE_MULTIPLIER[tier] or 1.0
+	return GearUpgradeConfig.TIER_VALUE_MULTIPLIER[tier] or 1.0
 end
 
 return ArmorRegistry

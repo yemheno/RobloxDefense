@@ -98,7 +98,6 @@ function DropManager.Init()
 	-- Event the client listens to for floating loot text / pickups
 	NetworkManager.GetEvent("LootDrop")
 
-	print("[DropManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

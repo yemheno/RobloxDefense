@@ -69,7 +69,6 @@ function DefenseLine.Init()
 
 	isInitialized = true
 
-	print("[DefenseLine] Initialized")
 	print("  Health:", DefenseHealth.GetHealth(), "/", DefenseHealth.GetMaxHealth())
 	print("  Combo:", DefenseConfig.Combo.Enabled and "ON" or "OFF")
 

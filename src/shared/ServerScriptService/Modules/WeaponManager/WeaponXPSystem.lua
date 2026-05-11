@@ -75,7 +75,6 @@ end
 function WeaponXPSystem.Init()
 	NetworkManager.GetEvent("WeaponLevelUp")
 	NetworkManager.GetEvent("WeaponXPGained")
-	print("[WeaponXPSystem] Initialized (class-aware, multi-role)")
 end
 
 -- ── Internal helpers ─────────────────────────────────────────────────────────

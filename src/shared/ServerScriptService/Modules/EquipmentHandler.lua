@@ -40,7 +40,6 @@ function EquipmentHandler.Init()
 		NetworkManager.FireClient(player, "EquipmentInfo", payload)
 	end)
 
-	print("[EquipmentHandler] Initialized")
 end
 
 function EquipmentHandler.BuildSnapshot(player)

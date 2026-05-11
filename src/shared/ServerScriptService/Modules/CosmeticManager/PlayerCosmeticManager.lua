@@ -32,7 +32,6 @@ function PlayerCosmeticManager.Init(deps)
 	NetworkManager    = deps.NetworkManager
 	PlayerDataManager = deps.PlayerDataManager
 	CosmeticConfig    = deps.CosmeticConfig
-	print("[PlayerCosmeticManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

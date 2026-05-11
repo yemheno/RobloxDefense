@@ -80,7 +80,6 @@ function SkillRegistry.Init()
 		end
 	end
 
-	print("[SkillRegistry] Initialized -", SkillRegistry.GetTotalSkillCount(), "total skills")
 end
 
 function SkillRegistry.CacheClassSkills(className, classModule)

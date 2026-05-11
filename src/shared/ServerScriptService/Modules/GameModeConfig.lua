@@ -253,7 +253,6 @@ function GameModeConfig.GetChallengeBonus(activeModifiers)
 end
 
 function GameModeConfig.Init()
-	print("[GameModeConfig] Initialized -", #GameModeConfig.GetAvailableModes(), "modes available")
 end
 
 return GameModeConfig

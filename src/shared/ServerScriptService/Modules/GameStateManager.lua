@@ -68,7 +68,6 @@ function GameStateManager.Init()
 		GameStateManager.RequestStart(player)
 	end)
 
-	print("[GameStateManager] Initialized - State:", currentState)
 end
 
 -- Late init (called after MobSpawner is loaded)

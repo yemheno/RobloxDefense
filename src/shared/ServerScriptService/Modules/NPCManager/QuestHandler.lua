@@ -180,7 +180,6 @@ function QuestHandler.Init(npcMgr, netMgr)
 		end
 	end)
 
-	print("[QuestHandler] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

@@ -52,7 +52,6 @@ function MobVisuals.Init()
 		MobVisuals.OnMobDeath(data)
 	end)
 
-	print("[MobVisuals] Initialized (Client-Auth Hit Detection)")
 end
 
 -- ═══════════════════════════════════════════════════════════

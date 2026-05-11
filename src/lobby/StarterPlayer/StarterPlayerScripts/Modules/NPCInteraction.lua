@@ -64,7 +64,6 @@ function NPCInteraction.Init()
 		end
 	end)
 
-	print("[NPCInteraction] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

@@ -25,7 +25,6 @@ function ShopHandler.Init(npcMgr, netMgr)
 	local smMod = Mods:FindFirstChild("ShopManager")
 	if smMod then _ShopManager = require(smMod) end
 
-	print("[ShopHandler] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

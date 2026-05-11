@@ -104,7 +104,6 @@ function SoundManager.Init()
         groupVolumes[groupName] = sg.Volume
     end
 
-    print("[SoundManager] Initialized (3 groups created)")
 end
 
 -- ═══════════════════════════════════════════════════════════

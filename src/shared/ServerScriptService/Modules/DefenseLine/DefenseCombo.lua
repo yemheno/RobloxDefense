@@ -23,7 +23,6 @@ local onComboChangedCallbacks = {}
 
 function DefenseCombo.Init()
 	DefenseCombo.Reset()
-	print("[DefenseCombo] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

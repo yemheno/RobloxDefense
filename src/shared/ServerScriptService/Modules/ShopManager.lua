@@ -352,7 +352,6 @@ function ShopManager.Init()
         ShopManager.SendShopState(player)
     end)
 
-    print("[ShopManager] Initialized")
 end
 
 return ShopManager

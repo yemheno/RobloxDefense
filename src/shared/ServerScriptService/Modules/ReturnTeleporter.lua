@@ -43,7 +43,6 @@ function ReturnTeleporter.Init()
 		ReturnTeleporter.TeleportPlayerToLobby(player)
 	end)
 
-	print("[ReturnTeleporter] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

@@ -58,7 +58,6 @@ function SceneManager.Init()
 		SceneManager.SetupPlayer(player)
 	end
 
-	print("[SceneManager] Initialized — default scene: Village")
 end
 
 function SceneManager.SetupPlayer(player)

@@ -25,7 +25,6 @@ local CosmeticConfig = nil
 
 function MobCosmeticManager.Init(deps)
 	CosmeticConfig = deps.CosmeticConfig
-	print("[MobCosmeticManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

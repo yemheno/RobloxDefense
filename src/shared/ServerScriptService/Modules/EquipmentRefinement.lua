@@ -49,7 +49,6 @@ local function CreateRefinementSystem(Config, equipmentType)
     --============================================
     function System.Init()
         NetworkManager.GetEvent(eventName)
-        print(logPrefix .. " Initialized")
     end
 
     --============================================

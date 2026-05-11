@@ -50,7 +50,6 @@ function AchievementClient.Init()
     end)
 
     AchievementClient.Request()
-    print("[AchievementClient] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

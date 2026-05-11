@@ -133,7 +133,6 @@ function InventoryManager.Init()
         InventoryManager.SendInventory(player)
     end)
 
-    print("[InventoryManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

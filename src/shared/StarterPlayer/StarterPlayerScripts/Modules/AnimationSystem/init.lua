@@ -86,7 +86,6 @@ function AnimationSystem.Init()
 		task.spawn(onCharAdded, LocalPlayer.Character)
 	end
 
-	print("[AnimationSystem] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

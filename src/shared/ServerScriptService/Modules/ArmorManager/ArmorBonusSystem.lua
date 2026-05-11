@@ -7,7 +7,10 @@
 local ArmorBonusSystem = {}
 
 local Modules         = script.Parent.Parent
-local ArmorConfig     = require(Modules:WaitForChild("ArmorConfig"))
+-- §CFG-D1: tier slot/value tables + reroll cost are shared with weapons —
+-- read them from GearUpgradeConfig. ArmorConfig retained for any
+-- armor-specific reads added later.
+local GearUpgradeConfig = require(Modules:WaitForChild("GearUpgradeConfig"))
 local ArmorRegistry   = require(Modules:WaitForChild("ArmorRegistry"))
 local CurrencyManager = require(Modules:WaitForChild("CurrencyManager"))
 local NetworkManager  = require(Modules:WaitForChild("NetworkManager"))
@@ -23,7 +26,6 @@ local rerollLock = setmetatable({}, { __mode = "k" })
 --============================================
 function ArmorBonusSystem.Init()
 	NetworkManager.GetEvent("ArmorRerollResult")
-	print("[ArmorBonusSystem] Initialized")
 end
 
 --============================================
@@ -31,7 +33,7 @@ end
 --============================================
 function ArmorBonusSystem.RollBonuses(armorId, tier)
 	local availablePool = ArmorRegistry.GetAvailableBonusPool(armorId, tier)
-	local slotCount     = ArmorConfig.TIER_BONUS_SLOTS[tier] or 2
+	local slotCount     = GearUpgradeConfig.TIER_BONUS_SLOTS[tier] or 2
 
 	local bonuses   = {}
 	local usedStats = {}
@@ -62,7 +64,7 @@ function ArmorBonusSystem.RollSingleBonus(availablePool, usedStats, tier)
 
 	local chosen = validOptions[math.random(#validOptions)]
 
-	local valueMultiplier = ArmorConfig.TIER_VALUE_MULTIPLIER[tier] or 1.0
+	local valueMultiplier = GearUpgradeConfig.TIER_VALUE_MULTIPLIER[tier] or 1.0
 	local minVal = math.floor(chosen.min * valueMultiplier)
 	local maxVal = math.floor(chosen.max * valueMultiplier)
 	local value  = math.random(minVal, maxVal)
@@ -88,7 +90,7 @@ function ArmorBonusSystem.Reroll(player)
 	end
 
 	local tier = armorInstance.tier
-	local cost = ArmorConfig.GetRerollCost(tier)
+	local cost = GearUpgradeConfig.GetRerollCost(tier)
 
 	if cost > 0 and not CurrencyManager.CanAffordMerits(player, cost) then
 		return false, "Not enough Merits (need " .. cost .. ")"
@@ -133,7 +135,7 @@ function ArmorBonusSystem.GetRerollInfo(player)
 	end
 
 	local tier = armorInstance.tier
-	local cost = ArmorConfig.GetRerollCost(tier)
+	local cost = GearUpgradeConfig.GetRerollCost(tier)
 
 	return {
 		cost           = cost,

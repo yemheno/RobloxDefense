@@ -259,7 +259,6 @@ function TalentManager.Init()
 		TalentManager.SendState(player)
 	end)
 
-	print("[TalentManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

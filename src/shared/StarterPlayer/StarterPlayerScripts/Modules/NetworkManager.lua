@@ -28,7 +28,6 @@ local DEFAULT_FIRE_TIMEOUT = 5  -- short wait for FireServer; if event truly mis
 -- INITIALIZATION
 function NetworkManager.Init()
 	eventsFolder = ReplicatedStorage:WaitForChild("Events")
-	print("[NetworkManager] Initialized (Client)")
 end
 
 -- GET EVENT (waits for it)

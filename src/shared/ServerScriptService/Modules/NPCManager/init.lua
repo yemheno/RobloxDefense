@@ -118,7 +118,6 @@ function NPCManager.Init(deps)
 	-- Spawn all registered NPCs
 	NPCManager.SpawnAllNPCs()
 
-	print("[NPCManager] Initialized —", NPCRegistry.GetCount(), "NPCs registered")
 end
 
 -- ═══════════════════════════════════════════════════════════

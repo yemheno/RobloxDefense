@@ -167,7 +167,6 @@ function InputSystem.Init()
 		activeInputType = "Gamepad"
 	end)
 
-	print("[InputSystem] Initialized — platform:", activeInputType, "context:", activeContext)
 end
 
 -- ═══════════════════════════════════════════════════════════

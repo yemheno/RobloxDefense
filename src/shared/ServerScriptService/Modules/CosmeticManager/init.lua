@@ -141,7 +141,6 @@ function CosmeticManager.Init()
 		PlayerCosmeticManager.CleanupPlayer(player)
 	end)
 
-	print("[CosmeticManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

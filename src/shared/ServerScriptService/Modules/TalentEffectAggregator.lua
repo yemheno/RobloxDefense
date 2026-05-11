@@ -147,7 +147,6 @@ function TalentEffectAggregator.Init()
 	Players.PlayerRemoving:Connect(function(player)
 		TalentEffectAggregator.CleanupPlayer(player)
 	end)
-	print("[TalentEffectAggregator] Initialized")
 end
 
 return TalentEffectAggregator

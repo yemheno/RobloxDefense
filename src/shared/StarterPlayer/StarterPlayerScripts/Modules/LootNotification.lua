@@ -58,7 +58,6 @@ function LootNotification.Init()
 		LootNotification.OnLootDrop(data)
 	end)
 
-	print("[LootNotification] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

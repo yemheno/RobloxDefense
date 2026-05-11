@@ -81,7 +81,6 @@ function PlayerAttack.Init()
 		end)
 	end)
 
-	print("[PlayerAttack] Initialized (Client-Auth)")
 end
 
 -- ═══════════════════════════════════════════════════════════

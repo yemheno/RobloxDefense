@@ -22,7 +22,6 @@ local lastCheckTime = 0
 
 function DefenseDetection.Init()
 	DefenseDetection.Reset()
-	print("[DefenseDetection] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

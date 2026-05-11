@@ -60,7 +60,6 @@ function CosmeticClient.Init()
 		CosmeticClient.FireEquipResult(data)
 	end)
 
-	print("[CosmeticClient] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

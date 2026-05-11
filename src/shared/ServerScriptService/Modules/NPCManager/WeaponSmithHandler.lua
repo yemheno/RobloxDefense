@@ -34,7 +34,6 @@ function WeaponSmithHandler.Init(npcMgr, netMgr)
 	-- Create event for smith UI
 	NetworkManager.GetEvent("NPCSmithOpen")
 
-	print("[WeaponSmithHandler] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

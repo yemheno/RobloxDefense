@@ -30,7 +30,6 @@ function MobSkillRegistry.Init()
 
 	local count = 0
 	for _ in pairs(registeredSkills) do count = count + 1 end
-	print("[MobSkillRegistry] Initialized -", count, "skills loaded")
 end
 
 function MobSkillRegistry.LoadAllSkills()

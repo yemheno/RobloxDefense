@@ -37,7 +37,6 @@ ArcanistBehavior.CONFIG = {
 -- ═══════════════════════════════════════════════════════════
 
 function ArcanistBehavior.Init()
-	print("[ArcanistBehavior] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

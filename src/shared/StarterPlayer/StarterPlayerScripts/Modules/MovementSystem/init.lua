@@ -38,7 +38,6 @@ function MovementSystem.Init()
 		end
 	end
 
-	print("[MovementSystem] Initialized —", MovementSystem.GetConstraintCount(), "constraints registered")
 end
 
 -- ═══════════════════════════════════════════════════════════

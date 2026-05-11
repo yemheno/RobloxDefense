@@ -294,7 +294,6 @@ function DailyLoginManager.Init()
         })
     end)
 
-    print("[DailyLoginManager] Initialized")
 end
 
 return DailyLoginManager

@@ -62,7 +62,6 @@ local function DoInit()
 		end
 	end)
 
-	print("[ResourceCache] Initialized — ResourceUpdate listener connected early")
 end
 
 -- Self-initialise immediately when this module is first required.

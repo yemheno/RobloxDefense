@@ -60,7 +60,6 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
     function System.Init()
         BonusSystem = require(BonusSystemModule)
         NetworkManager.GetEvent(eventName)
-        print(logPrefix .. " Initialized")
     end
 
     --============================================

@@ -31,7 +31,6 @@ AegisBehavior.CONFIG = {
 -- ═══════════════════════════════════════════════════════════
 
 function AegisBehavior.Init()
-	print("[AegisBehavior] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

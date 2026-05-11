@@ -3,7 +3,9 @@
 local WeaponRegistry = {}
 
 local Modules = script.Parent
-local WeaponConfig = require(Modules:WaitForChild("WeaponConfig"))
+local WeaponConfig      = require(Modules:WaitForChild("WeaponConfig"))
+-- §CFG-D1: shared upgrade tables (level scaling, tier slots/pool/multiplier) live here.
+local GearUpgradeConfig = require(Modules:WaitForChild("GearUpgradeConfig"))
 
 -- Storage for all weapons
 local weapons = {}           -- [weaponId] = weaponData
@@ -76,7 +78,6 @@ function WeaponRegistry.Init()
 		totalWeapons = totalWeapons + 1
 	end
 
-	print("[WeaponRegistry] Initialized with", totalWeapons, "total weapons")
 end
 
 --============================================
@@ -139,7 +140,7 @@ function WeaponRegistry.CalculateAttack(weaponId, level, refinement, tier)
 	local baseAttack = weapon.baseAttack or 10
 
 	-- Level scaling: baseAttack * (1 + SCALE%) ^ floor(level/10)
-	local levelMultiplier = (1 + WeaponConfig.LEVEL_SCALE_PERCENT) ^ math.floor(level / 10)
+	local levelMultiplier = (1 + GearUpgradeConfig.LEVEL_SCALE_PERCENT) ^ math.floor(level / 10)
 	local leveledAttack = baseAttack * levelMultiplier
 
 	-- Refinement bonus (flat, added to base before tier)
@@ -209,7 +210,7 @@ function WeaponRegistry.GetAvailableBonusPool(weaponId, tier)
 	end
 
 	tier = tier or 1
-	local maxIndex = WeaponConfig.TIER_POOL_UNLOCKS[tier] or 3
+	local maxIndex = GearUpgradeConfig.TIER_POOL_UNLOCKS[tier] or 3
 
 	local available = {}
 	for i, bonus in ipairs(weapon.bonusPool) do
@@ -228,12 +229,12 @@ end
 
 -- Get bonus slot count for a tier
 function WeaponRegistry.GetBonusSlotCount(tier)
-	return WeaponConfig.TIER_BONUS_SLOTS[tier] or 2
+	return GearUpgradeConfig.TIER_BONUS_SLOTS[tier] or 2
 end
 
 -- Get value multiplier for a tier
 function WeaponRegistry.GetTierValueMultiplier(tier)
-	return WeaponConfig.TIER_VALUE_MULTIPLIER[tier] or 1.0
+	return GearUpgradeConfig.TIER_VALUE_MULTIPLIER[tier] or 1.0
 end
 
 return WeaponRegistry

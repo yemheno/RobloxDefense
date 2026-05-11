@@ -21,8 +21,6 @@ function MatchmakingHandler.Init(npcMgr, netMgr, matchmakingManager)
 	_NPCManager    = npcMgr
 	NetworkManager = netMgr
 	MatchmakingMgr = matchmakingManager  -- may be nil
-	print("[MatchmakingHandler] Initialized (MatchmakingManager:",
-		MatchmakingMgr ~= nil and "present" or "absent", ")")
 end
 
 -- ═══════════════════════════════════════════════════════════
