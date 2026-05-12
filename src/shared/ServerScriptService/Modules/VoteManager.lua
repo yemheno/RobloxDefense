@@ -156,7 +156,6 @@ function VoteManager.Setup(deps)
         VoteManager._OnVoteCastPersonal(player, cardIndex)
     end)
 
-    print("[VoteManager] Initialized")
 end
 
 --- Set mode-specific dependencies (defenseLine, mobSpawner, etc.)

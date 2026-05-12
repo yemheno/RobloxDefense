@@ -86,7 +86,6 @@ local Players = game:GetService("Players")
 
 function BonusExpSystem.Init()
 	Players.PlayerRemoving:Connect(BonusExpSystem.CleanupPlayer)
-	print("[BonusExpSystem] Initialized")
 end
 
 return BonusExpSystem

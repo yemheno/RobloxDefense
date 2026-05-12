@@ -169,7 +169,6 @@ function MobAI.Init()
 		end
 	end)
 
-	print("[MobAI] Initialized (Hybrid Client-Auth)")
 end
 
 -- ═══════════════════════════════════════════════════════════

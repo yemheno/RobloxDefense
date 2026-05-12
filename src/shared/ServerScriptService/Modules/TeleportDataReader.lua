@@ -35,7 +35,6 @@ local NetworkManager = nil
 function TeleportDataReader.Init(modeId)
 	matchModeId = modeId or matchModeId
 	NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
-	print("[TeleportDataReader] Initialized (" .. matchModeId .. ")")
 end
 
 -- ═══════════════════════════════════════════════════════════

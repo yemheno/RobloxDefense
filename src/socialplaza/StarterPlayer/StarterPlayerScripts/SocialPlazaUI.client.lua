@@ -28,3 +28,13 @@ local root = ReactRoblox.createRoot(screenGui)
 
 local SocialPlazaApp = require(script.Parent:WaitForChild("UI"):WaitForChild("SocialPlazaApp"))
 root:render(React.createElement(SocialPlazaApp))
+
+-- §RG1 fix-up: signal ClientReady so the server's ReadyGate drains any
+-- queued boot-time events. Mirrors Lobby/Lane/Horde/CentralBoss.
+task.defer(function()
+    task.wait(0.15)
+    local PlayerScripts = Players.LocalPlayer:WaitForChild("PlayerScripts")
+    local Modules = PlayerScripts:WaitForChild("Modules")
+    local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
+    NetworkManager.FireServer("ClientReady")
+end)

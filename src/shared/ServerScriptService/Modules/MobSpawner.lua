@@ -132,7 +132,6 @@ function MobSpawner.Init()
 		end
 	end)
 
-	print("[MobSpawner] Initialized")
 	print("  AutoAdvanceWaves:", CONFIG.AutoAdvanceWaves)
 	print("  Templates cached:", MobSpawner.GetTemplateCount())
 end

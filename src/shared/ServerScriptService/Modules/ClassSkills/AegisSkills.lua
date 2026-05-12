@@ -299,7 +299,6 @@ function AegisSkills.Init(baseSkills, skillEffects)
 	Base    = baseSkills
 	Effects = skillEffects
 	baseSkills.InjectGetters(AegisSkills)
-	print("[AegisSkills] Initialized with", AegisSkills.GetSkillCount(), "skills")
 end
 
 -- ═══════════════════════════════════════════════════════════

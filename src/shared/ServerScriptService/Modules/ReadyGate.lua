@@ -12,6 +12,18 @@
     case-by-case with idempotent re-request loops; ReadyGate is the
     universal answer.
 
+    ─── Two complementary race defenses ───────────────────────────────────
+    There are TWO orthogonal boot races and they need separate fixes:
+
+      1. Server fires before client subscribes  →  ReadyGate (this module).
+         Server-side queue, drained on ClientReady.
+
+      2. Client subscribes before server registers the event  →  client
+         NetworkManager's deferred-listener pattern (§NM-CLIENT-RACE).
+         Client-side worker waits for the event to land, then connects.
+
+    Both are needed. They cover different halves of the race surface.
+
     Protocol
     --------
       • Server side: every place's bootstrap calls `ReadyGate.Init()` early.
@@ -39,6 +51,9 @@
       ReadyGate.FireAllClients(eventName, ...)
       ReadyGate.IsReady(player) → bool
       ReadyGate.OnReady(callback)        – callback(player) on each ready
+
+    (MarkReady is intentionally private — the only legitimate trigger is
+    the ClientReady RemoteEvent. See §RG-D8 below.)
 
     Migration
     ---------
@@ -86,36 +101,10 @@ local MAX_QUEUE_SIZE = 200
 -- INIT
 -- ═══════════════════════════════════════════════════════════
 
-function ReadyGate.Init()
-    NetworkManager = require(script.Parent:WaitForChild("NetworkManager"))
-
-    NetworkManager.GetEvent("ClientReady")
-
-    NetworkManager.OnClientEvent("ClientReady", function(player)
-        ReadyGate.MarkReady(player)
-    end)
-
-    Players.PlayerRemoving:Connect(function(player)
-        ready[player]  = nil
-        queues[player] = nil
-    end)
-
-    print("[ReadyGate] Initialized")
-end
-
--- ═══════════════════════════════════════════════════════════
--- READY STATE
--- ═══════════════════════════════════════════════════════════
-
-function ReadyGate.IsReady(player)
-    return ready[player] == true
-end
-
-function ReadyGate.OnReady(callback)
-    table.insert(readyCallbacks, callback)
-end
-
-function ReadyGate.MarkReady(player)
+-- §RG-D8: MarkReady is module-local. The only legitimate trigger is the
+-- ClientReady RemoteEvent. Keeping the function private to this module
+-- prevents any future caller from short-circuiting the handshake.
+local function markReady(player)
     if not player or not player.Parent then return end
     if ready[player] then return end
     ready[player] = true
@@ -132,10 +121,50 @@ function ReadyGate.MarkReady(player)
     end
     queues[player] = nil
 
-    -- Fire ready callbacks
+    -- §RG-D5: surface errors in OnReady callbacks. ReadyGate.OnReady is
+    -- intended to feed a loading-screen dismiss + post-mount data fetches;
+    -- silently swallowing an error there means a player can be stuck on
+    -- the loading screen with no log trace. xpcall captures the error
+    -- and prints it; the rest of the callbacks still run.
     for _, cb in ipairs(readyCallbacks) do
-        task.spawn(cb, player)
+        task.spawn(function()
+            local ok, err = xpcall(function() cb(player) end, debug.traceback)
+            if not ok then
+                warn(string.format(
+                    "[ReadyGate] OnReady callback errored for %s: %s",
+                    player.Name, tostring(err)
+                ))
+            end
+        end)
     end
+end
+
+function ReadyGate.Init()
+    NetworkManager = require(script.Parent:WaitForChild("NetworkManager"))
+
+    NetworkManager.GetEvent("ClientReady")
+
+    NetworkManager.OnClientEvent("ClientReady", function(player)
+        markReady(player)
+    end)
+
+    Players.PlayerRemoving:Connect(function(player)
+        ready[player]  = nil
+        queues[player] = nil
+    end)
+
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- READY STATE
+-- ═══════════════════════════════════════════════════════════
+
+function ReadyGate.IsReady(player)
+    return ready[player] == true
+end
+
+function ReadyGate.OnReady(callback)
+    table.insert(readyCallbacks, callback)
 end
 
 -- ═══════════════════════════════════════════════════════════

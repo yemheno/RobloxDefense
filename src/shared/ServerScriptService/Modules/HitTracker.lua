@@ -127,7 +127,6 @@ function HitTracker.Init()
 		HitTracker.UpdateCombos(dt)
 	end)
 
-	print("[HitTracker] Initialized")
 end
 
 function HitTracker.SetupPlayer(player)

@@ -1,4 +1,29 @@
 -- ServerScriptService/Modules/PlayerDataManager/PlayerBonusSystem
+--[[
+    PlayerBonusSystem
+    =================
+    Thin facade over BonusManager. There is exactly ONE write path into
+    `data.Bonus[stat]` and it goes through BonusManager.
+
+    Sources used here:
+      • "weapon"       — written by ApplyWeaponBonuses, refreshed via RefreshWeaponStats
+      • "armor"        — written by ApplyArmorBonuses, refreshed via RefreshArmorStats
+      • "other"        — Set/ModifyBonus go here (debug, ad-hoc effects).
+                          Anything that wants its own source key (talents, buffs,
+                          accessories, achievements) should call BonusManager
+                          directly so the source can be cleared independently.
+
+    Reads return the AGGREGATED value from `data.Bonus[stat]`, which
+    BonusManager.Recalculate keeps current.
+
+    §PDM-D1: no fallback path. BonusManager is a Tier-0 dependency loaded by
+    every place; if it isn't available we hard-error rather than silently
+    bypass it (the old fallback wrote directly to data.Bonus and got clobbered
+    by the next Recalculate — that's the V3 CODE_AUDIT race).
+    §PDM-D2: GetSystemStat/SetSystemStat aliases removed — use GetBonus/SetBonus.
+    §PDM-D3: SetBonus/ModifyBonus now route through BonusManager "other" source
+    so direct writes survive subsequent Recalculate calls.
+]]
 
 local PlayerBonusSystem = {}
 
@@ -9,69 +34,60 @@ local Config = require(Modules:WaitForChild("PlayerDataConfig"))
 PlayerBonusSystem.PlayerDataManager = nil
 PlayerBonusSystem.GetDataStore = nil
 
--- Optional: BonusManager (source-separated aggregation)
+-- BonusManager is mandatory. Loaded in Init.
 local BonusManager = nil
+
+local function requireBonusManager()
+	if BonusManager then return BonusManager end
+	error(
+		"[PlayerBonusSystem] BonusManager not loaded. This is a Tier-0 dependency — "
+		.. "the place bootstrap must Load(SharedModules, 'BonusManager') before any "
+		.. "module touches player bonuses.",
+		2
+	)
+end
 
 --============================================
 -- INITIALIZATION
 --============================================
 function PlayerBonusSystem.Init()
-	-- Try to load BonusManager if available
 	local bmMod = Modules:FindFirstChild("BonusManager")
 	if bmMod then BonusManager = require(bmMod) end
 
-	print("[PlayerBonusSystem] Initialized" .. (BonusManager and " (BonusManager active)" or ""))
+	-- Don't hard-error in Init itself — the bootstrap may load BonusManager
+	-- right after PlayerDataManager. We re-check at every write site instead.
 end
 
 --============================================
--- BONUS STATS ACCESS
+-- BONUS STAT READS
+-- Reads the AGGREGATED total written by BonusManager.Recalculate.
+-- No source-specific reads from here — use BonusManager.GetAggregatedBonus
+-- directly if you need one.
 --============================================
 function PlayerBonusSystem.GetBonus(player, bonusName)
-	local playerDataStore = PlayerBonusSystem.GetDataStore()
-	local data = playerDataStore[player]
+	local data = PlayerBonusSystem.GetDataStore()[player]
 	if not data then return 0 end
-
 	return data.Bonus[bonusName] or 0
 end
 
+--============================================
+-- BONUS STAT WRITES — route through BonusManager "other" source.
+-- These are the ad-hoc paths (debug, ModifySystemStat, anything that
+-- doesn't fit into a named source). Talents, buffs, weapon/armor bonuses,
+-- and accessories should call BonusManager.SetSourceBonus(player, <source>, ...)
+-- directly with their own source key so they can be cleared independently.
+--============================================
 function PlayerBonusSystem.SetBonus(player, bonusName, value)
-	local playerDataStore = PlayerBonusSystem.GetDataStore()
-	local data = playerDataStore[player]
-	if not data then return false end
-
-	data.Bonus[bonusName] = value
+	if not PlayerBonusSystem.GetDataStore()[player] then return false end
+	local bm = requireBonusManager()
+	bm.SetSourceBonus(player, "other", bonusName, value)
 	return true
 end
 
 function PlayerBonusSystem.ModifyBonus(player, bonusName, delta)
-	local playerDataStore = PlayerBonusSystem.GetDataStore()
-	local data = playerDataStore[player]
-	if not data then return false end
-
-	data.Bonus[bonusName] = (data.Bonus[bonusName] or 0) + delta
-	return true
-end
-
---============================================
--- SYSTEM STATS ACCESS
--- NOTE: SystemStats have been replaced by derived stats (GetTotalStat).
--- These functions now operate on the Bonus table, which holds flat modifiers
--- applied on top of primary-derived values (used by test events and buffs).
---============================================
-function PlayerBonusSystem.GetSystemStat(player, statName)
-	local playerDataStore = PlayerBonusSystem.GetDataStore()
-	local data = playerDataStore[player]
-	if not data then return nil end
-
-	return data.Bonus[statName]
-end
-
-function PlayerBonusSystem.SetSystemStat(player, statName, value)
-	local playerDataStore = PlayerBonusSystem.GetDataStore()
-	local data = playerDataStore[player]
-	if not data then return false end
-
-	data.Bonus[statName] = value
+	if not PlayerBonusSystem.GetDataStore()[player] then return false end
+	local bm = requireBonusManager()
+	bm.ModifySourceBonus(player, "other", bonusName, delta)
 	return true
 end
 
@@ -105,67 +121,28 @@ end
 --============================================
 -- WEAPON BONUS APPLICATION
 --============================================
-local WEAPON_BONUS_STATS = {
-	"FlatAttack", "AttackSpeed", "SkillDamage", "Thorns",
-	"Lifesteal", "CooldownReduction", "Determination",
-	"Rage", "Mana", "Focus", "TauntDuration",
-	"BonusHealth", "DamageReduction", "MovementSpeed", "AoESize",
-	"CritChance", "CritDamage",   -- flat bonuses on top of PRE-derived values
-}
-
 function PlayerBonusSystem.ApplyWeaponBonuses(player)
-	if BonusManager then
-		-- Route through BonusManager: build the weapon bonus table, set it as a source
-		local weaponBonuses = {}
-		local weaponInstance = PlayerBonusSystem.PlayerDataManager.GetEquippedWeapon(player)
-		if weaponInstance and weaponInstance.bonuses then
-			for _, bonus in ipairs(weaponInstance.bonuses) do
-				local statName = BONUS_STAT_MAPPING[bonus.stat]
-				if statName then
-					weaponBonuses[statName] = (weaponBonuses[statName] or 0) + bonus.value
-				end
+	local bm = requireBonusManager()
+
+	-- Build the weapon-source bonus table from the equipped weapon's random rolls.
+	local weaponBonuses = {}
+	local weaponInstance = PlayerBonusSystem.PlayerDataManager.GetEquippedWeapon(player)
+	if weaponInstance and weaponInstance.bonuses then
+		for _, bonus in ipairs(weaponInstance.bonuses) do
+			local statName = BONUS_STAT_MAPPING[bonus.stat]
+			if statName then
+				weaponBonuses[statName] = (weaponBonuses[statName] or 0) + bonus.value
 			end
 		end
-		BonusManager.SetSourceBonuses(player, "weapon", weaponBonuses)
-
-		-- Update health if bonusHealth changed
-		if player.Character then
-			local StatSystem = PlayerBonusSystem.PlayerDataManager.GetSystems().Stat
-			StatSystem.ApplyHealthToCharacter(player, player.Character)
-		end
-		return
 	end
+	bm.SetSourceBonuses(player, "weapon", weaponBonuses)
 
-	-- Fallback: direct write (BonusManager not loaded)
-	local playerDataStore = PlayerBonusSystem.GetDataStore()
-	local data = playerDataStore[player]
-	if not data then return end
-
-	-- Reset all known weapon bonus stats to 0 (create if missing)
-	for _, statName in ipairs(WEAPON_BONUS_STATS) do
-		data.Bonus[statName] = 0
-	end
-
-	local weaponInstance = PlayerBonusSystem.PlayerDataManager.GetEquippedWeapon(player)
-	if not weaponInstance or not weaponInstance.bonuses then return end
-
-	for _, bonus in ipairs(weaponInstance.bonuses) do
-		local statName = BONUS_STAT_MAPPING[bonus.stat]
-		if statName then
-			data.Bonus[statName] = (data.Bonus[statName] or 0) + bonus.value
-		end
-	end
-
+	-- Refresh HP if bonusHealth changed.
 	if player.Character then
 		local StatSystem = PlayerBonusSystem.PlayerDataManager.GetSystems().Stat
 		StatSystem.ApplyHealthToCharacter(player, player.Character)
 	end
 end
-
--- ApplyWeaponCritBonuses is no longer needed.
--- CritChance and CritDamage are flat bonus entries in the Bonus table
--- (on top of PRE-derived values) and are already handled by ApplyWeaponBonuses
--- via BONUS_STAT_MAPPING { critChance="CritChance", critDamage="CritDamage" }.
 
 function PlayerBonusSystem.RefreshWeaponStats(player)
 	PlayerBonusSystem.ApplyWeaponBonuses(player)
@@ -177,9 +154,9 @@ end
 local ArmorManagerRef = nil
 
 function PlayerBonusSystem.ApplyArmorBonuses(player)
-	if not BonusManager then return end
+	local bm = requireBonusManager()
 
-	-- Lazy-require to avoid circular dependency (ArmorManager → PlayerDataManager → this)
+	-- Lazy-require ArmorManager (avoids circular: ArmorManager → PlayerDataManager → this).
 	if not ArmorManagerRef then
 		local mod = Modules:FindFirstChild("ArmorManager")
 		if mod then ArmorManagerRef = require(mod) end
@@ -189,12 +166,10 @@ function PlayerBonusSystem.ApplyArmorBonuses(player)
 	local armorBonuses = {}
 	local stats = ArmorManagerRef.GetCalculatedStats(player)
 
-	-- Armor-level bonusHealth (scales with level/tier)
 	if stats.bonusHealth and stats.bonusHealth > 0 then
 		armorBonuses["BonusHealth"] = stats.bonusHealth
 	end
 
-	-- Random roll bonuses (same stat mapping as weapons)
 	if stats.bonuses then
 		for _, bonus in ipairs(stats.bonuses) do
 			local statName = BONUS_STAT_MAPPING[bonus.stat]
@@ -204,9 +179,8 @@ function PlayerBonusSystem.ApplyArmorBonuses(player)
 		end
 	end
 
-	BonusManager.SetSourceBonuses(player, "armor", armorBonuses)
+	bm.SetSourceBonuses(player, "armor", armorBonuses)
 
-	-- Refresh HP on character if bonusHealth changed
 	if player.Character then
 		local StatSystem = PlayerBonusSystem.PlayerDataManager.GetSystems().Stat
 		StatSystem.ApplyHealthToCharacter(player, player.Character)

@@ -254,7 +254,6 @@ function LifeStewardSkills.Init(baseSkills, skillEffects)
 	Base    = baseSkills
 	Effects = skillEffects
 	baseSkills.InjectGetters(LifeStewardSkills)
-	print("[LifeStewardSkills] Initialized with", LifeStewardSkills.GetSkillCount(), "skills")
 end
 
 -- ═══════════════════════════════════════════════════════════

@@ -350,7 +350,6 @@ function AdminTesting.Init()
 		end
 	end)
 
-	print("[AdminTesting] Initialized")
 end
 
 return AdminTesting

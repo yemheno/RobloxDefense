@@ -11,6 +11,28 @@ local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local VisualEquipmentManager = require(Modules:WaitForChild("VisualEquipmentManager"))
 
+-- §NM-D2: lazy ReadyGate ref. WeaponEquipped is fired during PlayerAdded
+-- (EnsureStarterWeapon) before the client UI has subscribed, which used
+-- to drop the first packet → "weapon icon missing on first spawn" bug.
+-- ReadyGate queues until ClientReady so the icon always lands.
+-- Lazy require because ReadyGate may load after WeaponManager.
+local _ReadyGate = nil
+local function fireWeaponEquipped(player, payload)
+	if _ReadyGate == nil then
+		local mod = Modules:FindFirstChild("ReadyGate")
+		if mod then
+			local ok, rg = pcall(require, mod)
+			if ok then _ReadyGate = rg end
+		end
+		if not _ReadyGate then _ReadyGate = false end
+	end
+	if _ReadyGate then
+		_ReadyGate.FireClient(player, "WeaponEquipped", payload)
+	else
+		NetworkManager.FireClient(player, "WeaponEquipped", payload)
+	end
+end
+
 -- Child systems (loaded in Init)
 local XPSystem
 local Refinement
@@ -110,7 +132,6 @@ function WeaponManager.Init()
 		initializedPlayers[player] = nil
 	end)
 
-	print("[WeaponManager] Initialized")
 end
 
 --============================================
@@ -162,7 +183,7 @@ function WeaponManager.EnsureStarterWeapon(player)
 		-- Echo the equipped weapon to the client so the EquipmentUI
 		-- snapshot matches the visual immediately, instead of waiting
 		-- for the next class-switch / re-equip event.
-		NetworkManager.FireClient(player, "WeaponEquipped", {
+		fireWeaponEquipped(player, {
 			weaponId   = equippedId,
 			weaponData = classData.EquippedWeapon,
 			stats      = WeaponManager.GetCalculatedStats(player),
@@ -183,7 +204,7 @@ function WeaponManager.EnsureStarterWeapon(player)
 
 		PlayerDataManager.RefreshWeaponStats(player)
 
-		NetworkManager.FireClient(player, "WeaponEquipped", {
+		fireWeaponEquipped(player, {
 			weaponId = starterWeaponId,
 			weaponData = weaponInstance,
 			stats = WeaponManager.GetCalculatedStats(player),
@@ -358,7 +379,7 @@ function WeaponManager.SwitchWeapon(player, weaponId)
 	-- Refresh server-side weapon stat bonuses
 	PlayerDataManager.RefreshWeaponStats(player)
 
-	NetworkManager.FireClient(player, "WeaponEquipped", {
+	fireWeaponEquipped(player, {
 		weaponId = weaponId,
 		weaponData = weaponInstance,
 		stats = WeaponManager.GetCalculatedStats(player),

@@ -34,7 +34,6 @@ HunterBehavior.CONFIG = {
 -- ═══════════════════════════════════════════════════════════
 
 function HunterBehavior.Init()
-	print("[HunterBehavior] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

@@ -78,7 +78,6 @@ local NetworkManager = nil
 -- ═══════════════════════════════════════════════════════════
 function TeleportManager.Init()
 	NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
-	print("[TeleportManager] Initialized — target PlaceId:", LANE_DEFENSE_PLACE_ID)
 end
 
 -- ═══════════════════════════════════════════════════════════

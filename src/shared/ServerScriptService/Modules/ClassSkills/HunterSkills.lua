@@ -271,7 +271,6 @@ function HunterSkills.Init(baseSkills, skillEffects)
 	Base    = baseSkills
 	Effects = skillEffects
 	baseSkills.InjectGetters(HunterSkills)
-	print("[HunterSkills] Initialized with", HunterSkills.GetSkillCount(), "skills")
 end
 
 -- ═══════════════════════════════════════════════════════════

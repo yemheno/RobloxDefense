@@ -54,7 +54,6 @@ LifeStewardBehavior.CONFIG = {
 -- ═══════════════════════════════════════════════════════════
 
 function LifeStewardBehavior.Init()
-	print("[LifeStewardBehavior] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

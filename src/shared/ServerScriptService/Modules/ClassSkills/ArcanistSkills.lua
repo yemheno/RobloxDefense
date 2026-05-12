@@ -290,7 +290,6 @@ function ArcanistSkills.Init(baseSkills, skillEffects)
 	Base    = baseSkills
 	Effects = skillEffects
 	baseSkills.InjectGetters(ArcanistSkills)
-	print("[ArcanistSkills] Initialized with", ArcanistSkills.GetSkillCount(), "skills")
 end
 
 -- ═══════════════════════════════════════════════════════════

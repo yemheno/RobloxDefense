@@ -8,14 +8,19 @@ local DataStoreService = game:GetService("DataStoreService")
 local DATA_STORE_KEY = "PlayerData_v1"
 local AUTO_SAVE_INTERVAL = 300  -- seconds between auto-saves
 
--- ⚠ DEBUG: set true to always start with fresh data (no DataStore reads or writes).
--- Flip back to false before shipping to production.
-local DEBUG_NO_SAVE = false
+-- §PDM-D7: gate the noisy save-entry print behind a flag. Was useful to
+-- diagnose the §PERSIST1 XP-loss bug; now it's just log spam in production.
+-- Flip to true if a save bug ever resurfaces.
+local DEBUG_SAVE = false
 
 local LOCAL_DATASTORE = DataStoreService:GetDataStore(DATA_STORE_KEY)
 
 local Modules = script.Parent
 local Config = require(Modules:WaitForChild("PlayerDataConfig"))
+
+-- §PDM-D6: hoisted from below for readability. Tracks in-progress saves
+-- so concurrent auto-save + terminal save don't double-write.
+local savingPlayers = {}
 
 -- Child systems (loaded in Init)
 local ClassSystem
@@ -96,7 +101,6 @@ function PlayerDataManager.Init()
 		end
 	end)
 
-	print("[PlayerDataManager] Initialized")
 end
 
 --============================================
@@ -241,7 +245,7 @@ function PlayerDataManager.SetupPlayer(player)
 	setupInProgress[player] = true
 
 	-- Try loading persisted data; fall back to fresh defaults only on genuine first visit.
-	local rawSaved = (not DEBUG_NO_SAVE) and LoadRawData(player.UserId) or nil
+	local rawSaved = LoadRawData(player.UserId)
 
 	if rawSaved == LOAD_FAILED then
 		-- All DataStore retries exhausted — DO NOT give default data (would erase progress).
@@ -301,32 +305,41 @@ function PlayerDataManager.SetupPlayer(player)
 		end
 	end)
 
-	-- Create leaderstats
+	-- Create leaderstats (the Roblox built-in player-list overlay).
+	-- §PDM-D12: Level + PowerScore are the headline stats players want at a
+	-- glance; Merits/Essence are economy and don't belong in the always-on
+	-- player list (Achievement UI shows them in detail).
 	local leaderstats = Instance.new("Folder")
 	leaderstats.Name = "leaderstats"
 	leaderstats.Parent = player
-
-	local meritsValue = Instance.new("IntValue")
-	meritsValue.Name = "Merits"
-	meritsValue.Value = data.Account.Merits
-	meritsValue.Parent = leaderstats
 
 	local levelValue = Instance.new("IntValue")
 	levelValue.Name = "Level"
 	levelValue.Value = data.Account.Level
 	levelValue.Parent = leaderstats
 
+	local powerValue = Instance.new("IntValue")
+	powerValue.Name = "Power"
+	powerValue.Value = 0  -- computed by RefreshPowerScore below; safe default
+	powerValue.Parent = leaderstats
+
 	-- Expose level as a player Attribute so other systems (TeleportDataReader,
 	-- HordeModeMain) can read it without a PlayerDataManager reference.
 	player:SetAttribute("Level", data.Account.Level)
 
-	-- Apply health on spawn
+	-- Initial power score. Subsequent equipment / level changes call
+	-- PlayerDataManager.RefreshPowerScore(player) to keep this current.
+	PlayerDataManager.RefreshPowerScore(player)
+
+	-- Apply health on spawn. §PDM-D9: pass freshSpawn=true so the player
+	-- starts at full HP — the proportional-rescale branch is reserved for
+	-- mid-life stat changes (AllocateStat etc.).
 	player.CharacterAdded:Connect(function(character)
-		StatSystem.ApplyHealthToCharacter(player, character)
+		StatSystem.ApplyHealthToCharacter(player, character, true)
 	end)
 
 	if player.Character then
-		StatSystem.ApplyHealthToCharacter(player, player.Character)
+		StatSystem.ApplyHealthToCharacter(player, player.Character, true)
 	end
 end
 
@@ -344,12 +357,6 @@ end
 --- The caller is responsible for kicking the player afterwards so they rejoin
 --- with clean default data.
 function PlayerDataManager.WipeData(player)
-	if DEBUG_NO_SAVE then
-		-- Debug mode: just clear in-memory; nothing is persisted anyway.
-		playerDataStore[player] = nil
-		return true
-	end
-
 	local key = tostring(player.UserId)
 
 	-- Cancel any in-flight save so it doesn't overwrite the removal.
@@ -373,9 +380,6 @@ function PlayerDataManager.WipeData(player)
 	return true
 end
 
--- Track in-progress saves to avoid duplicate DataStore requests
-local savingPlayers = {}
-
 -- §PERSIST1 fix: force-save bypasses the dedup that was silently
 -- swallowing terminal saves. Story: auto-save fires at minute 4,
 -- yields inside SetAsync. Player teleports at minute 4.5. PlayerRemoving
@@ -385,17 +389,11 @@ local savingPlayers = {}
 -- writes the latest state. Auto-save still uses force=false for
 -- normal dedup behaviour.
 function PlayerDataManager.SavePlayer(player, force)
-	-- §PERSIST2: enter-print so we can prove this function is being
-	-- reached. The post-SetAsync success print doesn't appear in Studio
-	-- when the test is stopped while SetAsync is yielded; this entry
-	-- print fires immediately and is the canary we trust.
-	print(string.format("[PlayerDataManager] SavePlayer ENTRY: %s force=%s",
-		tostring(player and player.Name), tostring(force == true)))
-
-	if DEBUG_NO_SAVE then
-		warn("[PlayerDataManager] DEBUG_NO_SAVE is TRUE — nothing persisted")
-		return
+	if DEBUG_SAVE then
+		print(string.format("[PlayerDataManager] SavePlayer ENTRY: %s force=%s",
+			tostring(player and player.Name), tostring(force == true)))
 	end
+
 	local data = playerDataStore[player]
 	if not data then
 		warn(string.format(
@@ -442,8 +440,50 @@ end
 --============================================
 --- Register a callback invoked (task.spawn) when a player's data is ready.
 --- The callback receives the Player instance as its sole argument.
+---
+--- CONTRACT — callbacks MUST be idempotent. They may fire more than once
+--- for the same player across server-lifetime edge cases (e.g. a player
+--- who teleports out then back into the same server during dev tooling).
+--- New callers should treat "already initialized" as a normal return path,
+--- not an error.
 function PlayerDataManager.OnPlayerDataReady(callback)
 	table.insert(dataReadyCallbacks, callback)
+end
+
+--============================================
+-- POWER SCORE (leaderstats sync)
+--============================================
+-- §PDM-D12: GearRating.GetDisplayPower is the single source of truth for
+-- the composite power rating. We mirror it into the player's `Power`
+-- leaderstat so the Roblox player-list overlay always shows a current
+-- value. Call this whenever something that affects power changes:
+-- level-up, weapon/armor change, talent allocation, accessory equip.
+-- The function is cheap (pure data computation, no DataStore touch).
+local _GearRating = nil
+local function getGearRating()
+	if _GearRating ~= nil then return _GearRating end
+	local ok, mod = pcall(function()
+		return require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("GearRating"))
+	end)
+	if ok then _GearRating = mod else _GearRating = false end
+	return _GearRating or nil
+end
+
+function PlayerDataManager.RefreshPowerScore(player)
+	local data = playerDataStore[player]
+	if not data then return end
+	local gr = getGearRating()
+	if not gr then return end
+
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if not leaderstats then return end
+	local powerStat = leaderstats:FindFirstChild("Power")
+	if not powerStat then return end
+
+	local ok, score = pcall(gr.GetDisplayPower, data)
+	if ok and type(score) == "number" then
+		powerStat.Value = math.floor(score)
+	end
 end
 
 function PlayerDataManager.GetData(player)
@@ -485,18 +525,13 @@ function PlayerDataManager.SetAccountData(player, key, value)
 			if stat then stat.Value = value end
 		end
 		player:SetAttribute("Level", value)
+		-- §PDM-D12: level is a Power component, refresh the leaderstat.
+		PlayerDataManager.RefreshPowerScore(player)
 		return true
 	end
 
-	-- Update leaderstats if applicable
-	local leaderstats = player:FindFirstChild("leaderstats")
-	if leaderstats then
-		local stat = leaderstats:FindFirstChild(key)
-		if stat then
-			stat.Value = value
-		end
-	end
-
+	-- Other keys that used to mirror to leaderstats (Merits) no longer do —
+	-- the only leaderstats are Level and Power. Both are handled explicitly.
 	return true
 end
 
@@ -718,13 +753,8 @@ function PlayerDataManager.ModifyBonus(player, bonusName, delta)
 	return BonusSystem.ModifyBonus(player, bonusName, delta)
 end
 
-function PlayerDataManager.GetSystemStat(player, statName)
-	return BonusSystem.GetSystemStat(player, statName)
-end
-
-function PlayerDataManager.SetSystemStat(player, statName, value)
-	return BonusSystem.SetSystemStat(player, statName, value)
-end
+-- §PDM-D2: GetSystemStat / SetSystemStat removed — they were aliases of
+-- GetBonus / SetBonus. Use the Bonus API directly.
 
 function PlayerDataManager.ApplyWeaponBonuses(player)
 	return BonusSystem.ApplyWeaponBonuses(player)

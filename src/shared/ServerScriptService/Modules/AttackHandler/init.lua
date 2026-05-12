@@ -124,7 +124,6 @@ function AttackHandler.Init()
 		AttackHandler.RemovePlayer(player)
 	end)
 
-	print("[AttackHandler] Initialized (Client-Auth)")
 end
 
 -- ═══════════════════════════════════════════════════════════

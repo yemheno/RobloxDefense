@@ -28,7 +28,6 @@ function BaseSkills.Init(dependencies)
 	BaseSkills.SkillManager = dependencies.SkillManager
 	BaseSkills.DamageHandler = dependencies.DamageHandler
 
-	print("[BaseSkills] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

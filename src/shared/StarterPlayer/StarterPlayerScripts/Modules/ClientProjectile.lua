@@ -35,7 +35,6 @@ function ClientProjectile.Init()
 		ClientProjectile.Update(dt)
 	end)
 
-	print("[ClientProjectile] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

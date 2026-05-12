@@ -112,7 +112,6 @@ function ClassManager.Init()
 		NetworkManager.FireClient(player, "ClassSwitchResult", ok, err or className)
 	end)
 
-	print("[ClassManager] Initialized")
 end
 
 --============================================

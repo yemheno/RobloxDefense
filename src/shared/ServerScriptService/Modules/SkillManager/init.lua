@@ -136,7 +136,6 @@ function SkillManager.Init()
 		SkillManager.UpdateCasting(dt)
 	end)
 
-	print("[SkillManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

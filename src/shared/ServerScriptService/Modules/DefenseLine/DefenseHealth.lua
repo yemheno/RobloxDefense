@@ -48,7 +48,6 @@ function DefenseHealth.Init()
 
 	DefenseHealth.UpdateVisuals()
 
-	print("[DefenseHealth] Initialized - HP:", currentHealth, "/", maxHealth)
 end
 
 -- §47.1: Update defense line HP based on the highest player's chapter

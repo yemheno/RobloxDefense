@@ -24,6 +24,25 @@ local NetworkManager    = require(Modules:WaitForChild("NetworkManager"))
 -- NOTE: Armor visual attachment was removed. Body appearance is now
 -- handled by CosmeticManager (color/material-based outfits).
 
+-- §NM-D2: lazy ReadyGate ref. ArmorEquipped is fired during PlayerAdded
+-- (EnsureStarterArmor) — same boot-race shape as WeaponEquipped.
+local _ReadyGate = nil
+local function fireArmorEquipped(player, payload)
+	if _ReadyGate == nil then
+		local mod = Modules:FindFirstChild("ReadyGate")
+		if mod then
+			local ok, rg = pcall(require, mod)
+			if ok then _ReadyGate = rg end
+		end
+		if not _ReadyGate then _ReadyGate = false end
+	end
+	if _ReadyGate then
+		_ReadyGate.FireClient(player, "ArmorEquipped", payload)
+	else
+		NetworkManager.FireClient(player, "ArmorEquipped", payload)
+	end
+end
+
 -- Child systems (loaded in Init)
 local Refinement
 local TierSystem
@@ -84,7 +103,6 @@ function ArmorManager.Init()
 		initializedPlayers[player] = nil
 	end)
 
-	print("[ArmorManager] Initialized")
 end
 
 --============================================
@@ -127,7 +145,7 @@ function ArmorManager.EnsureStarterArmor(player)
 	-- snapshot until the next refresh. (No visual to attach yet — see
 	-- §V2 in TODO_PARKING_LOT — but we still need the client event.)
 	if classData.EquippedArmor and classData.EquippedArmor.armorId then
-		NetworkManager.FireClient(player, "ArmorEquipped", {
+		fireArmorEquipped(player, {
 			armorId   = classData.EquippedArmor.armorId,
 			armorData = classData.EquippedArmor,
 			stats     = ArmorManager.GetCalculatedStats(player),
@@ -148,7 +166,7 @@ function ArmorManager.EnsureStarterArmor(player)
 
 		PlayerDataManager.RefreshArmorStats(player)
 
-		NetworkManager.FireClient(player, "ArmorEquipped", {
+		fireArmorEquipped(player, {
 			armorId   = starterArmorId,
 			armorData = armorInstance,
 			stats     = ArmorManager.GetCalculatedStats(player),

@@ -23,7 +23,6 @@ function PlayerLevelSystem.Init()
 	if bonusMod then
 		BonusExpSystem = require(bonusMod)
 	end
-	print("[PlayerLevelSystem] Initialized")
 end
 
 --============================================
@@ -41,15 +40,15 @@ function PlayerLevelSystem.AddExperience(player, amount)
 	local staticMult     = 1 + (staticBonus / 100)
 	local actualAmount   = amount * staticMult * dynamicMult
 
-	-- Chapter level cap (§4): cannot pass cap until chapter boss is defeated
+	-- Chapter level cap (§4): cannot pass cap until chapter boss is defeated.
+	-- §PDM-D5: at hard cap, the player simply STOPS gaining XP. Other
+	-- progression channels (weapon XP, achievements, talents) still flow
+	-- through their own systems. Class Mastery XP has its own dedicated
+	-- earn path — see TODO §3 ("Class Mastery XP source").
 	local currentLevel = data.Account.Level
 	local chapterCap = ChapterConfig.GetChapterLevelCap(ChapterConfig.GetChapter(currentLevel))
-	local atCap = currentLevel >= chapterCap
-
-	if atCap then
-		-- §5: At chapter cap, 100% of earned XP → Class Mastery XP
-		PlayerLevelSystem.AddClassMasteryXP(data, actualAmount)
-		return
+	if currentLevel >= chapterCap then
+		return  -- at cap, XP is lost; player must defeat the chapter boss
 	end
 
 	data.Account.Experience = data.Account.Experience + actualAmount
@@ -58,9 +57,11 @@ function PlayerLevelSystem.AddExperience(player, amount)
 	local requiredXP = Config.GetXPForLevel(currentLevel)
 
 	while data.Account.Experience >= requiredXP do
-		-- Don't exceed the chapter cap
+		-- Don't exceed the chapter cap. Clamp XP at cap-1 so the bar shows
+		-- "full" without overflowing into the next level until the cap is
+		-- raised (chapter boss defeat).
 		if data.Account.Level >= chapterCap then
-			data.Account.Experience = requiredXP - 1 -- clamp XP, no overflow
+			data.Account.Experience = requiredXP - 1
 			break
 		end
 

@@ -63,7 +63,6 @@ function SkillVisuals.Init()
 	subscribe("SkillCastCompleted",   function(data) SkillVisuals.OnSkillCastCompleted(data)  end)
 	subscribe("SkillCastInterrupted", function(data) SkillVisuals.OnSkillCastInterrupted(data)end)
 
-	print("[SkillVisuals] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

@@ -30,9 +30,21 @@ SkillEffects.NetworkManager = nil
 SkillEffects.MobAI          = nil
 SkillEffects.SkillManager   = nil
 SkillEffects.StatsManager   = nil
--- Set by place bootstrap after WeaponManager loads.
--- Used to grant weapon XP to healer/support classes on healing, buff, and revive events.
-SkillEffects.WeaponManager  = nil
+
+-- §PB-D5: WeaponManager is now lazy-loaded instead of injected by the
+-- place bootstrap. SkillEffects is a "leaf" module (nothing else
+-- requires it), and WeaponManager doesn't require SkillEffects, so
+-- there's no cycle. Used to grant weapon XP to healer/support classes
+-- on healing, buff, and revive events.
+local _WeaponManager = nil
+local function getWeaponManager()
+    if _WeaponManager ~= nil then return _WeaponManager end
+    local ok, mod = pcall(function()
+        return require(script.Parent:WaitForChild("WeaponManager"))
+    end)
+    if ok and mod then _WeaponManager = mod else _WeaponManager = false end
+    return _WeaponManager or nil
+end
 
 -- Lazy-loaded for achievement tracking; no circular dep risk.
 local _AchievementManager = nil
@@ -95,7 +107,6 @@ function SkillEffects.Init(dependencies)
 	end)
 
 	initialized = true
-	print("[SkillEffects] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -595,8 +606,8 @@ function SkillEffects.ApplyPlayerBuff(player, effect, statName, isNegative)
 
 	-- Grant weapon XP to healer/support for applying beneficial buffs.
 	-- `player` here is the caster (the buff targets may differ, but XP belongs to the caster).
-	if not isNegative and SkillEffects.WeaponManager then
-		SkillEffects.WeaponManager.GrantBuffXP(player)
+	if not isNegative and getWeaponManager() then
+		getWeaponManager().GrantBuffXP(player)
 	end
 
 end
@@ -847,8 +858,8 @@ function SkillEffects.HealPlayer(target, amount, healer, wasCrit, critProcs)
 	humanoid.Health = humanoid.Health + actualHeal
 
 	-- Grant weapon XP to healer/support for effective healing (overheal excluded).
-	if healer and SkillEffects.WeaponManager and actualHeal > 0 then
-		SkillEffects.WeaponManager.GrantHealXP(healer, actualHeal)
+	if healer and getWeaponManager() and actualHeal > 0 then
+		getWeaponManager().GrantHealXP(healer, actualHeal)
 	end
 
 	-- Track healing done for achievements.

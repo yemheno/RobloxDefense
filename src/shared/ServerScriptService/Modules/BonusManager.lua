@@ -98,7 +98,6 @@ function BonusManager.Init()
 		BonusManager.SetupPlayer(p)
 	end
 
-	print("[BonusManager] Initialized")
 end
 
 function BonusManager.SetupPlayer(player)

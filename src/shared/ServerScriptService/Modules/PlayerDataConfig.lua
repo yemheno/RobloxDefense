@@ -141,10 +141,14 @@ PlayerDataConfig.AccountDefaults = {
 	-- Future classes added later will carry their own level requirements.
 	UnlockedClasses = { "Aegis", "Hunter", "Arcanist", "LifeSteward" },
 
-	-- Universal equipment (future)
+	-- Equipped accessory slots. Live in production: InventoryManager reads
+	-- and writes these; GearRating consumes them for the accessory score.
+	-- The accessories themselves live in `Inventory` below (one item per
+	-- `itemId` matching AccessoryConfig). These three fields are just the
+	-- equipped pointers per slot.
 	TrinketId = nil,
-	Ring1Id = nil,
-	Ring2Id = nil,
+	Ring1Id   = nil,
+	Ring2Id   = nil,
 
 	-- Meta tracking
 	HighestWaveReached = 0,

@@ -71,7 +71,6 @@ function MatchmakingManager.Init()
 		MatchmakingManager.HandlePlayerLeaving(player)
 	end)
 
-	print("[MatchmakingManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

@@ -107,7 +107,6 @@ function DeathSystem.Init()
 		DeathSystem.Update(dt)
 	end)
 
-	print("[DeathSystem] Initialized — CharacterAutoLoads disabled")
 end
 
 -- ═══════════════════════════════════════════════════════════

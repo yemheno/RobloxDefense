@@ -63,7 +63,6 @@ function SceneController.Init()
 	-- Request current scene info from server
 	NetworkManager.FireServer("RequestSceneInfo")
 
-	print("[SceneController] Initialized — default scene: Village")
 end
 
 -- ═══════════════════════════════════════════════════════════

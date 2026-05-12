@@ -660,7 +660,6 @@ function HordeModeSpawner.Setup(mobAI, mobRegistry)
     end
     HordeModeSpawner._mobsFolder = mobsFolder
 
-    print("[HordeModeSpawner] Initialized (Mobs folder cached:", mobsFolder.Name .. ")")
 end
 
 ---Start spawning — creates spawners for all current players and

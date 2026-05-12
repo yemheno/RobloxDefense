@@ -58,7 +58,6 @@ function DamageHandler.Init()
 	local wmMod = Modules:FindFirstChild("WeaponManager")
 	if wmMod then _WeaponManager = require(wmMod) end
 
-	print("[DamageHandler] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

@@ -107,7 +107,6 @@ function PartyManager.Init()
 		task.defer(PartyManager.BroadcastPlayerList)
 	end)
 
-	print("[PartyManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

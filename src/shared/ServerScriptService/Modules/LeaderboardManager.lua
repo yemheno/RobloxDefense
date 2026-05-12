@@ -292,7 +292,6 @@ function LeaderboardManager.Init()
         LeaderboardManager.UpdatePlayer(player)
     end)
 
-    print("[LeaderboardManager] Initialized (update every", UPDATE_INTERVAL, "s)")
 end
 
 return LeaderboardManager

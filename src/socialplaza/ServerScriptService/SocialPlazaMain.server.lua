@@ -2,17 +2,21 @@
 --[[
     Social Plaza place bootstrap.
 
-    Loads only the systems relevant to appearance and social features:
-      • Shared core  (player data, character, network)
-      • Cosmetic & animation config / manager
-      • Currency     (for wardrobe purchases and shop)
-      • NO combat, NO enemy AI, NO wave/defense systems.
+    SocialPlaza is the dedicated sandbox for testing animations,
+    cinematics, character appearance, and future open-world features.
+    It mirrors the Lobby's player-data + cosmetic + economy stack so a
+    player who teleports here has the same persistent state, but it
+    intentionally drops:
 
-    This place is the dedicated development environment for:
-      • Costume and outfit system  (CosmeticManager / PlayerCosmeticManager)
-      • Animation and emote system (AnimationSystem / AnimationConfig)
-      • Character appearance       (CharacterCreation / CharacterManager)
-      • Social features            (emote wheel, avatar preview, future parades)
+      • NPC system (NPCManager, LobbyNPCRegistry, SceneManager)
+      • Party / Matchmaking / Teleport (no launching into combat)
+      • SkillRegistry (§PB-D2: no skills, no consumer)
+
+    Combat systems (mobs, waves, defense line, attack handler) are NOT
+    loaded — same as Lobby.
+
+    Helpers (Load, RequireLoaded, IsAdmin) live in PlaceBootstrap.
+    Common per-player lifecycle (OnPlayerReady) lives in PlaceLifecycle.
 ]]
 
 local Players = game:GetService("Players")
@@ -20,112 +24,127 @@ local SSS     = game:GetService("ServerScriptService")
 
 local SharedModules = SSS:WaitForChild("Modules")
 
+local Boot      = require(SharedModules:WaitForChild("PlaceBootstrap"))
+local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
+local ctx       = Boot.MakeContext("SocialPlaza")
+local IsAdmin   = ctx.IsAdmin
+
 -- ───────────────────────────────────────────────────────────
--- ADMIN GUARD
+-- CONFIG (pure data, no Init)
 -- ───────────────────────────────────────────────────────────
-local _AdminCfg = require(SharedModules:WaitForChild("PlayerDataConfig"))
-local function IsAdmin(player)
-	if player.UserId == game.CreatorId then return true end
-	return _AdminCfg.AdminUserIds and _AdminCfg.AdminUserIds[player.UserId] == true
+ctx.Load(SharedModules, "PlayerDataConfig")
+ctx.Load(SharedModules, "WeaponConfig")
+ctx.Load(SharedModules, "ArmorConfig")
+ctx.Load(SharedModules, "GearUpgradeConfig")  -- §CFG-D1: shared upgrade tables
+ctx.Load(SharedModules, "ClassConfig")
+ctx.Load(SharedModules, "CharacterConfig")
+ctx.Load(SharedModules, "GameModeConfig")
+ctx.Load(SharedModules, "AnimationConfig")
+ctx.Load(SharedModules, "CosmeticConfig")
+
+-- ───────────────────────────────────────────────────────────
+-- NETWORK + READY GATE
+-- ───────────────────────────────────────────────────────────
+ctx.Load(SharedModules, "NetworkManager")
+ctx.Load(SharedModules, "ReadyGate")
+
+-- ───────────────────────────────────────────────────────────
+-- PLAYER DATA + CHARACTER
+-- ───────────────────────────────────────────────────────────
+ctx.Load(SharedModules, "PlayerDataManager")
+ctx.Load(SharedModules, "CharacterManager")
+
+-- ───────────────────────────────────────────────────────────
+-- REGISTRIES (no SkillRegistry — §PB-D2)
+-- ───────────────────────────────────────────────────────────
+ctx.Load(SharedModules, "WeaponRegistry")
+ctx.Load(SharedModules, "ArmorRegistry")
+
+-- ───────────────────────────────────────────────────────────
+-- STATS, CURRENCY, BONUSES
+-- ───────────────────────────────────────────────────────────
+ctx.Load(SharedModules, "StatsManager")
+ctx.Load(SharedModules, "CurrencyManager")
+
+ctx.Load(SharedModules, "BonusManager")
+if ctx.loaded["BonusManager"] and ctx.loaded["PlayerDataManager"] then
+    ctx.loaded["BonusManager"].InjectDataManager(ctx.loaded["PlayerDataManager"])
 end
 
--- ───────────────────────────────────────────────────────────
--- MODULE LOADER HELPER
--- ───────────────────────────────────────────────────────────
-local loaded = {}
-
-local function Load(parent, name)
-	local mod = parent:FindFirstChild(name)
-	if not mod then
-		warn("[SocialPlazaMain] Module not found:", name)
-		return nil
-	end
-	local ok, result = pcall(require, mod)
-	if not ok then
-		warn("[SocialPlazaMain] Failed to load", name, ":", result)
-		return nil
-	end
-	loaded[name] = result
-	if type(result.Init) == "function" then
-		result.Init()
-	end
-	return result
-end
-
--- Plaza-specific modules in SSS.SocialPlaza.Modules
-local SocialPlaza  = SSS:WaitForChild("SocialPlaza")
-local PlazaModules = SocialPlaza:WaitForChild("Modules")
+ctx.Load(SharedModules, "TalentEffectAggregator")
+ctx.Load(SharedModules, "TalentManager")
 
 -- ───────────────────────────────────────────────────────────
--- CONFIG  (pure data, no Init)
+-- CLASS, EQUIPMENT, COSMETICS  (the headline systems for this place)
 -- ───────────────────────────────────────────────────────────
-Load(SharedModules, "PlayerDataConfig")
-Load(SharedModules, "CharacterConfig")
-Load(SharedModules, "CosmeticConfig")
-Load(SharedModules, "AnimationConfig")
+ctx.Load(SharedModules, "ClassManager")
+ctx.Load(SharedModules, "WeaponManager")
+ctx.Load(SharedModules, "ArmorManager")
+ctx.Load(SharedModules, "VisualEquipmentManager")
+ctx.Load(SharedModules, "CosmeticManager")
 
 -- ───────────────────────────────────────────────────────────
--- NETWORK
+-- ACHIEVEMENTS / DAILY LOGIN / SHOP / LEADERBOARD
 -- ───────────────────────────────────────────────────────────
-Load(SharedModules, "NetworkManager")
+ctx.Load(SharedModules, "AchievementManager")
+ctx.Load(SharedModules, "EquipmentHandler")
+ctx.Load(SharedModules, "InventoryManager")
+ctx.Load(SharedModules, "DailyLoginManager")
+ctx.Load(SharedModules, "ShopManager")
+ctx.Load(SharedModules, "LeaderboardManager")
 
 -- ───────────────────────────────────────────────────────────
--- PLAYER DATA & CHARACTER
+-- RESOURCE (HUD resource bar even without combat)
 -- ───────────────────────────────────────────────────────────
-Load(SharedModules, "PlayerDataManager")
-Load(SharedModules, "CharacterManager")
+ctx.Load(SharedModules, "ResourceManager")
 
 -- ───────────────────────────────────────────────────────────
--- ECONOMY  (wardrobe purchases reference currency balance)
+-- MONITORING + SHARED HANDLERS + BONUS XP + ADMIN
 -- ───────────────────────────────────────────────────────────
-Load(SharedModules, "StatsManager")
-Load(SharedModules, "CurrencyManager")
+ctx.Load(SharedModules, "MonitoringSystem")
+ctx.Load(SharedModules, "SharedEventHandlers")
+ctx.Load(SharedModules, "BonusExpSystem")
+ctx.Load(SharedModules, "AdminTesting")
 
 -- ───────────────────────────────────────────────────────────
--- APPEARANCE SYSTEMS
+-- VALIDATE CRITICAL MODULES
 -- ───────────────────────────────────────────────────────────
-Load(SharedModules, "CosmeticManager")        -- wardrobe equip/unequip, visual application
+ctx.RequireLoaded("PlayerDataConfig")
+ctx.RequireLoaded("PlayerDataManager")
+ctx.RequireLoaded("NetworkManager")
+ctx.RequireLoaded("ReadyGate")
+ctx.RequireLoaded("StatsManager")
+ctx.RequireLoaded("CurrencyManager")
+ctx.RequireLoaded("CosmeticManager")
+ctx.RequireLoaded("SharedEventHandlers")
 
 -- ───────────────────────────────────────────────────────────
--- SHOP  (buy cosmetics directly in the plaza)
+-- SHARED EVENT HANDLERS
 -- ───────────────────────────────────────────────────────────
-Load(SharedModules, "ShopManager")
+local NetworkManager  = ctx.loaded["NetworkManager"]
+local DataManager     = ctx.loaded["PlayerDataManager"]
+local Config          = ctx.loaded["PlayerDataConfig"]
+local ResourceManager = ctx.loaded["ResourceManager"]
 
--- ───────────────────────────────────────────────────────────
--- DAILY LOGIN  (run here so players earn rewards on arrival)
--- ───────────────────────────────────────────────────────────
-Load(SharedModules, "DailyLoginManager")
-
--- ───────────────────────────────────────────────────────────
--- MONITORING  (error telemetry; lightweight in dev)
--- ───────────────────────────────────────────────────────────
-Load(SharedModules, "MonitoringSystem")
-
-
+ctx.loaded["SharedEventHandlers"].Register({
+    NetworkManager  = NetworkManager,
+    DataManager     = DataManager,
+    Config          = Config,
+    ResourceManager = ResourceManager,
+    IsAdmin         = IsAdmin,
+})
 
 -- ───────────────────────────────────────────────────────────
 -- PLAYER LIFECYCLE
 -- ───────────────────────────────────────────────────────────
-local function onPlayerAdded(player)
-	-- PlayerDataManager initialises data; CosmeticManager handles wardrobe;
-	-- CharacterManager applies the correct R6 appearance on character spawn.
-	-- No additional wiring needed at the plaza level for now.
-end
+Lifecycle.WireOnPlayerReady(ctx)
 
-local function onPlayerRemoving(player)
-	-- PlayerDataManager handles auto-save on remove.
-end
+Players.PlayerRemoving:Connect(function(player)
+    DataManager.RemovePlayer(player)
+end)
 
-Players.PlayerAdded:Connect(onPlayerAdded)
-Players.PlayerRemoving:Connect(onPlayerRemoving)
-
--- Handle players who joined before this script ran
-for _, player in ipairs(Players:GetPlayers()) do
-	task.spawn(onPlayerAdded, player)
-end
-
--- Signal clients that server initialisation is complete
-local NetworkManager = loaded["NetworkManager"]
-if NetworkManager then
-	NetworkManager.FireAllClients("ServerReady")
-end
+print(string.format("[SocialPlaza] Place ready — %d modules loaded", (function()
+    local n = 0
+    for _ in pairs(ctx.loaded) do n = n + 1 end
+    return n
+end)()))

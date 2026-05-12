@@ -38,9 +38,11 @@ local function getCurrencyManager()
 	return _CurrencyManager
 end
 
--- BonusManager: used by ModifySystemStat so debug stat changes survive BonusManager.Recalculate.
--- Direct data.Bonus writes (via DataManager.SetSystemStat) are overwritten on next Recalculate;
--- routing through BonusManager's "other" source persists them correctly.
+-- BonusManager: used by the admin ModifySystemStat path so debug stat
+-- changes survive BonusManager.Recalculate (which is the single writer
+-- into data.Bonus). PlayerBonusSystem.SetBonus / ModifyBonus also route
+-- through BonusManager "other" source now (§PDM-D3) — direct data.Bonus
+-- writes are no longer a thing.
 local _BonusManager = nil
 local function getBonusManager()
 	if not _BonusManager then

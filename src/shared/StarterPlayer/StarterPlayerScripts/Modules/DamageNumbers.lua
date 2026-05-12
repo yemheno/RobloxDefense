@@ -76,7 +76,6 @@ function DamageNumbers.Init()
 	NetworkManager.OnServerEvent("HealNumber", function(data)
 		DamageNumbers.ShowHealNumber(data)
 	end)
-	print("[DamageNumbers] Initialized")
 end
 
 function DamageNumbers.ShowDamageNumber(data)

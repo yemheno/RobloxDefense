@@ -603,7 +603,6 @@ function CharacterManager.Init()
 		end)
 	end
 
-	print("[CharacterManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

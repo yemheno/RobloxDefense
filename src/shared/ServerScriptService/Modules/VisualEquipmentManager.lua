@@ -83,7 +83,6 @@ function VisualEquipmentManager.Init()
 		end)
 	end
 
-	print("[VisualEquipmentManager] Initialized")
 end
 
 -- ═══════════════════════════════════════════════════════════

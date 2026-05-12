@@ -76,7 +76,6 @@ function MonitoringSystem.Init()
 		end
 	end)
 
-	print("[MonitoringSystem] Initialized - Monitoring enabled")
 end
 
 -- ═══════════════════════════════════════════════════════════

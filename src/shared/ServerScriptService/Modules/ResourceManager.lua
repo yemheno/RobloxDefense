@@ -132,7 +132,6 @@ function ResourceManager.Init()
 		end
 	end)
 
-	print("[ResourceManager] Initialized with", ResourceManager.GetBehaviorCount(), "behaviors")
 end
 
 function ResourceManager.SetupPlayer(player)

@@ -72,7 +72,6 @@ function MobRegistry.Init()
 
 	local count = 0
 	for _ in pairs(registeredMobs) do count = count + 1 end
-	print("[MobRegistry] Initialized -", count, "mobs loaded")
 end
 
 function MobRegistry.LoadAllMobs()

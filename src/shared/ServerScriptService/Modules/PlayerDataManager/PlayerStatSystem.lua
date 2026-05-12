@@ -14,31 +14,33 @@ PlayerStatSystem.GetDataStore = nil
 -- INITIALIZATION
 --============================================
 function PlayerStatSystem.Init()
-	print("[PlayerStatSystem] Initialized")
 end
 
 --============================================
 -- HEALTH APPLICATION
 --============================================
-function PlayerStatSystem.ApplyHealthToCharacter(player, character)
+-- §PDM-D9: explicit `freshSpawn` flag replaces the old `MaxHealth == 100`
+-- magic check. CharacterAdded handlers pass freshSpawn=true (the player
+-- just (re)spawned and should start at full HP); stat-change callers
+-- (AllocateStat etc.) leave it nil/false and get proportional rescaling
+-- so a +VIT allocation doesn't full-heal you mid-fight.
+function PlayerStatSystem.ApplyHealthToCharacter(player, character, freshSpawn)
 	local humanoid = character:WaitForChild("Humanoid")
 	local totalHealth = math.floor(PlayerStatSystem.GetTotalStat(player, "Health"))
 
-	-- Scale current HP proportionally so stat changes don't full-heal.
-	-- First spawn (MaxHealth == 100, the Roblox default) is treated as a full heal.
 	-- IMPORTANT: Read Health before setting MaxHealth, because Roblox auto-clamps
 	-- Health to MaxHealth when MaxHealth is reduced.
 	local oldMax = humanoid.MaxHealth
 	local oldHealth = humanoid.Health
 	humanoid.MaxHealth = totalHealth
 
-	if oldMax > 0 and oldMax ~= 100 then
-		-- Preserve HP percentage (using pre-clamp oldHealth)
+	if freshSpawn or oldMax <= 0 then
+		-- Fresh character: start at full HP.
+		humanoid.Health = totalHealth
+	else
+		-- Stat change mid-life: preserve HP percentage.
 		local ratio = math.clamp(oldHealth / oldMax, 0, 1)
 		humanoid.Health = math.max(1, math.floor(totalHealth * ratio))
-	else
-		-- First application: start at full health
-		humanoid.Health = totalHealth
 	end
 end
 
@@ -114,6 +116,14 @@ function PlayerStatSystem.AllocateStat(player, statName, points)
 	local data = playerDataStore[player]
 	if not data then return false, "No player data" end
 
+	-- §PDM-D8: enforce integer allocation. The stat budget is an integer
+	-- (1 point per level), so any non-integer points value would either
+	-- be a packet from a custom client trying to game the math, or a bug
+	-- upstream. Reject either way — never let fractions enter the table.
+	if type(points) ~= "number" or points ~= math.floor(points) then
+		return false, "Allocation must be an integer"
+	end
+
 	-- Validate stat is a primary stat
 	local isAllocatable = false
 	for _, name in ipairs(Config.PrimaryStats) do
@@ -127,14 +137,14 @@ function PlayerStatSystem.AllocateStat(player, statName, points)
 		return false, "Not a primary stat: " .. tostring(statName)
 	end
 
+	if points < 0 then
+		return false, "Cannot allocate negative points"
+	end
+
 	-- Check available points
 	local unallocated = PlayerStatSystem.GetUnallocatedPoints(player)
 	if points > unallocated then
 		return false, "Not enough points"
-	end
-
-	if points < 0 then
-		return false, "Cannot allocate negative points"
 	end
 
 	-- Apply allocation
@@ -153,6 +163,14 @@ function PlayerStatSystem.DeallocateStat(player, statName, points)
 	local playerDataStore = PlayerStatSystem.GetDataStore()
 	local data = playerDataStore[player]
 	if not data then return false, "No player data" end
+
+	-- §PDM-D8: same integer enforcement as AllocateStat.
+	if type(points) ~= "number" or points ~= math.floor(points) then
+		return false, "Deallocation must be an integer"
+	end
+	if points < 0 then
+		return false, "Cannot deallocate negative points"
+	end
 
 	local classData = data.Classes[data.ActiveClass]
 	local currentAllocation = classData.Allocated[statName] or 0

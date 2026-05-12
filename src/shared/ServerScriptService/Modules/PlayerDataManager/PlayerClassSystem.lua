@@ -13,7 +13,6 @@ PlayerClassSystem.GetDataStore = nil
 -- INITIALIZATION
 --============================================
 function PlayerClassSystem.Init()
-	print("[PlayerClassSystem] Initialized")
 end
 
 --============================================

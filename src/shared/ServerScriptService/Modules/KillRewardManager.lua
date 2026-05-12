@@ -32,9 +32,19 @@ local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 local Config            = require(Modules:WaitForChild("PlayerDataConfig"))
 local GameModeConfig    = require(Modules:WaitForChild("GameModeConfig"))
 
--- Set by place bootstrap after WeaponManager loads.
--- Used to grant weapon XP to DPS classes on mob kills.
-KillRewardManager.WeaponManager = nil
+-- §PB-D5: WeaponManager is now lazy-loaded instead of injected by the
+-- place bootstrap. KillRewardManager is a leaf module; WeaponManager
+-- doesn't require it, so there's no cycle. Used to grant weapon XP to
+-- DPS classes on mob kills.
+local _WeaponManager = nil
+local function getWeaponManager()
+    if _WeaponManager ~= nil then return _WeaponManager end
+    local ok, mod = pcall(function()
+        return require(Modules:WaitForChild("WeaponManager"))
+    end)
+    if ok and mod then _WeaponManager = mod else _WeaponManager = false end
+    return _WeaponManager or nil
+end
 
 -- Lazily loaded (avoid circular deps / optional systems)
 local DropManager        = nil
@@ -300,7 +310,7 @@ function KillRewardManager.ProcessKill(player, mob, damageResult)
 		local mobType = mobTier == "miniboss" and "Mini"
 			or mobTier == "boss" and "Boss"
 			or "Normal"
-		local wm = KillRewardManager.WeaponManager
+		local wm = getWeaponManager()
 		if wm then
 			wm.GrantKillXP(player, mobLevel, mobType)
 		end
