@@ -34,7 +34,7 @@ local function SocialPlazaApp()
 			setShowCharCreate(true)
 		end)
 		-- Re-request status now the listener is ready — avoids join race condition
-		NetworkManager.FireServer("RequestCharacterCreationCheck")
+		NetworkManager.FireServer("RequestCharacterStatus")
 		return function()
 			if conn and type(conn.Disconnect) == "function" then
 				conn:Disconnect()
