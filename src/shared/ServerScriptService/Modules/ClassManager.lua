@@ -1,288 +1,320 @@
 -- ServerScriptService/Modules/ClassManager
+--[[
+    ClassManager
+    ============
+    Thin orchestration layer over ClassConfig, PlayerDataManager, and
+    the per-class equipment / cosmetic / resource modules.
+
+    State storage: NONE in this module. Everything persistent lives in
+    PlayerData (Account.UnlockedClasses, ActiveClass, LastClassSwitch,
+    data.Classes[name]); transient class metadata lives in ClassConfig.
+
+    Public API
+    ----------
+      ClassManager.Init()
+      ClassManager.GetClassName(player)
+      ClassManager.GetClassData(player)
+      ClassManager.IsRanged(player)
+      ClassManager.GetAttackShape(player)        -- WeaponManager
+      ClassManager.GetShapeParams(player)        -- WeaponManager
+      ClassManager.GetAttackSpeed(player)        -- WeaponManager
+      ClassManager.GetAttackCooldown(player)
+      ClassManager.GetWeaponAttack(player)       -- WeaponManager
+      ClassManager.GetProjectileConfig(player)
+      ClassManager.GetBasicAttackAnimation(player)
+      ClassManager.ApplyInnateBonus(player, className?)
+      ClassManager.SetClass(player, className)
+
+    Network events
+    --------------
+      RequestClassSwitch  (client → server)
+      ClassSwitchResult   (server → client)
+
+    §T1.2 changes
+    -------------
+      • D2 — six `task.spawn(require(...))` Init fan-outs replaced with
+        lazy getters (same pattern as the existing getBonusManager).
+        Eliminates the boot race where a class-switch in the first
+        ~100 ms would silently no-op the equipment/visual/resource
+        updates because the module ref was still nil.
+      • D3 — `GetClassConfig(name)` deleted. Use `ClassConfig.GetClass`.
+      • D7 — class-side attack fallbacks dropped. WeaponManager owns
+        attackShape / shapeParams / attackSpeed; ClassConfig no longer
+        carries them.
+      • D8 — comment on the GameStateManager silent-pass in non-combat
+        places.
+]]
 
 local ClassManager = {}
 
 local Modules = script.Parent
-local ClassConfig = require(Modules:WaitForChild("ClassConfig"))
+local ClassConfig       = require(Modules:WaitForChild("ClassConfig"))
 local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 
--- WeaponManager loaded after init (circular dependency prevention)
-local WeaponManager = nil
+-- ─────────────────────────────────────────────────────────────────────
+-- LAZY GETTERS (§T1.2/D2)
+-- Required modules are loaded on first use rather than spawned-and-
+-- forgotten in Init. Each getter caches the result in an upvalue so
+-- the require() runs at most once per server.
+-- ─────────────────────────────────────────────────────────────────────
 
--- ArmorManager loaded lazily (same pattern as WeaponManager)
-local ArmorManager = nil
-
--- ResourceManager loaded lazily to notify on class change
-local ResourceManager = nil
-
--- VisualEquipmentManager loaded lazily for visual re-equip on class switch
-local VisualEquipmentManager = nil
-
--- CosmeticManager loaded lazily for outfit swap on class switch
-local CosmeticManager = nil
-
--- GameStateManager loaded lazily to guard class switches during combat
-local GameStateManager = nil
-
--- BonusManager loaded lazily for innate bonus application
-local BonusManager = nil
+local _BonusManager
 local function getBonusManager()
-	if not BonusManager then
-		local bmMod = Modules:FindFirstChild("BonusManager")
-		if bmMod then BonusManager = require(bmMod) end
-	end
-	return BonusManager
+    if _BonusManager == nil then
+        local mod = Modules:FindFirstChild("BonusManager")
+        _BonusManager = (mod and require(mod)) or false
+    end
+    return _BonusManager or nil
 end
 
---============================================
+local _WeaponManager
+local function getWeaponManager()
+    if _WeaponManager == nil then
+        local mod = Modules:FindFirstChild("WeaponManager")
+        _WeaponManager = (mod and require(mod)) or false
+    end
+    return _WeaponManager or nil
+end
+
+local _ArmorManager
+local function getArmorManager()
+    if _ArmorManager == nil then
+        local mod = Modules:FindFirstChild("ArmorManager")
+        _ArmorManager = (mod and require(mod)) or false
+    end
+    return _ArmorManager or nil
+end
+
+local _ResourceManager
+local function getResourceManager()
+    if _ResourceManager == nil then
+        local mod = Modules:FindFirstChild("ResourceManager")
+        _ResourceManager = (mod and require(mod)) or false
+    end
+    return _ResourceManager or nil
+end
+
+local _VisualEquipmentManager
+local function getVisualEquipmentManager()
+    if _VisualEquipmentManager == nil then
+        local mod = Modules:FindFirstChild("VisualEquipmentManager")
+        _VisualEquipmentManager = (mod and require(mod)) or false
+    end
+    return _VisualEquipmentManager or nil
+end
+
+local _CosmeticManager
+local function getCosmeticManager()
+    if _CosmeticManager == nil then
+        local mod = Modules:FindFirstChild("CosmeticManager")
+        _CosmeticManager = (mod and require(mod)) or false
+    end
+    return _CosmeticManager or nil
+end
+
+local _GameStateManager
+local function getGameStateManager()
+    if _GameStateManager == nil then
+        local mod = Modules:FindFirstChild("GameStateManager")
+        _GameStateManager = (mod and require(mod)) or false
+    end
+    return _GameStateManager or nil
+end
+
+-- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
---============================================
+-- ═══════════════════════════════════════════════════════════
 function ClassManager.Init()
-	-- Delayed WeaponManager require (it requires us, we require it)
-	task.spawn(function()
-		WeaponManager = require(Modules:WaitForChild("WeaponManager"))
-	end)
+    -- §T1.2/D1: ClassManager owns the per-player innate-bonus pump.
+    -- PlaceLifecycle's per-player chain DELIBERATELY does not call this;
+    -- routing it through OnPlayerDataReady directly here means the call
+    -- fires regardless of place and regardless of whether PlaceLifecycle
+    -- ran for this player.
+    PlayerDataManager.OnPlayerDataReady(function(player)
+        ClassManager.ApplyInnateBonus(player)
+    end)
 
-	-- Delayed ArmorManager require (same circular-dep pattern)
-	task.spawn(function()
-		ArmorManager = require(Modules:WaitForChild("ArmorManager"))
-	end)
+    local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 
-	-- Delayed VisualEquipmentManager require
-	task.spawn(function()
-		VisualEquipmentManager = require(Modules:WaitForChild("VisualEquipmentManager"))
-	end)
+    -- Pre-create ClassSwitchResult so the client's WaitForChild resolves
+    -- immediately on mount.
+    NetworkManager.GetEvent("ClassSwitchResult")
 
-	-- Delayed CosmeticManager require
-	task.spawn(function()
-		local cm = Modules:FindFirstChild("CosmeticManager")
-		if cm then
-			CosmeticManager = require(cm)
-		end
-	end)
+    NetworkManager.OnClientEvent("RequestClassSwitch", function(player, className)
+        if not ClassConfig.Classes[className] then
+            NetworkManager.FireClient(player, "ClassSwitchResult", false, "Unknown class: " .. tostring(className))
+            return
+        end
 
-	-- Lazy load GameStateManager (may not exist in all places)
-	task.spawn(function()
-		local gsm = Modules:FindFirstChild("GameStateManager")
-		if gsm then
-			GameStateManager = require(gsm)
-		end
-	end)
+        -- §T1.2/D8: GameStateManager is only loaded in combat places
+        -- (LaneDefense / HordeMode / CentralBoss). Non-combat places
+        -- (Lobby / SocialPlaza) don't load it and this check falls
+        -- through — by design, since there is no "combat" state to
+        -- block against in those places.
+        local gsm = getGameStateManager()
+        if gsm and gsm.IsInGame() then
+            NetworkManager.FireClient(player, "ClassSwitchResult", false, "Cannot switch class during combat")
+            return
+        end
 
-	-- Lazy load ResourceManager
-	task.spawn(function()
-		local rm = Modules:FindFirstChild("ResourceManager")
-		if rm then
-			ResourceManager = require(rm)
-		end
-	end)
+        local canSwitch, reason = PlayerDataManager.CanSwitchClass(player)
+        if not canSwitch then
+            NetworkManager.FireClient(player, "ClassSwitchResult", false, "Cooldown: " .. tostring(math.ceil(reason)) .. "s remaining")
+            return
+        end
 
-	-- Apply innate class passives automatically when any player's data loads.
-	-- This replaces the per-game-mode calls scattered in Main scripts and
-	-- ensures innate bonuses are always present regardless of boot order.
-	PlayerDataManager.OnPlayerDataReady(function(player)
-		ClassManager.ApplyInnateBonus(player)
-	end)
-
-	-- Remote: client asks to switch to a class they've already unlocked
-	local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
-
-	-- Pre-create ClassSwitchResult so the client's WaitForChild resolves immediately on mount
-	NetworkManager.GetEvent("ClassSwitchResult")
-
-	NetworkManager.OnClientEvent("RequestClassSwitch", function(player, className)
-		if not ClassConfig.Classes[className] then
-			NetworkManager.FireClient(player, "ClassSwitchResult", false, "Unknown class: " .. tostring(className))
-			return
-		end
-
-		-- Block class switching during active combat (Preparing / Defending)
-		if GameStateManager and GameStateManager.IsInGame() then
-			NetworkManager.FireClient(player, "ClassSwitchResult", false, "Cannot switch class during combat")
-			return
-		end
-
-		local canSwitch, reason = PlayerDataManager.CanSwitchClass(player)
-		if not canSwitch then
-			NetworkManager.FireClient(player, "ClassSwitchResult", false, "Cooldown: " .. tostring(math.ceil(reason)) .. "s remaining")
-			return
-		end
-
-		local ok, err = ClassManager.SetClass(player, className)
-		NetworkManager.FireClient(player, "ClassSwitchResult", ok, err or className)
-	end)
-
+        local ok, err = ClassManager.SetClass(player, className)
+        NetworkManager.FireClient(player, "ClassSwitchResult", ok, err or className)
+    end)
 end
 
---============================================
+-- ═══════════════════════════════════════════════════════════
 -- CLASS INFO
---============================================
+-- ═══════════════════════════════════════════════════════════
 function ClassManager.GetClassName(player)
-	return PlayerDataManager.GetActiveClass(player)
+    return PlayerDataManager.GetActiveClass(player)
 end
 
 function ClassManager.GetClassData(player)
-	local className = ClassManager.GetClassName(player)
-	return ClassConfig.Classes[className]
+    local className = ClassManager.GetClassName(player)
+    return ClassConfig.Classes[className]
 end
 
-function ClassManager.GetClassConfig(className)
-	return ClassConfig.Classes[className]
-end
-
---============================================
+-- ═══════════════════════════════════════════════════════════
 -- ATTACK TYPE (Class determines melee vs ranged)
---============================================
+-- ═══════════════════════════════════════════════════════════
 function ClassManager.IsRanged(player)
-	local classData = ClassManager.GetClassData(player)
-	return classData and classData.ranged == true
+    local classData = ClassManager.GetClassData(player)
+    return classData and classData.ranged == true
 end
 
---============================================
--- ATTACK SHAPE (Now from WEAPON, not class!)
---============================================
-function ClassManager.GetAttackShape(player)
-	-- Try to get from weapon first
-	if WeaponManager then
-		local shape, params = WeaponManager.GetAttackShape(player)
-		if shape then
-			return shape
-		end
-	end
+-- ═══════════════════════════════════════════════════════════
+-- ATTACK SHAPE / SPEED — owned by WeaponManager (§T1.2/D7)
+-- The class-side defaults (attackShape, shapeParams, baseAttackSpeed)
+-- have been removed from ClassConfig. WeaponManager.GetAttackShape /
+-- GetAttackSpeed are the canonical sources; they handle the "no
+-- weapon equipped" case themselves.
+-- ═══════════════════════════════════════════════════════════
 
-	-- Fallback to class default
-	local classData = ClassManager.GetClassData(player)
-	return classData and classData.attackShape or "Circle"
+function ClassManager.GetAttackShape(player)
+    local wm = getWeaponManager()
+    if not wm then return nil end
+    local shape, _ = wm.GetAttackShape(player)
+    return shape
 end
 
 function ClassManager.GetShapeParams(player)
-	-- Try to get from weapon first
-	if WeaponManager then
-		local shape, params = WeaponManager.GetAttackShape(player)
-		if params then
-			return params
-		end
-	end
-
-	-- Fallback to class default
-	local classData = ClassManager.GetClassData(player)
-	return classData and classData.shapeParams or { radius = 5 }
+    local wm = getWeaponManager()
+    if not wm then return nil end
+    local _, params = wm.GetAttackShape(player)
+    return params
 end
 
---============================================
--- ATTACK SPEED (Now from WEAPON, not class!)
---============================================
 function ClassManager.GetAttackSpeed(player)
-	-- Try to get from weapon first
-	if WeaponManager then
-		local speed = WeaponManager.GetAttackSpeed(player)
-		if speed then
-			return speed
-		end
-	end
-
-	-- Fallback to class default
-	local classData = ClassManager.GetClassData(player)
-	return classData and classData.baseAttackSpeed or 1.0
+    local wm = getWeaponManager()
+    if not wm then return 1.0 end
+    return wm.GetAttackSpeed(player) or 1.0
 end
 
 function ClassManager.GetAttackCooldown(player)
-	local speed = ClassManager.GetAttackSpeed(player)
-	return 1 / speed
+    return 1 / ClassManager.GetAttackSpeed(player)
 end
 
---============================================
+-- ═══════════════════════════════════════════════════════════
 -- WEAPON ATTACK VALUE
---============================================
+-- ═══════════════════════════════════════════════════════════
 function ClassManager.GetWeaponAttack(player)
-	if WeaponManager then
-		return WeaponManager.GetWeaponAttack(player)
-	end
-	return 10  -- Fallback
+    local wm = getWeaponManager()
+    if wm then return wm.GetWeaponAttack(player) end
+    return 10  -- pre-WeaponManager fallback; should never fire in practice
 end
 
---============================================
+-- ═══════════════════════════════════════════════════════════
 -- PROJECTILE CONFIG (Ranged classes only)
---============================================
+-- ═══════════════════════════════════════════════════════════
 function ClassManager.GetProjectileConfig(player)
-	local classData = ClassManager.GetClassData(player)
-	return classData and classData.projectile or nil
+    local classData = ClassManager.GetClassData(player)
+    return classData and classData.projectile or nil
 end
 
---============================================
+-- ═══════════════════════════════════════════════════════════
 -- ANIMATIONS
---============================================
+-- ═══════════════════════════════════════════════════════════
 function ClassManager.GetBasicAttackAnimation(player)
-	local classData = ClassManager.GetClassData(player)
-	if not classData then return nil end
-	return classData.animations and classData.animations.basicAttack or nil
+    local classData = ClassManager.GetClassData(player)
+    if not classData then return nil end
+    return classData.animations and classData.animations.basicAttack or nil
 end
 
---============================================
+-- ═══════════════════════════════════════════════════════════
 -- INNATE BONUS APPLICATION
---============================================
---- Reads the active (or given) class's innateBonuses and writes them
---- into BonusManager's "innate" source, replacing any old class's passives.
+-- ═══════════════════════════════════════════════════════════
+--- Read the active (or given) class's innateBonuses and write them into
+--- BonusManager's "innate" source, replacing any old class's passives.
 function ClassManager.ApplyInnateBonus(player, className)
-	local bm = getBonusManager()
-	if not bm then return end
-	local cn = className or PlayerDataManager.GetActiveClass(player)
-	local classConfig = ClassConfig.Classes[cn]
-	bm.SetSourceBonuses(player, "innate", (classConfig and classConfig.innateBonuses) or {})
+    local bm = getBonusManager()
+    if not bm then return end
+    local cn = className or PlayerDataManager.GetActiveClass(player)
+    local classConfig = ClassConfig.Classes[cn]
+    bm.SetSourceBonuses(player, "innate", (classConfig and classConfig.innateBonuses) or {})
 end
 
---============================================
+-- ═══════════════════════════════════════════════════════════
 -- CLASS SWITCHING
---============================================
+-- ═══════════════════════════════════════════════════════════
 function ClassManager.SetClass(player, className)
-	if not ClassConfig.Classes[className] then
-		return false, "Invalid class"
-	end
+    if not ClassConfig.Classes[className] then
+        return false, "Invalid class"
+    end
 
-	local oldClassName = PlayerDataManager.GetActiveClass(player)
+    local oldClassName = PlayerDataManager.GetActiveClass(player)
 
-	local success, err = PlayerDataManager.SetActiveClass(player, className)
-	if not success then
-		return false, err
-	end
+    local success, err = PlayerDataManager.SetActiveClass(player, className)
+    if not success then
+        return false, err
+    end
 
-	-- Notify ResourceManager so it resets the resource bar for the new class
-	if ResourceManager and ResourceManager.OnClassChanged then
-		ResourceManager.OnClassChanged(player, className, oldClassName)
-	end
+    -- Resource bar reset for the new class
+    local rm = getResourceManager()
+    if rm and rm.OnClassChanged then
+        rm.OnClassChanged(player, className, oldClassName)
+    end
 
-	-- Ensure starter equipment for the new class
-	if WeaponManager then
-		WeaponManager.EnsureStarterWeapon(player)
-		PlayerDataManager.RefreshWeaponStats(player)
-	end
+    -- Ensure starter equipment for the new class
+    local wm = getWeaponManager()
+    if wm then
+        wm.EnsureStarterWeapon(player)
+        PlayerDataManager.RefreshWeaponStats(player)
+    end
 
-	if ArmorManager then
-		ArmorManager.EnsureStarterArmor(player)
-	end
+    local am = getArmorManager()
+    if am then
+        am.EnsureStarterArmor(player)
+    end
 
-	-- Re-attach weapon visual for the new class
-	if VisualEquipmentManager then
-		local WeaponRegistry = require(Modules:WaitForChild("WeaponRegistry"))
+    -- Re-attach the weapon visual for the new class
+    local vem = getVisualEquipmentManager()
+    if vem and wm then
+        local WeaponRegistry = require(Modules:WaitForChild("WeaponRegistry"))
+        local wInst = wm.GetEquippedWeapon(player)
+        if wInst then
+            local wDef = WeaponRegistry.GetWeapon(wInst.weaponId)
+            if wDef and wDef.weaponSlot then
+                vem.AttachClassWeapon(player, className, wDef.weaponSlot)
+            end
+        end
+    end
 
-		local wInst = WeaponManager and WeaponManager.GetEquippedWeapon(player)
-		if wInst then
-			local wDef = WeaponRegistry.GetWeapon(wInst.weaponId)
-			if wDef and wDef.weaponSlot then
-				VisualEquipmentManager.AttachClassWeapon(player, className, wDef.weaponSlot)
-			end
-		end
-	end
+    -- Swap cosmetics (outfit, headgear) to match new class defaults
+    local cm = getCosmeticManager()
+    if cm then
+        cm.OnClassSwitched(player, className)
+    end
 
-	-- Swap cosmetics (outfit, headgear) to match new class defaults/restrictions
-	if CosmeticManager then
-		CosmeticManager.OnClassSwitched(player, className)
-	end
+    -- Apply innate class passives via BonusManager
+    ClassManager.ApplyInnateBonus(player, className)
 
-	-- Apply innate class passives via BonusManager
-	ClassManager.ApplyInnateBonus(player, className)
-
-	return true
+    return true
 end
 
 return ClassManager

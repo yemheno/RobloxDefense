@@ -39,6 +39,20 @@ local Refinement
 local TierSystem
 local BonusSystem
 
+-- §T0-FOLLOWUP/L1: per-player Janitor tracks the CharacterAdded conn so
+-- it's torn down on PlayerRemoving rather than relying on Roblox to
+-- eventually GC the Player object.
+local Janitor = require(Modules:WaitForChild("Janitor"))
+local playerJanitors = setmetatable({}, { __mode = "k" })
+local function getPlayerJanitor(player)
+	local jan = playerJanitors[player]
+	if not jan then
+		jan = Janitor.new()
+		playerJanitors[player] = jan
+	end
+	return jan
+end
+
 --============================================
 -- INITIALIZATION
 --============================================
@@ -104,12 +118,15 @@ function WeaponManager.Init()
 	end
 
 	local function wireCharacterAdded(player)
-		player.CharacterAdded:Connect(function()
+		-- §T0-FOLLOWUP/L1: track the conn through the per-player Janitor
+		-- so PlayerRemoving cleanly tears it down.
+		local jan = getPlayerJanitor(player)
+		jan:Add(player.CharacterAdded:Connect(function()
 			-- Settle: let Humanoid + R6 grip attachments wire up
 			-- before we ask the visual layer to install welds.
 			task.wait(0.5)
 			ensureWeaponSetup(player)
-		end)
+		end))
 		if player.Character then
 			ensureWeaponSetup(player)
 		end
@@ -130,6 +147,11 @@ function WeaponManager.Init()
 	-- Clean up on player leaving
 	Players.PlayerRemoving:Connect(function(player)
 		initializedPlayers[player] = nil
+		local jan = playerJanitors[player]
+		if jan then
+			jan:Destroy()
+			playerJanitors[player] = nil
+		end
 	end)
 
 end
