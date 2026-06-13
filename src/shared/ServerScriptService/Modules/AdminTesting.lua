@@ -2,12 +2,20 @@
 --[[
     Admin-only testing and debugging panel server handler.
 
-    ALL requests are validated server-side: the player's UserId must match
-    game.CreatorId.  Client-side UI is purely cosmetic — no trust is given.
+    §T0P2/X25: ALL requests are validated server-side — the player must be
+    the game creator OR be in PlayerDataConfig.AdminUserIds (single source
+    of truth). Client-side UI is purely cosmetic — no trust is given.
+
+    ⚠ §T0P2/X16 (parked in docs/TODO.md): this whole module + the
+    AdminAction/DebugCommand remote surface is scheduled for REMOVAL
+    before public release — admin tooling moves to Studio runtime
+    console commands. Any remote admin surface is attack surface for
+    custom clients, even gated.
 
     Supported actions (sent via "AdminAction" RemoteEvent):
         "ResetData"          – Wipe account progression to defaults (level 1, 0 currencies)
-        "SetLevel"      N    – Jump to level N (1–1000)
+        "WipeAndKick"        – Hard-delete saved data from the DataStore, then kick
+        "SetLevel"      N    – Jump to level N (1–9999)
         "AddXP"         N    – Grant N XP (uses the canonical AddExperience path)
         "AddMerits"     N    – Grant N Merits
         "AddEssence"    N    – Grant N Essence
@@ -16,6 +24,7 @@
         "MaxWeapon"          – Set weapon to max refinement (+15) and tier 12 (debug convenience)
         "SetGender"     S    – Set gender to "Male" or "Female" and respawn to re-apply template
         "SetClass"      S    – Switch to a class by name (bypasses cooldowns/unlock requirements)
+        "ResetCooldowns"     – Reset all skill cooldowns instantly
 
     Server replies with "AdminActionResult" { ok=bool, message=string }.
 ]]
@@ -115,6 +124,28 @@ function actions.ResetData(player, _)
 		end
 	end
 
+	-- §T0P2/X18: the old reset zeroed the DATA but left the APPLIED
+	-- state live — talent bonuses stayed in BonusManager's "talent"
+	-- source and max HP stayed inflated until rejoin, polluting test
+	-- results on exactly the accounts used for tier live-tests.
+	do
+		local taMod = Modules:FindFirstChild("TalentEffectAggregator")
+		if taMod then
+			local ok, ta = pcall(require, taMod)
+			if ok and ta and ta.Rebuild then
+				ta.Rebuild(player, {})  -- empty allocation set → clears "talent" source
+			end
+		end
+		local tmMod = Modules:FindFirstChild("TalentManager")
+		if tmMod then
+			local ok, tm = pcall(require, tmMod)
+			if ok and tm and tm.SendState then tm.SendState(player) end
+		end
+		if player.Character then
+			pdm.ApplyHealthToCharacter(player, player.Character)
+		end
+	end
+
 	-- Force leaderstats update
 	pdm.SetAccountData(player, "Merits", 0)
 	pdm.SetAccountData(player, "Level", 1)
@@ -143,6 +174,10 @@ function actions.SetLevel(player, args)
 	data.Account.Level      = level
 	data.Account.Experience = 0
 	pdm.SetAccountData(player, "Level", level)
+
+	-- §T0P2/X18: unlock any level-gated classes at the new level — the
+	-- natural level-up path does this; SetLevel used to skip it.
+	pdm.CheckUnlockEligibleClasses(player)
 
 	local cfg = getConfig()
 	getNet().FireClient(player, "PlayerInfoUpdate", {

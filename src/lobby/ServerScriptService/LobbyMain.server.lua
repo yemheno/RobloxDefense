@@ -16,16 +16,22 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
-local SharedModules = SSS:WaitForChild("Modules")
-local LobbyModules  = SSS:WaitForChild("Lobby"):WaitForChild("Modules")
+-- §T0P2/G3: bounded waits + loud error. The old no-timeout WaitForChild
+-- hung the server forever, silently, if the place structure was broken.
+local SharedModules = SSS:WaitForChild("Modules", 10)
+    or error("[LobbyMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
+local LobbyFolder   = SSS:WaitForChild("Lobby", 10)
+    or error("[LobbyMain] ServerScriptService.Lobby missing after 10 s — place structure broken", 0)
+local LobbyModules  = LobbyFolder:WaitForChild("Modules", 10)
+    or error("[LobbyMain] ServerScriptService.Lobby.Modules missing after 10 s — place structure broken", 0)
 
 local Boot      = require(SharedModules:WaitForChild("PlaceBootstrap"))
 local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
 local ctx       = Boot.MakeContext("Lobby")
 local IsAdmin   = ctx.IsAdmin
 
--- Expose for the place's other scripts that want the same loud-fail guard.
-_G.LobbyMainRequireLoaded = ctx.RequireLoaded
+-- §T0P2/X19: _G.LobbyMainRequireLoaded removed — write-only global,
+-- zero consumers anywhere in src/.
 
 -- ───────────────────────────────────────────────────────────
 -- CONFIG (pure data, no Init)
@@ -214,11 +220,11 @@ end)
 -- ───────────────────────────────────────────────────────────
 -- PLAYER LIFECYCLE
 -- ───────────────────────────────────────────────────────────
+-- §T0-FOLLOWUP/L4: PlayerDataManager.Init already binds RemovePlayer to
+-- PlayerRemoving. A second binding here used to fire after the first
+-- cleared playerDataStore[player], which surfaced as a noisy
+-- "in-memory data is nil" warn on every disconnect.
 Lifecycle.WireOnPlayerReady(ctx)
-
-Players.PlayerRemoving:Connect(function(player)
-    DataManager.RemovePlayer(player)
-end)
 
 print(string.format("[Lobby] Place ready — %d modules loaded", (function()
     local n = 0

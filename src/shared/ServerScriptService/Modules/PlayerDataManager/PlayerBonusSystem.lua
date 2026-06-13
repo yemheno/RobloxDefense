@@ -102,9 +102,11 @@ local BONUS_STAT_MAPPING = {
 	lifesteal = "Lifesteal",
 	cooldownReduction = "CooldownReduction",
 	determination = "Determination",
-	rage = "Rage",
-	mana = "Mana",
-	focus = "Focus",
+	-- §T0P2/X23: rage/mana/focus rows deleted — pre-rework resource
+	-- names with no matching key in PlayerDataConfig.BonusStats (the
+	-- current resources are Determination/Aether/KillerInstinct/
+	-- LifeEnergy). No registry rolls them; if one ever had, BonusManager
+	-- would have warn-rejected the write at runtime.
 	tauntDuration = "TauntDuration",
 	bonusHealth = "BonusHealth",
 	damageReduction = "DamageReduction",

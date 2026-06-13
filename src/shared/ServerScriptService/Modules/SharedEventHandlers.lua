@@ -170,19 +170,14 @@ function SharedEventHandlers.Register(deps)
 	end
 
 	-- ── GetPlayerInfo ─────────────────────────────────────
+	-- §T0P2/X11: no retry loop. The old 40×0.25 s wait parked a thread
+	-- per request — at the default 30/s rate limit one client could
+	-- stack ~300 yielding threads. The data-ready auto-push above
+	-- already covers the load race; if data isn't there yet, the push
+	-- will arrive the moment it is.
 	NetworkManager.GetEvent("GetPlayerInfo")
 	NetworkManager.OnClientEvent("GetPlayerInfo", function(player)
-		local data = DataManager.GetData(player)
-		-- Data may still be loading from the DataStore — retry for up to 10 s.
-		if not data then
-			for _ = 1, 40 do
-				task.wait(0.25)
-				data = DataManager.GetData(player)
-				if data then break end
-			end
-		end
-		if not data then return end
-
+		if not DataManager.GetData(player) then return end
 		sendPlayerInfo(player)
 	end)
 
@@ -234,18 +229,11 @@ function SharedEventHandlers.Register(deps)
 			return
 		end
 
-		-- Reset all stat allocations for the active class.
-		-- Replace the table outright (same as ResetAllocation in StatSystem) so
-		-- any orphaned keys that slipped through sanitization are also removed.
-		local className = data.ActiveClass
-		local classData = data.Classes[className]
-		if classData then
-			local fresh = {}
-			for _, s in ipairs(Config.PrimaryStats) do
-				fresh[s] = 0
-			end
-			classData.Allocated = fresh
-		end
+		-- §T0P2/X12: use the canonical ResetAllocation instead of an
+		-- inline copy. The inline version had already drifted: it
+		-- skipped the character-health reapply, so a respec that
+		-- dropped VIT left inflated HP until the next respawn.
+		DataManager.ResetAllocation(player)
 
 		NetworkManager.FireClient(player, "RespecResult", { ok = true, type = "stats" })
 

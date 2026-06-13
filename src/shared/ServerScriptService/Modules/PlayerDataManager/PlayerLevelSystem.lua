@@ -5,7 +5,7 @@ local PlayerLevelSystem = {}
 local Modules = script.Parent.Parent
 local Config = require(Modules:WaitForChild("PlayerDataConfig"))
 local ChapterConfig = require(Modules:WaitForChild("ChapterConfig"))
-local ClassMasteryConfig = require(Modules:WaitForChild("ClassMasteryConfig"))
+-- §T0P2/X21: ClassMasteryConfig require removed with AddClassMasteryXP.
 
 -- Set by PlayerDataManager
 PlayerLevelSystem.PlayerDataManager = nil
@@ -66,18 +66,22 @@ function PlayerLevelSystem.AddExperience(player, amount)
 		end
 
 		data.Account.Experience = data.Account.Experience - requiredXP
-		data.Account.Level = data.Account.Level + 1
+
+		-- §T0P2/X4: route the level write through SetAccountData — the
+		-- SINGLE write path that also syncs the leaderstat, the Level
+		-- player Attribute (read by TeleportDataReader's fallback), and
+		-- RefreshPowerScore. The old direct write + manual leaderstat
+		-- update left the attribute and Power score stale after every
+		-- natural level-up (admin SetLevel was unaffected, which is why
+		-- live tests never caught it).
+		local PDM = PlayerLevelSystem.PlayerDataManager
+		if PDM and PDM.SetAccountData then
+			PDM.SetAccountData(player, "Level", data.Account.Level + 1)
+		else
+			data.Account.Level = data.Account.Level + 1
+		end
 
 		print("[PlayerLevelSystem]", player.Name, "leveled up to", data.Account.Level)
-
-		-- Update leaderstats
-		local leaderstats = player:FindFirstChild("leaderstats")
-		if leaderstats then
-			local levelStat = leaderstats:FindFirstChild("Level")
-			if levelStat then
-				levelStat.Value = data.Account.Level
-			end
-		end
 
 		-- Auto-unlock classes that require the newly reached level
 		local ClassSys = PlayerLevelSystem.PlayerDataManager
@@ -94,38 +98,12 @@ function PlayerLevelSystem.AddExperience(player, amount)
 	end
 end
 
---============================================
--- CLASS MASTERY XP (§5)
--- While capped, 100% of earned XP → active class mastery
---============================================
-function PlayerLevelSystem.AddClassMasteryXP(data, amount)
-	local className = data.ActiveClass
-	local classData = data.Classes[className]
-	if not classData then return end
-
-	classData.MasteryXP = (classData.MasteryXP or 0) + amount
-
-	-- Auto-unlock milestones and grant rewards
-	if not classData.MasteryMilestones then
-		classData.MasteryMilestones = {}
-	end
-	local pending = ClassMasteryConfig.GetPendingMilestones(classData.MasteryXP, classData.MasteryMilestones)
-	for _, milestone in ipairs(pending) do
-		classData.MasteryMilestones[milestone.id] = true
-
-		-- Grant bound tokens (role seals, etc.)
-		if milestone.rewards and milestone.rewards.boundToken then
-			local sealPrefix = ClassMasteryConfig.RoleSealMap[className]
-			local tokenId = sealPrefix and (sealPrefix .. "_" .. milestone.id) or milestone.rewards.boundToken
-			if not data.Account.BoundTokens then
-				data.Account.BoundTokens = {}
-			end
-			data.Account.BoundTokens[tokenId] = (data.Account.BoundTokens[tokenId] or 0) + 1
-		end
-
-		print("[ClassMastery]", className, "unlocked milestone:", milestone.id)
-	end
-end
+-- §T0P2/X21: AddClassMasteryXP DELETED. Class XP was superseded by
+-- weapon/gear XP (WeaponXPSystem); the function had zero callers and
+-- would still have granted BoundTokens if ever invoked. The schema
+-- fields (Classes.*.MasteryXP / MasteryMilestones) and
+-- ClassMasteryConfig remain — full sweep parked in docs/TODO.md
+-- (§T0P2-MASTERY).
 
 function PlayerLevelSystem.GetLevel(player)
 	local playerDataStore = PlayerLevelSystem.GetDataStore()

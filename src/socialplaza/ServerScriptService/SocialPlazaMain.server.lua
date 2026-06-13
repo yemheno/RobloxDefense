@@ -22,7 +22,9 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
-local SharedModules = SSS:WaitForChild("Modules")
+-- §T0P2/G3: bounded wait + loud error (was: silent infinite hang).
+local SharedModules = SSS:WaitForChild("Modules", 10)
+    or error("[SocialPlazaMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
 
 local Boot      = require(SharedModules:WaitForChild("PlaceBootstrap"))
 local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
@@ -137,11 +139,11 @@ ctx.loaded["SharedEventHandlers"].Register({
 -- ───────────────────────────────────────────────────────────
 -- PLAYER LIFECYCLE
 -- ───────────────────────────────────────────────────────────
+-- §T0-FOLLOWUP/L4: PlayerDataManager.Init already binds RemovePlayer to
+-- PlayerRemoving. A second binding here used to fire after the first
+-- cleared playerDataStore[player], which surfaced as a noisy
+-- "in-memory data is nil" warn on every disconnect.
 Lifecycle.WireOnPlayerReady(ctx)
-
-Players.PlayerRemoving:Connect(function(player)
-    DataManager.RemovePlayer(player)
-end)
 
 print(string.format("[SocialPlaza] Place ready — %d modules loaded", (function()
     local n = 0

@@ -17,14 +17,16 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
-local SharedModules = SSS:WaitForChild("Modules")
+-- §T0P2/G3: bounded wait + loud error (was: silent infinite hang).
+local SharedModules = SSS:WaitForChild("Modules", 10)
+    or error("[CentralBossMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
 
 local Boot      = require(SharedModules:WaitForChild("PlaceBootstrap"))
 local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
 local ctx       = Boot.MakeContext("CentralBoss")
 local IsAdmin   = ctx.IsAdmin
 
-_G.CentralBossRequireLoaded = ctx.RequireLoaded
+-- §T0P2/X19: _G.CentralBossRequireLoaded removed — write-only global.
 
 -- ───────────────────────────────────────────────────────────
 -- CONFIG
@@ -141,12 +143,13 @@ ctx.Load(SharedModules, "GameStateManager")
 ctx.loaded["TeleportDataReader"] = require(SharedModules:WaitForChild("TeleportDataReader"))
 ctx.loaded["TeleportDataReader"].Init("CentralBoss")
 
-pcall(function()
-    local tdr = ctx.loaded["TeleportDataReader"]
+-- §T0P2/X2: difficulty is lobby-owned (DQ-B) and resolves with the
+-- first processed player's teleport data — not at boot, where it was
+-- always "Normal".
+ctx.loaded["TeleportDataReader"].OnDifficultyResolved(function(difficulty)
     local spawner = ctx.loaded["MobSpawner"]
-    if not tdr or not spawner then return end
-    local difficulty = tdr.GetDifficulty() or "Normal"
-    spawner.SetDifficulty(tostring(difficulty))
+    if spawner then spawner.SetDifficulty(tostring(difficulty)) end
+    print("[CentralBoss] Difficulty resolved:", difficulty)
 end)
 
 ctx.Load(SharedModules, "AdminTesting")

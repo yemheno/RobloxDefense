@@ -26,6 +26,28 @@ local matchDifficulty = "Normal"
 local matchModeId     = "Defense"
 local matchPartyData  = {}
 
+-- §T0P2/X2 (DQ-B): difficulty is OWNED BY THE LOBBY — it arrives in the
+-- teleport payload and is resolved exactly ONCE, by the first player
+-- whose data is processed. Later arrivals cannot change it (the old
+-- code let every arrival overwrite matchDifficulty — last-arriver-wins,
+-- spoofable, and never re-pushed to the spawner anyway).
+-- Consumers register OnDifficultyResolved to receive the validated
+-- value; callbacks registered after resolution fire immediately.
+local difficultyResolved   = false
+local difficultyCallbacks  = {}
+
+local DifficultyConfig = require(
+	game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("DifficultyConfig"))
+
+local function resolveDifficulty(difficulty)
+	if difficultyResolved then return end
+	difficultyResolved = true
+	matchDifficulty = difficulty
+	for _, cb in ipairs(difficultyCallbacks) do
+		task.spawn(cb, difficulty)
+	end
+end
+
 -- ── Dependencies (set in Init) ─────────────────────────────
 local NetworkManager = nil
 
@@ -47,8 +69,15 @@ function TeleportDataReader.ProcessPlayer(player)
 	if teleportData and type(teleportData) == "table" then
 		arrivedPlayers[player.UserId] = teleportData
 
+		-- §T0P2/X2: validate against DifficultyConfig (teleport data
+		-- transits the client and is spoofable) and resolve ONCE.
 		if teleportData.difficulty then
-			matchDifficulty = teleportData.difficulty
+			if DifficultyConfig.IsValid(teleportData.difficulty) then
+				resolveDifficulty(teleportData.difficulty)
+			else
+				warn("[TeleportDataReader] Invalid difficulty in teleport data from",
+					player.Name, ":", tostring(teleportData.difficulty), "— ignoring")
+			end
 		end
 		if teleportData.modeId then
 			matchModeId = teleportData.modeId
@@ -59,9 +88,11 @@ function TeleportDataReader.ProcessPlayer(player)
 
 		TeleportDataReader.ApplyPlayerData(player, teleportData)
 	else
+		-- No teleport data = direct join / Studio test. Auto-select from
+		-- the player's level (the Level attribute is set before data-ready
+		-- callbacks fire — §T0P2/X7).
 		warn("[TeleportDataReader] Player", player.Name, "has NO teleport data — using defaults")
 		local playerLevel = player:GetAttribute("Level") or 1
-		local DifficultyConfig = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"):WaitForChild("DifficultyConfig"))
 		local autoDifficulty = DifficultyConfig.AutoSelect({ playerLevel })
 		arrivedPlayers[player.UserId] = {
 			modeId     = matchModeId,
@@ -70,13 +101,29 @@ function TeleportDataReader.ProcessPlayer(player)
 				{ name = player.Name, class = player:GetAttribute("ActiveClass") or "Aegis", level = playerLevel },
 			},
 		}
-		matchDifficulty = autoDifficulty
+		resolveDifficulty(autoDifficulty)
 		matchPartyData = arrivedPlayers[player.UserId].partyData
 	end
 end
 
+--- §T0P2/X2: register a callback for the once-only difficulty
+--- resolution. Fires immediately (spawned) if already resolved.
+function TeleportDataReader.OnDifficultyResolved(callback)
+	if difficultyResolved then
+		task.spawn(callback, matchDifficulty)
+		return
+	end
+	table.insert(difficultyCallbacks, callback)
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- APPLY PLAYER DATA
+-- §T0P2/X20: sets the "TeleportClass" attribute for the player when the
+-- party payload carries a class different from their current one.
+-- NOTE: nothing reads this attribute yet — the intended consumer is the
+-- new map's spawn flow (apply the party-selected class on arrival).
+-- Tracked in docs/TODO.md (§T0P2-TPCLASS). Any consumer MUST validate
+-- the class is actually unlocked for the player before applying it.
 -- ═══════════════════════════════════════════════════════════
 function TeleportDataReader.ApplyPlayerData(player, teleportData)
 	local partyData = teleportData.partyData or {}
