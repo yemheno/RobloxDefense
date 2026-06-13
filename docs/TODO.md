@@ -39,15 +39,20 @@
 7. [Party / Matchmaking / Teleport](#7-party--matchmaking--teleport)
 8. [Shop / Currency](#8-shop--currency)
 9. [Inventory / Equipment / Cosmetics](#9-inventory--equipment--cosmetics)
+9b. [Character Creation / Appearance](#9b-character-creation--appearance-tier-1)
 10. [Achievements / Leaderboard / Daily Login](#10-achievements--leaderboard--daily-login)
 11. [Network / RemoteEvents](#11-network--remoteevents)
 12. [Game State / Defense Line](#12-game-state--defense-line)
 13. [NPC / Quest / Lore](#13-npc--quest--lore)
 14. [Client UI](#14-client-ui)
+14d. [Stats / Damage / Healing follow-ups (Tier 1.3)](#14d-stats--damage--healing-follow-ups-tier-13)
+14c. [Class system follow-ups (Tier 1.2)](#14c-class-system-follow-ups-tier-12)
+14b. [Memory & Lifetimes (Janitor audit)](#14b-memory--lifetimes-janitor-audit)
 15. [Persistence / Telemetry](#15-persistence--telemetry)
 16. [Content Gaps (alpha-blockers)](#16-content-gaps-alpha-blockers)
 17. [Strategic / Post-alpha](#17-strategic--post-alpha)
 18. [Open Design Decisions](#18-open-design-decisions)
+19. [T0 Pass-2 follow-ups (§T0P2)](#19-t0-pass-2-follow-ups-t0p2)
 
 ---
 
@@ -205,6 +210,44 @@
      PlayerAdded; current symptom: "weapon icon not showing on first
      spawn" intermittent.
   4. ArmorManager.EnsureStarterArmor — `ArmorEquipped` same shape.
+- *(§T1.1/D7 closed — `CharacterCreationRequired` now routes through
+  ReadyGate. Was the suspected cause of "character creation panel
+  intermittently fails to appear on first join.")*
+
+## 9b. Character Creation / Appearance (Tier 1)
+
+- `[🚀]` **§T1.1-CC1 — 3 body / 3 head / 3 hair models per gender** —
+  schema seams exist (`CharacterData.{bodyModel, headModel, hairModel}`
+  and `CharacterConfig.{Body,Head,Hair}ModelCount`); only the default
+  asset ships today. Author 6 body, 6 head, 6 hair templates (3 per
+  gender). Update `CharacterConfig.GetTemplateName` to fan out by slot
+  index. Hair models intended to use occlusion-only meshes paintable
+  with any `Color3` via `CharacterData.hairColor`.
+- `[🚀]` **§T1.1-CC2 — Hair & clothing color palettes** —
+  `CharacterConfig.HairColors` and `ClothingColors` are empty seams.
+  Populate when the corresponding models ship. CharacterCreation UI
+  needs to pick them up the same way it picks up `SkinColors` today.
+- `[P2]` **§T1.1-CC3 — Wire gendered class titles to UI** —
+  `CharacterManager.GetClassTitle` returns "Huntress" / "Arcaness" /
+  "Life Stewardess" for female players. Most UI panels still hard-code
+  the masculine form. Audit ClassMenu, StatsMenu, ClassReferencePanel,
+  leaderboard, leaderstats, etc.
+- `[🚀]` **§T1.1-CC4 — Appearance Preset Pages (monetization)** —
+  monetize saved appearance snapshots ("preset pages"). Each preset
+  saves: gender, bodyModel, headModel, hairModel, skinColor, hairColor,
+  clothingColor, plus equipped cosmetic loadout. New PlayerData field
+  `AppearancePresets = { [pageId] = { ...snapshot } }`. UI: tab in the
+  appearance menu, pages unlocked via shop/Robux. Distinct from the
+  base CharacterData (which holds the "current" appearance).
+- `[P2]` **§T1.1-AE1 — Standardize accessory equipment pipeline** — the
+  hair-accessory weld dance in `CharacterManager.ApplyTemplate` (steps
+  3–4) is the proven pattern that fixed both hair AND the held-weapon
+  weld bug. Today it lives inline. Extract to a shared helper (e.g.
+  `Modules/AccessoryWelder.lua`) and route VisualEquipmentManager +
+  CosmeticManager through it. **Do not "simplify"** — the dance reads
+  AccessoryWeld values BEFORE cloning, destroys pre-existing welds on
+  the clone, parents, waits a frame for Roblox to inject its single
+  weld, then over-writes Part0/Part1/C0/C1. Every step is load-bearing.
 
 ## 10. Achievements / Leaderboard / Daily Login
 
@@ -290,8 +333,10 @@
   inserts `TextLabel`s. Either rebuild the list to use a Frame-per-
   friend layout with `InviteBtn`, or remove the dead handler. Defer
   until the party UX gets a polish pass.
-- `[P1]` **CharacterManager.ApplyTemplate visual swap stub** — TODO needs
-  the rig swap when gendered/class-specific rigs are available.
+- *(§T1.1 closed — `CharacterManager.ApplyTemplate` now properly fans
+  out by `bodyModel` / gender via `CharacterConfig.GetTemplateName`,
+  with schema seams for headModel, hairModel, and the three color
+  slots. Awaiting authored assets — see §T1.1-CC1.)*
 - `[P2]` **§PDM-D11 — Combat-time stat allocation confirmation** — today
   nothing gates `AllocateStat` during knockdown / combat. A player can
   open the stats panel mid-fight and reassign points. Add a client-side
@@ -337,6 +382,94 @@
       `data.Classes[c].MasteryXP` — currently zero because no source
       feeds it (TODO §3 "Class Mastery XP source"). Resolving that
       design unlocks this too.
+
+## 14d. Stats / Damage / Healing follow-ups (Tier 1.3)
+
+- `[P1]` **§T1.3-BAL1 — Heal multiplier rebalance after crit-pipeline
+  unification** — heals now run through the same multi-crit pipeline as
+  damage (geometric procs, 1.80× cap, max 2 procs). Pre-T1.3 they used
+  a single-proc 1.50× cap, so realised healing-per-tick will jump under
+  the new pipeline. Audit every `healMultiplier` in ClassSkills (and any
+  card / consumable that produces healing) and reduce as needed to land
+  back at intended target healing throughput. Bundle with the broader
+  balance audit before alpha.
+- `[??]` **§T1.3-DQ1 — `FlatAttack` placement in the damage pipeline** —
+  today `FlatAttack` enters via `DamageSystem.GetBaseDamage` and gets
+  multiplied by both `actionMultiplier` (skill coefficient) and
+  `DamagePercent` — functionally identical to `BonusDamage`. Pablo
+  initially read this as a true-damage / bypass-pipeline candidate but
+  questioned the design (small flat numbers go meaningless late-game).
+  Decide: keep current (treat FlatAttack as flat-damage entering the
+  pipeline like BonusDamage) OR move it post-multiplier as
+  "guaranteed flat add" OR remove the stat in favour of a per-weapon
+  Penetration property. Revisit at T6 equipment audit.
+- `[🚀]` **§T1.3-DQ2 — Split `HealingPower` into a dedicated derived
+  stat** — today `HealingSystem` reads the `Damage` stat as healing
+  power (intentional — see HealingSystem.lua header). A future PvP
+  pass will want damage-vs-heal scaling to diverge. Forward-compatible
+  refactor: add `HealingPower` to `PlayerDataConfig.DerivedBase` +
+  `DerivedStats`, LifeSteward declares `HealingPower = { MAG = X.X }`
+  in its `statDerivation`, HealingSystem reads HealingPower instead of
+  Damage. The `HealingPower` flat-bonus key in BonusStats is already
+  consumed today.
+
+## 14c. Class system follow-ups (Tier 1.2)
+
+- `[P1]` **§T1.2-BAL1 — Crit-damage class scaling balance audit** — only
+  Arcanist has a per-class scaling on CritDamage (`{ MAG = 0.001 }`).
+  Aegis, Hunter, and LifeSteward all carry `CritDamage = {}` — class-base
+  only (1.5×). Either every class needs a meaningful scaling formula or
+  none of them do; current split is a balance carry-over from before the
+  PRE-removed-from-crit redesign. Bundle with the broader balance audit
+  before alpha. See ClassConfig.Classes[*].statDerivation, marked
+  `§T1.2/DQ2`.
+- `[🚀]` **§T1.2-MOD1 — Per-class module unification** — today a new
+  class touches four files: `ClassConfig` (identity + scaling),
+  `ClassBehaviors/<Name>Behavior.lua` (resource rules), 
+  `ClassSkills/<Name>Skills.lua` (skill set), 
+  `ClassWeapons/<Name>Weapons.lua` (starter weapon binding). Pablo's
+  intent is "one folder per class, everything inside." Proposed:
+  `Modules/Classes/<Name>/init.lua` exporting `{ config, behavior,
+  skills, weapons }`. ClassConfig.Classes becomes an aggregator that
+  reads each submodule's `.config`. ResourceManager + SkillManager +
+  WeaponManager loadlist update accordingly. Sizeable refactor;
+  schedule after we close T1 and ship the alpha.
+
+## 14b. Memory & Lifetimes (Janitor audit)
+
+- `[P0]` **§T1.1-JAN1 — Codebase-wide leak audit** — `Modules/Janitor.lua`
+  landed in T1.1 as a per-scope lifetime primitive (handles
+  RBXScriptConnection, Instance, thread, function, and any
+  `:Destroy()` / `:Disconnect()` table). Sweep every module that
+  manages per-player or per-character lifetime and migrate. Known
+  candidates discovered so far:
+  - `CharacterManager` ✅ migrated (T1.1)
+  - `CosmeticManager/init.lua` — duplicate `PlayerAdded` +
+    for-existing-players loop, both register `CharacterAdded` conns
+    that are never explicitly disconnected. `PlayerRemoving` calls
+    `PlayerCosmeticManager.CleanupPlayer` but it's not clear whether
+    that disconnects the CharacterAdded conn.
+  - All `Modules/PlayerDataManager/PlayerStatSystem`, `PlayerLevelSystem`
+    et al. — verify each `Player*Added` / `Character*Added` /
+    `signal:Connect` has a teardown path.
+  - `MobAI`, `MobSpawner`, `MobAssetLoader` — mob lifetime conns.
+  - `DefenseLine`, `GameStateManager` — game-mode lifetime conns.
+  - `AttackHandler`, `HitTracker`, `SkillManager` — per-cast conns.
+  - `VisualEquipmentManager`, `WeaponManager`, `ArmorManager` —
+    per-attached-item conns + the watcher pattern.
+  - `VoteManager`, `HordeModeSpawner`, `HordePauseManager` —
+    per-vote / per-run conns.
+  - All five `*Main.server.lua` scripts — any inline `:Connect` they
+    own.
+
+  Process: per-module audit, identify lifetime owner, replace ad-hoc
+  bookkeeping with a Janitor scoped to that owner. Each module gets
+  its own commit. **Track in this section** as items get closed.
+
+- `[📝]` **§T1.1-JAN2 — Janitor leak-detection telemetry** — once the
+  audit lands, add a debug print mode that snapshots active Janitor
+  counts per system every 60s. A monotonically growing count is the
+  smoking gun for the next leak we miss. Off by default.
 
 ## 15. Persistence / Telemetry
 
@@ -394,6 +527,52 @@ revision pass. Each is also referenced in its system section above.
    only if balance work is also done.
 7. **LifeSteward Genesis resource cost** — see §2.
 8. **Wave 13+ procedural support** — see §4.
+
+---
+
+## 19. T0 Pass-2 follow-ups (§T0P2)
+
+Deferred items from the T0 pass-2 audit (Fable 5 session — full finding
+list X1–X25 in `T0_PASS2_SURFACE.md`; landed fixes carry `§T0P2/X<n>`
+tags in code).
+
+- `[P0/Security]` **§T0P2-ADMIN — Remove the remote admin surface before
+  release.** AdminTesting + the AdminAction / DebugCommand /
+  ModifySystemStat RemoteEvents are attack surface for custom clients
+  even though every handler is allowlist-gated. Plan (Pablo): delete the
+  remote path entirely and replace with an admin module driven from the
+  Studio runtime console (server-side function calls, no remotes).
+  Includes removing the TestingUI client panel and the manifest entries.
+- `[P1]` **§T0P2-TPCLASS — Wire the TeleportClass consumer.**
+  `TeleportDataReader.ApplyPlayerData` sets the `TeleportClass` player
+  attribute (party-selected class) but nothing reads it yet. The new
+  map's spawn flow should consume it — and MUST validate the class is
+  unlocked for the player before applying.
+- `[P1]` **§T0P2-RESPEC-SCROLL — Verify respec_scroll acquisition
+  path.** The RespecStats handler consumes `respec_scroll` first, then
+  Essence — but it looks like nothing grants the scroll yet. Either add
+  it to a shop/drop/quest table or drop the item until it's obtainable.
+- `[P2]` **§T0P2-MASTERY — Sweep the dead Class Mastery system.** Class
+  XP was superseded by gear XP (WeaponXPSystem). `AddClassMasteryXP` is
+  deleted (§T0P2/X21); still present: `ClassMasteryConfig.lua`, the
+  `MasteryXP` / `MasteryMilestones` fields in ClassDataTemplate, and any
+  UI strings. Decide: full removal + DEPRECATED_KEY_PATHS sweep of
+  `Classes.*.MasteryXP`, or keep as a future system behind a comment.
+- `[P2]` **§T0P2-DEALLOC — Single-point stat deallocation feature.**
+  `PlayerDataManager.DeallocateStat` is kept as a seam (§T0P2/X22).
+  Feature: undo a misclicked point without a full respec. Needs:
+  remote + manifest entry, UI affordance, and a design decision on cost.
+- `[P2]` **§T0P2-EVENTSLIM — Per-place event/module slimming.** Pablo:
+  "load only what is necessary in each mode." NetworkManager
+  pre-registers all ~130 manifest events in every place. Options:
+  per-place manifest subsets (`places = {...}` field per entry), or
+  accept the cost (RemoteEvents are cheap) and document. Also covers
+  trimming per-place module loadlists.
+- `[P2]` **§T0P2-ORPHANS — Verify 5 unreferenced manifest events.**
+  `ArmorRefinementResult`, `ArmorTierUp`, `WeaponRefinementResult`,
+  `WeaponTierUp` (check at T6 — refine/tier flows may be missing their
+  result pushes), `HealNumber` (check at T2 — heals may ride
+  DamageNumber). Delete or wire.
 
 ---
 
