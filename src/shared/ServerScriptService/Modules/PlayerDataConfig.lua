@@ -49,6 +49,34 @@ PlayerDataConfig.DerivedBase = {
 }
 
 --============================================
+-- DERIVED STATS CATALOG  (§T1.2/D6)
+-- One entry per derived stat that participates in class scaling.
+-- `required = true`  → every class's statDerivation must declare this
+--                      key (empty table {} is fine — means class scales
+--                      it from base only). ClassConfig.Validate warns
+--                      at boot if a class omits a required stat.
+-- `required = false` → optional, class-specific scaling. Caster-only
+--                      stats like CastTimeReduction live here.
+-- Stats that participate ONLY via DerivedBase + Bonus (never per-class
+-- primary-scaled) are still listed so ClassConfig.Validate doesn't flag
+-- a future class that wants to opt in.
+--============================================
+PlayerDataConfig.DerivedStats = {
+	Health            = { required = true  },
+	Damage            = { required = true  },
+	Armor             = { required = true  },
+	Penetration       = { required = true  },
+	CritChance        = { required = true  },
+	CritDamage        = { required = true  },  -- empty table = uses class-base CritDamage only
+	CooldownReduction = { required = true  },
+	StatusResistance  = { required = true  },
+	ResourceMax       = { required = true  },
+	CastTimeReduction = { required = false },  -- caster-only (Arcanist, LifeSteward); §T1.2/DQ1
+	HpRegen           = { required = false },  -- base-only today; classes may opt in
+	FlatHpRegen       = { required = false },  -- base-only today; classes may opt in
+}
+
+--============================================
 -- BONUS STATS (from innate, equipment, skills - NOT allocated)
 --============================================
 PlayerDataConfig.BonusStats = {
@@ -136,10 +164,11 @@ PlayerDataConfig.AccountDefaults = {
 	-- Talent tree (allocated node ids stored as { [nodeId] = true })
 	AllocatedTalents = {},
 
-	-- Classes unlocked from start
-	-- All currently available classes are playable from day one.
-	-- Future classes added later will carry their own level requirements.
-	UnlockedClasses = { "Aegis", "Hunter", "Arcanist", "LifeSteward" },
+	-- §T1.2/D5: Classes unlocked at first spawn are now derived from
+	-- ClassConfig.Classes[name].default. The literal list below is filled
+	-- in at the bottom of this file via ClassConfig.GetDefaultUnlockedClasses().
+	-- Authoring a new class is a one-file change in ClassConfig.
+	UnlockedClasses = nil,   -- populated below
 
 	-- Equipped accessory slots. Live in production: InventoryManager reads
 	-- and writes these; GearRating consumes them for the accessory score.
@@ -154,14 +183,35 @@ PlayerDataConfig.AccountDefaults = {
 	HighestWaveReached = 0,
 	TotalPlayTime = 0,
 
-	-- Character appearance (set once during character creation on first login)
+	-- Character appearance (set once during character creation on first login;
+	-- editable later through the testing UI / appearance menu).
+	--
+	-- The cosmetic SYSTEM (accessories, weapons, armor visuals) lives in
+	-- Wardrobe + Inventory below. CharacterData holds only the things that
+	-- define the underlying avatar: gender, body/head/hair model choice,
+	-- and the three color slots applied to that avatar.
 	CharacterData = {
-		isCreated = false,    -- false until the player completes character creation
-		gender    = nil,       -- "Male" or "Female"
-		preset    = nil,       -- body-type index (currently always 1)
-		skinColor = nil,       -- skin color id from CharacterConfig.SkinColors (e.g. "skin_fair")
-		skins    = {},        -- { [skinId] = true }  owned skin IDs
-		equippedSkin = nil,   -- currently worn skin ID (nil = class default)
+		isCreated     = false,    -- true once the player completes character creation
+		gender        = nil,      -- "Male" | "Female"
+
+		-- Model slots — 1..N per gender. nil = default (index 1).
+		-- Planned: 3 body shapes, 3 head/face models, 3 hair models per gender.
+		-- See CharacterConfig.{Body,Head,Hair}ModelCount for current limits.
+		bodyModel     = nil,
+		headModel     = nil,
+		hairModel     = nil,
+
+		-- Colors — palette id from CharacterConfig.<Skin|Hair|Clothing>Colors.
+		-- nil = default (first entry of the palette, or the original avatar
+		-- color when the palette is empty).
+		skinColor     = nil,
+		hairColor     = nil,
+		clothingColor = nil,
+
+		-- §CC-LEGACY: `preset` was the v0.5 field name for the body slot.
+		-- Kept so legacy saves DeepMerge cleanly. New code uses `bodyModel`.
+		-- Drop this field in v0.7 once all live saves are touched.
+		preset        = nil,
 	},
 
 	-- Wardrobe: cosmetic ownership + equipped slots (managed by CosmeticManager)
@@ -325,20 +375,12 @@ end
 PlayerDataConfig.ClassSwitchCooldown = 30  -- Seconds (production value)
 
 --============================================
--- CLASS UNLOCK REQUIREMENTS
--- {} = known class, available from day one
--- { requiredLevel = N } = locks behind a player level
--- Classes absent from this table are treated as unknown by UnlockClass.
+-- CLASS UNLOCK REQUIREMENTS  (§T1.2/D5)
+-- Derived from ClassConfig.Classes[name].unlockRequirements at the
+-- bottom of this file. Authoring a new class with a level gate is
+-- a one-file change in ClassConfig.
 --============================================
-PlayerDataConfig.ClassUnlockRequirements = {
-	-- Current classes: available immediately (no requirements)
-	Aegis       = {},
-	Hunter      = {},
-	Arcanist    = {},
-	LifeSteward = {},
-	-- Future classes added below with their requirements, e.g.:
-	-- Warden  = { requiredLevel = 30 },
-}
+PlayerDataConfig.ClassUnlockRequirements = nil  -- populated below
 
 --============================================
 -- ADMIN ALLOWLIST
@@ -363,5 +405,23 @@ PlayerDataConfig.AdminUserIds = {
 PlayerDataConfig.Matchmaking = {
 	MaxLevelGap = 10,   -- max level difference between any two party members
 }
+
+--============================================
+-- DERIVED FROM ClassConfig  (§T1.2/D5)
+--
+-- ClassConfig.Classes is the single source of truth for class identity,
+-- including which classes are granted by default and which carry unlock
+-- gates. We pull both lists out here so the rest of the codebase keeps
+-- reading PlayerDataConfig.UnlockedClasses / .ClassUnlockRequirements
+-- exactly as before — only the source of those values has moved.
+--
+-- Boot-order note: this require happens AFTER all of PlayerDataConfig's
+-- own fields are populated, so a ClassConfig that pcall-requires
+-- PlayerDataConfig (e.g. its Validate task) sees a fully-populated
+-- table.
+--============================================
+local ClassConfig = require(script.Parent:WaitForChild("ClassConfig"))
+PlayerDataConfig.AccountDefaults.UnlockedClasses = ClassConfig.GetDefaultUnlockedClasses()
+PlayerDataConfig.ClassUnlockRequirements        = ClassConfig.GetUnlockRequirementsMap()
 
 return PlayerDataConfig

@@ -67,6 +67,14 @@ function PlaceBootstrap.MakeContext(placeName)
             warn(string.format("[%sMain] Failed to load %s: %s", placeName, tostring(name), tostring(result)))
             return nil
         end
+        -- §T0P2/X15: a module returning a non-table (stray `return true`)
+        -- used to crash the whole place boot on the `result.Init` index.
+        if type(result) ~= "table" then
+            warn(string.format("[%sMain] %s returned a %s (expected table) — loaded without Init",
+                placeName, tostring(name), typeof(result)))
+            ctx.loaded[name] = result
+            return result
+        end
         ctx.loaded[name] = result
         if type(result.Init) == "function" then
             local initOk, initErr = pcall(result.Init)

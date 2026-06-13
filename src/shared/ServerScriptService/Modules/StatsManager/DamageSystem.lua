@@ -11,8 +11,40 @@ local ElementalSystem = require(Modules:WaitForChild("ElementalSystem"))
 DamageSystem.ArmorSystem    = nil
 DamageSystem.CriticalSystem = nil
 
--- Cached module references (resolved on first use)
-local _WeaponManager = nil
+-- §T1.3/B10: single lazy getter. Same shape as ClassManager's per-module
+-- lazy getters; replaces the two divergent inline implementations that
+-- previously lived in GetBaseDamage and CalculateIncomingDamage.
+-- A pcall on the initial require so a deep WeaponManager load-error
+-- surfaces once and then we proceed with weapon-attack = 0.
+local _WeaponManager
+local _weaponManagerWarned = false
+local function getWeaponManager()
+	if _WeaponManager ~= nil then
+		return _WeaponManager or nil
+	end
+	local mod = Modules:FindFirstChild("WeaponManager")
+	if not mod then
+		if not _weaponManagerWarned then
+			_weaponManagerWarned = true
+			warn("[DamageSystem] WeaponManager module not found under StatsManager's " ..
+				"parent folder — weapon attack will be treated as 0 for all players.")
+		end
+		_WeaponManager = false
+		return nil
+	end
+	local ok, result = pcall(require, mod)
+	if ok then
+		_WeaponManager = result
+		return result
+	end
+	if not _weaponManagerWarned then
+		_weaponManagerWarned = true
+		warn("[DamageSystem] Lazy require of WeaponManager failed: " ..
+			tostring(result) .. " — weapon attack will be treated as 0.")
+	end
+	_WeaponManager = false
+	return nil
+end
 
 -- ═══════════════════════════════════════════════════════════
 -- BASE DAMAGE CALCULATION
@@ -25,38 +57,15 @@ local _WeaponManager = nil
 
     Final = PlayerDamage + WeaponAttack + FlatAttack
 ]]
--- §2.3c: warn-once flag so a missing/failing WeaponManager doesn't spam
--- the output on every single attack call.
-local _weaponManagerWarned = false
-
 function DamageSystem.GetBaseDamage(player)
 	-- Player's stat-based damage
 	local playerDamage = DataManager.GetTotalStat(player, "Damage")
 
 	-- Weapon attack
 	local weaponAttack = 0
-	if not _WeaponManager then
-		local mod = Modules:FindFirstChild("WeaponManager")
-		if mod then
-			-- §2.3c: pcall so a require-time error in WeaponManager is loud
-			-- but non-fatal; without this the lazy require can throw right
-			-- in the middle of a damage calculation.
-			local ok, result = pcall(require, mod)
-			if ok then
-				_WeaponManager = result
-			elseif not _weaponManagerWarned then
-				_weaponManagerWarned = true
-				warn("[DamageSystem] Lazy require of WeaponManager failed: " ..
-					tostring(result) .. " — weapon attack will be treated as 0.")
-			end
-		elseif not _weaponManagerWarned then
-			_weaponManagerWarned = true
-			warn("[DamageSystem] WeaponManager module not found under StatsManager's " ..
-				"parent folder — weapon attack will be treated as 0 for all players.")
-		end
-	end
-	if _WeaponManager then
-		weaponAttack = _WeaponManager.GetWeaponAttack(player) or 0
+	local wm = getWeaponManager()
+	if wm then
+		weaponAttack = wm.GetWeaponAttack(player) or 0
 	end
 
 	-- Flat attack bonus from weapon bonuses (already applied via RefreshWeaponStats)
@@ -164,16 +173,12 @@ function DamageSystem.CalculateIncomingDamage(player, incomingDamage, attackerPe
 	local finalDamage = incomingDamage
 	attackerPenetration = attackerPenetration or 0
 
-	-- ── Tank weapon XP: grant XP BEFORE any reduction, rewarding the act of
-	--    being in danger regardless of how much armor/DR the tank has.
-	--    Lazy-load WeaponManager the same way GetBaseDamage does.
+	-- ── Tank weapon XP: grant XP BEFORE any reduction, rewarding the act
+	--    of being in danger regardless of how much armor/DR the tank has.
 	if incomingDamage > 0 then
-		if not _WeaponManager then
-			local mod = Modules:FindFirstChild("WeaponManager")
-			if mod then _WeaponManager = require(mod) end
-		end
-		if _WeaponManager then
-			_WeaponManager.GrantDamageTakenXP(player, incomingDamage)
+		local wm = getWeaponManager()
+		if wm then
+			wm.GrantDamageTakenXP(player, incomingDamage)
 		end
 	end
 

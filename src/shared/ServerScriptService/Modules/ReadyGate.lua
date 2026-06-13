@@ -94,7 +94,12 @@ local BYPASS_EVENTS = {
 
 -- Defensive cap on per-player queue size. If ClientReady never fires
 -- (broken client, tabbed-out, etc.) we don't want the queue to grow
--- unbounded. Drop oldest when over cap.
+-- unbounded. §T0P2/X8 (DQ-A): on overflow we KICK with a resync
+-- message instead of evicting the oldest entry — the oldest entries
+-- are exactly the boot-critical payloads (equipment, achievements,
+-- character creation), and a half-initialized session is worse than a
+-- rejoin. A client that can't drain 200 queued events is broken or
+-- hostile (the cap also bounds custom-client queue spam).
 local MAX_QUEUE_SIZE = 200
 
 -- ═══════════════════════════════════════════════════════════
@@ -110,9 +115,10 @@ local function markReady(player)
     ready[player] = true
 
     -- Drain queue in FIFO order
+    -- §T0P2/X24: drain print removed (boot-time log noise); the overflow
+    -- warn is the signal that matters.
     local q = queues[player]
     if q and #q > 0 then
-        print(string.format("[ReadyGate] Draining %d queued events for %s", #q, player.Name))
         for _, msg in ipairs(q) do
             if player.Parent then
                 NetworkManager.FireClient(player, msg.event, table.unpack(msg.args, 1, msg.argc))
@@ -163,6 +169,8 @@ function ReadyGate.IsReady(player)
     return ready[player] == true
 end
 
+-- §T0P2/X24: append-only by design — registrations are module-lifetime
+-- (no unsubscribe). Reserved as the loading-screen dismiss hook.
 function ReadyGate.OnReady(callback)
     table.insert(readyCallbacks, callback)
 end
@@ -187,11 +195,13 @@ function ReadyGate.FireClient(player, eventName, ...)
     end
 
     if #q >= MAX_QUEUE_SIZE then
-        -- Drop oldest to make room. Warn once per drop so a runaway
-        -- queue surfaces rather than silently leaking memory.
-        warn(string.format("[ReadyGate] Queue overflow for %s (cap %d) — dropping oldest %s",
-            player.Name, MAX_QUEUE_SIZE, q[1] and q[1].event or "?"))
-        table.remove(q, 1)
+        -- §T0P2/X8 (DQ-A): never evict boot payloads — kick and resync.
+        warn(string.format(
+            "[ReadyGate] Queue overflow for %s (cap %d, ClientReady never arrived) — kicking for resync",
+            player.Name, MAX_QUEUE_SIZE))
+        queues[player] = nil
+        player:Kick("Your game took too long to load and missed important data. Please rejoin.")
+        return
     end
 
     local argc = select("#", ...)

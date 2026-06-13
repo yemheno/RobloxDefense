@@ -46,16 +46,39 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 --- Wire the per-player "data is ready" callback chain. Always-applied
 --- steps (in order):
----   1. Apply class innate bonuses
----   2. Initialise talent tree + send state to client
----   3. Re-apply equipped accessory bonuses
----   4. Push fresh StatsUpdate to client
----   5. opts.extras(player, ctx)  — place-specific
----   6. Fire ServerReady to client  (unless opts.fireServerReady == false)
+---   1. Initialise talent tree + send state to client
+---   2. Re-apply equipped accessory bonuses
+---   3. Push fresh StatsUpdate to client
+---   4. opts.extras(player, ctx)  — place-specific
+---   5. Fire ServerReady to client  (unless opts.fireServerReady == false)
+---
+--- §T1.2/D1: Class innate bonuses are NOT applied from this chain.
+--- ClassManager.Init registers its own OnPlayerDataReady handler that
+--- calls ApplyInnateBonus directly. Owning it here too would double-fire
+--- BonusManager.SetSourceBonuses + Recalculate on every player join.
+-- §T0P2/X14: module-level latch. Each WireOnPlayerReady call wires a
+-- FULL chain with its own per-player latch — a second call would re-run
+-- Talent/Inventory/Stats setup for every player. No place calls it
+-- twice today; this guard keeps it that way.
+local _wiredPlace = nil
+
 function PlaceLifecycle.WireOnPlayerReady(ctx, opts)
+    if _wiredPlace then
+        warn(string.format(
+            "[%s] WireOnPlayerReady called twice (first wired by %s) — ignoring second call (§T0P2/X14)",
+            ctx.placeName, _wiredPlace))
+        return
+    end
+    _wiredPlace = ctx.placeName
+
     opts = opts or {}
     local DataManager    = ctx.RequireLoaded("PlayerDataManager")
     local NetworkManager = ctx.RequireLoaded("NetworkManager")
+    -- §T0P2/X9: ServerReady must survive the boot race — route through
+    -- ReadyGate (queued until the client's ClientReady handshake) instead
+    -- of a bare FireClient that drops if the client hasn't subscribed yet.
+    -- This is the event the future loading screen will key off.
+    local ReadyGate = ctx.loaded["ReadyGate"]
 
     local function onReady(player)
         if not player or not player.Parent then return end
@@ -67,32 +90,26 @@ function PlaceLifecycle.WireOnPlayerReady(ctx, opts)
             return
         end
 
-        -- 1. Class innate bonuses
-        local ClassManager = ctx.loaded["ClassManager"]
-        if ClassManager and ClassManager.ApplyInnateBonus then
-            ClassManager.ApplyInnateBonus(player)
-        end
-
-        -- 2. Talent tree
+        -- 1. Talent tree
         local TalentManager = ctx.loaded["TalentManager"]
         if TalentManager then
             if TalentManager.SetupPlayer then TalentManager.SetupPlayer(player) end
             if TalentManager.SendState   then TalentManager.SendState(player)   end
         end
 
-        -- 3. Accessory bonuses
+        -- 2. Accessory bonuses
         local InventoryManager = ctx.loaded["InventoryManager"]
         if InventoryManager and InventoryManager.SetupPlayer then
             InventoryManager.SetupPlayer(player)
         end
 
-        -- 4. Stats payload
+        -- 3. Stats payload
         local SEH = ctx.loaded["SharedEventHandlers"]
         if SEH and SEH.PushStatsUpdate then
             SEH.PushStatsUpdate(player)
         end
 
-        -- 5. Place-specific extras (e.g. TeleportDataReader.ProcessPlayer,
+        -- 4. Place-specific extras (e.g. TeleportDataReader.ProcessPlayer,
         --    DefenseLine.SendStateToPlayer, etc.)
         if opts.extras then
             local extrasOk, extrasErr = pcall(opts.extras, player, ctx)
@@ -102,9 +119,13 @@ function PlaceLifecycle.WireOnPlayerReady(ctx, opts)
             end
         end
 
-        -- 6. ServerReady signal
+        -- 5. ServerReady signal (§T0P2/X9: ReadyGate-routed)
         if opts.fireServerReady ~= false then
-            NetworkManager.FireClient(player, "ServerReady")
+            if ReadyGate then
+                ReadyGate.FireClient(player, "ServerReady")
+            else
+                NetworkManager.FireClient(player, "ServerReady")
+            end
         end
     end
 
@@ -189,32 +210,42 @@ function PlaceLifecycle.StartVitalsLoop(ctx, opts)
     -- §LD-RG1: regen loop independent of broadcast. Gates on Alive state
     -- so a knocked-down player doesn't fight DeathSystem's HP-pin
     -- heartbeat. §VG1: paused during votes.
+    -- §T0P2/X5: each tick body runs under pcall. These are while-true
+    -- threads — without the pcall, ONE transient error (character
+    -- mid-destroy edge, teleport-out nil) killed the thread and HP regen
+    -- silently stopped for the rest of the server's lifetime.
     task.spawn(function()
         while true do
             task.wait(REGEN_INTERVAL)
 
-            local vm = ctx.loaded["VoteManager"]
-            if vm and vm.IsVoteActive and vm.IsVoteActive() then
-                continue
-            end
-
-            for _, p in ipairs(Players:GetPlayers()) do
-                local deathState = p:GetAttribute("DeathState")
-                if deathState == "KnockedDown" or deathState == "Dead" then
-                    continue
+            local ok, err = pcall(function()
+                local vm = ctx.loaded["VoteManager"]
+                if vm and vm.IsVoteActive and vm.IsVoteActive() then
+                    return
                 end
 
-                local maxHp = StatsManager.GetTotalHealth(p) or 100
-                local char = p.Character
-                local humanoid = char and char:FindFirstChildOfClass("Humanoid")
-                if humanoid and humanoid.Health > 0 and humanoid.Health < maxHp then
-                    local regenPct  = DataManager.GetTotalStat(p, "HpRegen") or 0.5
-                    local regenFlat = DataManager.GetTotalStat(p, "FlatHpRegen") or 0
-                    humanoid.Health = math.min(
-                        humanoid.Health + maxHp * (regenPct / 100) * REGEN_INTERVAL + regenFlat * REGEN_INTERVAL,
-                        maxHp
-                    )
+                for _, p in ipairs(Players:GetPlayers()) do
+                    local deathState = p:GetAttribute("DeathState")
+                    if deathState ~= "KnockedDown" and deathState ~= "Dead" then
+                        local maxHp = StatsManager.GetTotalHealth(p) or 100
+                        local char = p.Character
+                        local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                        if humanoid and humanoid.Health > 0 and humanoid.Health < maxHp then
+                            -- (GetTotalStat never returns nil — DerivedBase supplies
+                            -- HpRegen 0.5 / FlatHpRegen 0. §T0P2/X25: dead `or`
+                            -- fallbacks removed.)
+                            local regenPct  = DataManager.GetTotalStat(p, "HpRegen")
+                            local regenFlat = DataManager.GetTotalStat(p, "FlatHpRegen")
+                            humanoid.Health = math.min(
+                                humanoid.Health + maxHp * (regenPct / 100) * REGEN_INTERVAL + regenFlat * REGEN_INTERVAL,
+                                maxHp
+                            )
+                        end
+                    end
                 end
+            end)
+            if not ok then
+                warn(string.format("[%s] Regen tick errored: %s", ctx.placeName, tostring(err)))
             end
         end
     end)
@@ -223,38 +254,45 @@ function PlaceLifecycle.StartVitalsLoop(ctx, opts)
     -- §LD4: GearRating hoisted out of the broadcast loop.
     local gr = getGearRating()
 
+    -- §T0P2/X5: same pcall-per-tick protection as the regen loop — an
+    -- error here used to kill the HUD vitals feed for the whole server.
     task.spawn(function()
         while true do
             task.wait(VITALS_INTERVAL)
 
-            local allPlayers = Players:GetPlayers()
-            if #allPlayers == 0 then continue end
+            local ok, err = pcall(function()
+                local allPlayers = Players:GetPlayers()
+                if #allPlayers == 0 then return end
 
-            local vitals = {}
-            for _, p in ipairs(allPlayers) do
-                local maxHp = StatsManager.GetTotalHealth(p) or 100
-                local char = p.Character
-                local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+                local vitals = {}
+                for _, p in ipairs(allPlayers) do
+                    local maxHp = StatsManager.GetTotalHealth(p) or 100
+                    local char = p.Character
+                    local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 
-                local hp
-                if p:GetAttribute("DeathState") ~= "Alive" then
-                    hp = 0
-                else
-                    hp = humanoid and math.floor(humanoid.Health) or maxHp
+                    local hp
+                    if p:GetAttribute("DeathState") ~= "Alive" then
+                        hp = 0
+                    else
+                        hp = humanoid and math.floor(humanoid.Health) or maxHp
+                    end
+
+                    local data = DataManager.GetData(p)
+                    vitals[tostring(p.UserId)] = {
+                        name       = p.Name,
+                        hp         = hp,
+                        maxHp      = maxHp,
+                        class      = data and data.ActiveClass or "Aegis",
+                        level      = data and data.Account and data.Account.Level or 1,
+                        powerLevel = (gr and data) and gr.GetDisplayPower(data) or 0,
+                    }
                 end
 
-                local data = DataManager.GetData(p)
-                vitals[tostring(p.UserId)] = {
-                    name       = p.Name,
-                    hp         = hp,
-                    maxHp      = maxHp,
-                    class      = data and data.ActiveClass or "Aegis",
-                    level      = data and data.Account and data.Account.Level or 1,
-                    powerLevel = (gr and data) and gr.GetDisplayPower(data) or 0,
-                }
+                NetworkManager.FireAllClients("VitalsUpdate", vitals)
+            end)
+            if not ok then
+                warn(string.format("[%s] Vitals tick errored: %s", ctx.placeName, tostring(err)))
             end
-
-            NetworkManager.FireAllClients("VitalsUpdate", vitals)
         end
     end)
 end

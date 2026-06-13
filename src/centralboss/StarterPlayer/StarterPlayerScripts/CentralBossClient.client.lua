@@ -90,6 +90,8 @@ if MovementSystem then
 end
 
 -- Listen for server ready
+-- §T0P2/X25: intentionally empty — reserved loading-screen hook.
+-- ServerReady is ReadyGate-routed (§T0P2/X9).
 local NetworkManager = loadedModules["NetworkManager"]
 if NetworkManager then
 	NetworkManager.OnServerEvent("ServerReady", function()

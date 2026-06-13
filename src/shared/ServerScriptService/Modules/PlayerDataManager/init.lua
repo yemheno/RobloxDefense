@@ -22,6 +22,12 @@ local Config = require(Modules:WaitForChild("PlayerDataConfig"))
 -- so concurrent auto-save + terminal save don't double-write.
 local savingPlayers = {}
 
+-- §T0P2/X17: tombstones for admin-wiped keys. Clearing savingPlayers
+-- can't cancel an in-flight SetAsync — if one is mid-air it could land
+-- AFTER RemoveAsync and resurrect the wiped data. SavePlayer checks
+-- this set before writing. Cleared when the player sets up again.
+local wipedPlayers = {}
+
 -- Child systems (loaded in Init)
 local ClassSystem
 local StatSystem
@@ -47,6 +53,19 @@ local playerDataStore = {}
 -- Callbacks fired when a player's data finishes loading from the DataStore.
 -- Registered via PlayerDataManager.OnPlayerDataReady(callback).
 local dataReadyCallbacks = {}
+
+-- §T0-FOLLOWUP/L2: per-player Janitor tracks the CharacterAdded conn
+-- registered inside SetupPlayer so we can tear it down on PlayerRemoving.
+local Janitor = require(script.Parent:WaitForChild("Janitor"))
+local playerJanitors = setmetatable({}, { __mode = "k" })
+local function getPlayerJanitor(player)
+	local jan = playerJanitors[player]
+	if not jan then
+		jan = Janitor.new()
+		playerJanitors[player] = jan
+	end
+	return jan
+end
 
 --============================================
 -- INITIALIZATION
@@ -95,9 +114,26 @@ function PlayerDataManager.Init()
 
 	-- Save all on server shutdown. §PERSIST1: force=true so the dedup
 	-- can't skip the terminal save when an auto-save is in flight.
+	-- §T0P2/X6: saves run in PARALLEL. Sequentially, each force-save can
+	-- wait up to 3 s for an in-flight auto-save plus the SetAsync yield —
+	-- a full server could blow the 30 s BindToClose budget and lose the
+	-- tail of the player list. Spawn all, then wait for completion.
 	game:BindToClose(function()
-		for _, player in ipairs(Players:GetPlayers()) do
-			PlayerDataManager.SavePlayer(player, true)
+		local players = Players:GetPlayers()
+		local remaining = #players
+		if remaining == 0 then return end
+		for _, player in ipairs(players) do
+			task.spawn(function()
+				PlayerDataManager.SavePlayer(player, true)
+				remaining -= 1
+			end)
+		end
+		local deadline = os.clock() + 25
+		while remaining > 0 and os.clock() < deadline do
+			task.wait(0.1)
+		end
+		if remaining > 0 then
+			warn("[PlayerDataManager] BindToClose deadline hit with", remaining, "save(s) unfinished")
 		end
 	end)
 
@@ -106,6 +142,25 @@ end
 --============================================
 -- DEFAULT DATA CREATION
 --============================================
+
+-- §T0P2/X1: true deep copy for default tables. The old CreateDefaultData
+-- copy was only two levels deep, so nested defaults (Wardrobe.owned,
+-- Achievements.unlocked, Quests.active, …) were shared BY REFERENCE
+-- between every first-visit player on the server AND with
+-- PlayerDataConfig.AccountDefaults itself — player A's writes leaked
+-- into player B's fresh save and into the config module for the rest
+-- of the server's lifetime.
+local function DeepCopy(source)
+	local copy = {}
+	for key, value in pairs(source) do
+		if type(value) == "table" then
+			copy[key] = DeepCopy(value)
+		else
+			copy[key] = value
+		end
+	end
+	return copy
+end
 
 -- Deep-merge: add any missing keys from 'defaults' into 'target' without overwriting.
 local function DeepMerge(target, defaults)
@@ -135,10 +190,12 @@ end
 --   • Use "*" segments for table values (not needed yet but reserved)
 --   • Prefer outright deletion to renaming — DeepMerge fills the new name.
 local DEPRECATED_KEY_PATHS = {
-	"Account.RespecTokens",     -- migrated to inventory item `respec_scroll`
-	"Account.ArmorXP",          -- armor-XP system removed (§1.3)
-	"Account.ArmorLevel",       -- armor-level system removed (§1.3)
-	"Account.ArmorAllocated",   -- armor-allocation system removed (§1.3)
+	"Account.RespecTokens",                  -- migrated to inventory item `respec_scroll`
+	"Account.ArmorXP",                       -- armor-XP system removed (§1.3)
+	"Account.ArmorLevel",                    -- armor-level system removed (§1.3)
+	"Account.ArmorAllocated",                -- armor-allocation system removed (§1.3)
+	"Account.CharacterData.skins",           -- §CC-T1.1: armor-as-part-replacement abandoned
+	"Account.CharacterData.equippedSkin",    -- §CC-T1.1: armor-as-part-replacement abandoned
 }
 
 local function PruneDeprecatedKeys(data)
@@ -198,26 +255,11 @@ local function CreateDefaultData()
 		Bonus = {},
 	}
 
-	-- Copy account defaults
-	for key, value in pairs(Config.AccountDefaults) do
-		if type(value) == "table" then
-			data.Account[key] = {}
-			for k, v in pairs(value) do
-				data.Account[key][k] = v
-			end
-		else
-			data.Account[key] = value
-		end
-	end
-
-	-- CharacterData needs a fresh copy (avoid shared skins table between players)
-	data.Account.CharacterData = {
-		isCreated    = false,
-		gender       = nil,
-		preset       = nil,
-		skins        = {},
-		equippedSkin = nil,
-	}
+	-- §T0P2/X1: copy account defaults via DeepCopy so NO nested table is
+	-- ever shared between players or with the config module. This also
+	-- removes the old hand-built CharacterData special case — DeepCopy
+	-- covers it (the schema in AccountDefaults stays the single source).
+	data.Account = DeepCopy(Config.AccountDefaults)
 
 	-- Create class data for unlocked classes
 	for _, className in ipairs(data.Account.UnlockedClasses) do
@@ -244,8 +286,22 @@ function PlayerDataManager.SetupPlayer(player)
 	end
 	setupInProgress[player] = true
 
+	-- §T0P2/X17: a rejoin after an admin wipe starts a fresh life for
+	-- this key — lift the save tombstone.
+	wipedPlayers[tostring(player.UserId)] = nil
+
 	-- Try loading persisted data; fall back to fresh defaults only on genuine first visit.
 	local rawSaved = LoadRawData(player.UserId)
+
+	-- §T0P2/X3: the player may have left while LoadRawData was yielding
+	-- (PlayerRemoving already ran — there was nothing to clean up yet).
+	-- Without this guard we'd store data for a departed Player (strong
+	-- key → leaks forever) and fire dataReadyCallbacks for a ghost,
+	-- setting up downstream state whose cleanup hook already fired.
+	if not player.Parent then
+		setupInProgress[player] = nil
+		return
+	end
 
 	if rawSaved == LOAD_FAILED then
 		-- All DataStore retries exhausted — DO NOT give default data (would erase progress).
@@ -291,20 +347,6 @@ function PlayerDataManager.SetupPlayer(player)
 		end
 	end
 
-	-- Fire all registered data-ready callbacks so other systems (e.g. SharedEventHandlers)
-	-- can push the initial PlayerInfoUpdate immediately after data loads.
-	for _, cb in ipairs(dataReadyCallbacks) do
-		task.spawn(cb, player)
-	end
-
-	-- Auto-unlock any classes this player now qualifies for (handles both
-	-- returning players and future live updates to unlock requirements).
-	task.defer(function()
-		if ClassSystem then
-			ClassSystem.CheckAndUnlockEligibleClasses(player)
-		end
-	end)
-
 	-- Create leaderstats (the Roblox built-in player-list overlay).
 	-- §PDM-D12: Level + PowerScore are the headline stats players want at a
 	-- glance; Merits/Essence are economy and don't belong in the always-on
@@ -331,12 +373,31 @@ function PlayerDataManager.SetupPlayer(player)
 	-- PlayerDataManager.RefreshPowerScore(player) to keep this current.
 	PlayerDataManager.RefreshPowerScore(player)
 
+	-- §T0P2/X7: fire data-ready callbacks AFTER leaderstats + the Level
+	-- attribute exist. task.spawn runs each callback immediately (until
+	-- its first yield), so anything fired here that reads
+	-- player:GetAttribute("Level") — e.g. TeleportDataReader's
+	-- no-teleport-data fallback — now sees the real level, not nil.
+	for _, cb in ipairs(dataReadyCallbacks) do
+		task.spawn(cb, player)
+	end
+
+	-- Auto-unlock any classes this player now qualifies for (handles both
+	-- returning players and future live updates to unlock requirements).
+	task.defer(function()
+		if ClassSystem then
+			ClassSystem.CheckAndUnlockEligibleClasses(player)
+		end
+	end)
+
 	-- Apply health on spawn. §PDM-D9: pass freshSpawn=true so the player
 	-- starts at full HP — the proportional-rescale branch is reserved for
 	-- mid-life stat changes (AllocateStat etc.).
-	player.CharacterAdded:Connect(function(character)
+	-- §T0-FOLLOWUP/L2: track the conn through the per-player Janitor so
+	-- PlayerRemoving cleanly disconnects it.
+	getPlayerJanitor(player):Add(player.CharacterAdded:Connect(function(character)
 		StatSystem.ApplyHealthToCharacter(player, character, true)
-	end)
+	end))
 
 	if player.Character then
 		StatSystem.ApplyHealthToCharacter(player, player.Character, true)
@@ -349,6 +410,19 @@ function PlayerDataManager.RemovePlayer(player)
 	-- player loses XP / progression earned since the last successful save.
 	PlayerDataManager.SavePlayer(player, true)
 	playerDataStore[player] = nil
+
+	-- §T0-FOLLOWUP/L3: clear the in-flight setup flag in case the player
+	-- left while LoadRawData was still yielding. Without this the boolean
+	-- stays true forever, holding a strong ref to the Player object.
+	setupInProgress[player] = nil
+
+	-- §T0-FOLLOWUP/L2: tear down the per-player Janitor (CharacterAdded
+	-- conn for HP-on-spawn, and any future per-player conns we add).
+	local jan = playerJanitors[player]
+	if jan then
+		jan:Destroy()
+		playerJanitors[player] = nil
+	end
 end
 
 --- Permanently delete all saved data for a player from the DataStore and from
@@ -359,8 +433,12 @@ end
 function PlayerDataManager.WipeData(player)
 	local key = tostring(player.UserId)
 
-	-- Cancel any in-flight save so it doesn't overwrite the removal.
-	savingPlayers[key] = nil
+	-- §T0P2/X17: tombstone the key BEFORE removing. SavePlayer checks
+	-- wipedPlayers right before SetAsync, so an in-flight or future save
+	-- can't resurrect the wiped data. (The old `savingPlayers[key] = nil`
+	-- couldn't actually cancel anything — it only confused the
+	-- force-save wait of concurrent savers.)
+	wipedPlayers[key] = true
 
 	-- Remove from DataStore (this is the authoritative wipe).
 	local ok, err = pcall(function()
@@ -418,6 +496,13 @@ function PlayerDataManager.SavePlayer(player, force)
 	else
 		-- Non-force (auto-save): skip if a save is already in flight.
 		if savingPlayers[key] then return end
+	end
+
+	-- §T0P2/X17: never write a key an admin has wiped this session —
+	-- the player must rejoin (rejoin clears the tombstone in SetupPlayer).
+	if wipedPlayers[key] then
+		warn("[PlayerDataManager] Skipping save for wiped key", key, "(", player.Name, ")")
+		return
 	end
 
 	savingPlayers[key] = true
@@ -720,6 +805,10 @@ function PlayerDataManager.AllocateStat(player, statName, points)
 	return StatSystem.AllocateStat(player, statName, points)
 end
 
+-- §T0P2/X22: no callers today — KEPT deliberately as the seam for the
+-- planned single-point deallocation feature (undo a misclicked point
+-- without paying for a full respec). Wire a remote + UI before using;
+-- when that lands, decide whether single-point deallocs cost anything.
 function PlayerDataManager.DeallocateStat(player, statName, points)
 	return StatSystem.DeallocateStat(player, statName, points)
 end
@@ -732,8 +821,11 @@ function PlayerDataManager.GetTotalStat(player, statName)
 	return StatSystem.GetTotalStat(player, statName)
 end
 
-function PlayerDataManager.ApplyHealthToCharacter(player, character)
-	return StatSystem.ApplyHealthToCharacter(player, character)
+-- §T0P2/X22: forward freshSpawn — the old passthrough silently dropped
+-- the third argument, so any caller asking for a fresh-spawn full heal
+-- would have gotten the mid-life proportional rescale instead.
+function PlayerDataManager.ApplyHealthToCharacter(player, character, freshSpawn)
+	return StatSystem.ApplyHealthToCharacter(player, character, freshSpawn)
 end
 
 function PlayerDataManager.ResetHealth(player)

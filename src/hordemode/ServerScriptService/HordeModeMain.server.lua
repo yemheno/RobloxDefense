@@ -20,15 +20,20 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
-local SharedModules    = SSS:WaitForChild("Modules")
-local HordeModeModules = SSS:WaitForChild("HordeMode"):WaitForChild("Modules")
+-- §T0P2/G3: bounded waits + loud error (was: silent infinite hang).
+local SharedModules    = SSS:WaitForChild("Modules", 10)
+    or error("[HordeModeMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
+local HordeFolder      = SSS:WaitForChild("HordeMode", 10)
+    or error("[HordeModeMain] ServerScriptService.HordeMode missing after 10 s — place structure broken", 0)
+local HordeModeModules = HordeFolder:WaitForChild("Modules", 10)
+    or error("[HordeModeMain] ServerScriptService.HordeMode.Modules missing after 10 s — place structure broken", 0)
 
 local Boot      = require(SharedModules:WaitForChild("PlaceBootstrap"))
 local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
 local ctx       = Boot.MakeContext("HordeMode")
 local IsAdmin   = ctx.IsAdmin
 
-_G.HordeModeRequireLoaded = ctx.RequireLoaded
+-- §T0P2/X19: _G.HordeModeRequireLoaded removed — write-only global.
 
 -- ───────────────────────────────────────────────────────────
 -- CONFIG
@@ -155,13 +160,12 @@ ctx.Load(SharedModules, "GameStateManager")
 ctx.loaded["TeleportDataReader"] = require(SharedModules:WaitForChild("TeleportDataReader"))
 ctx.loaded["TeleportDataReader"].Init("HordeMode")
 
--- Difficulty from teleport data (HordeModeSpawner uses its own multipliers,
--- so we stash this for application after the spawner loads).
+-- §T0P2/X2: "Normal" is only the pre-arrival default. The real
+-- difficulty is lobby-owned (DQ-B) and arrives with the first processed
+-- player's teleport data — the OnDifficultyResolved hook below (after
+-- the spawner loads) updates this local, the spawner, and VoteManager.
+-- The old boot-time GetDifficulty() read always returned "Normal".
 local hordeDifficulty = "Normal"
-pcall(function()
-    local d = ctx.loaded["TeleportDataReader"].GetDifficulty()
-    if d then hordeDifficulty = tostring(d) end
-end)
 
 ctx.Load(SharedModules, "AdminTesting")
 
@@ -229,20 +233,15 @@ local pauseStartedAt     = nil
 
 -- ───────────────────────────────────────────────────────────
 -- GAME STATE EVENTS
--- §PB-D3 (§HM3-followup): OnStateChanged listener MUST be registered
--- BEFORE the SetState("Defending") call below so the reset closure
--- observes the first entry. Previously SetState fired before the
--- listener was registered and the reset branch was dead on first run.
+-- §T0P2/X13 (DQ-C): HordeMode servers are ONE-RUN by design — players
+-- are returned to the lobby at the end and the server dies. The old
+-- OnStateChanged closure re-armed the run timers "on each Defending
+-- entry", but the vote loop and run-timer threads below exit
+-- permanently after the first run, so a re-armed state machine would
+-- have had no votes and no end-timer. Deleted rather than made
+-- restartable. If re-runs in one server ever become a thing, restart
+-- the two loops here too.
 -- ───────────────────────────────────────────────────────────
-GameStateManager.OnStateChanged(function(newState, _oldState)
-    if newState == "Defending" then
-        hordeStartTime = os.clock()
-        totalPauseDuration = 0
-        pauseStartedAt = nil
-        hordeRunActive = true
-    end
-end)
-
 GameStateManager.OnReturnToLobby(function()
     if RunModifiers then RunModifiers.Reset() end
     if ReturnTeleporter then ReturnTeleporter.TeleportAllToLobby() end
@@ -273,6 +272,16 @@ ctx.loaded["SharedEventHandlers"].Register({
 -- ───────────────────────────────────────────────────────────
 HordeModeSpawner.Setup(MobAI, ctx.loaded["MobRegistry"])
 HordeModeSpawner.SetDifficulty(hordeDifficulty)
+
+-- §T0P2/X2: apply the real difficulty once it resolves. Updates the
+-- hordeDifficulty upvalue too, so the vote loop's SetRunState pushes
+-- report the true tier instead of the boot default.
+TeleportDataReader.OnDifficultyResolved(function(difficulty)
+    hordeDifficulty = tostring(difficulty)
+    HordeModeSpawner.SetDifficulty(hordeDifficulty)
+    VoteManager.SetRunState({ difficulty = hordeDifficulty })
+    print("[HordeMode] Difficulty resolved:", hordeDifficulty)
+end)
 
 -- §3.1 fix: defer Start() until the first player's DataStore load
 -- completes so the party-anchor level isn't read as the default 1.
@@ -321,10 +330,10 @@ VoteManager.SetRunState({
     modeId     = "HordeMode",
 })
 
--- §PB-D3 (§HM3-followup): Now that OnStateChanged is registered, fire
--- SetState("Defending") so the reset closure observes the transition.
--- The "suppressWaveStart" flag tells the HUD never to show the manual
--- "Start Game" button (Horde auto-starts via the spawner).
+-- §T0P2/X13: run-timing state is initialized at boot (one-run server);
+-- no OnStateChanged re-arm exists anymore. The "suppressWaveStart"
+-- flag tells the HUD never to show the manual "Start Game" button
+-- (Horde auto-starts via the spawner).
 GameStateManager.suppressWaveStart = true
 GameStateManager.SetState("Defending")
 
@@ -464,8 +473,14 @@ Lifecycle.WireOnPlayerReady(ctx, {
         HordeModeSpawner.SetPartyAnchorLevel(highest)
 
         -- Push current game state to late-joiners.
+        -- §T0P2/X9: ReadyGate-routed — this fires from the data-ready
+        -- path, i.e. exactly the boot window where a bare FireClient
+        -- drops if the client hasn't subscribed yet (the race this
+        -- late-joiner fix exists to solve).
         local state = GameStateManager.GetState()
-        NetworkManager.FireClient(player, "GameStateChanged", {
+        local rg = ctx.loaded["ReadyGate"]
+        local fire = rg and rg.FireClient or NetworkManager.FireClient
+        fire(player, "GameStateChanged", {
             oldState  = state,
             newState  = state,
             timestamp = os.clock(),

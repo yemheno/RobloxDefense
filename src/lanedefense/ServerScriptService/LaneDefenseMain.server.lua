@@ -16,14 +16,16 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
-local SharedModules = SSS:WaitForChild("Modules")
+-- §T0P2/G3: bounded wait + loud error (was: silent infinite hang).
+local SharedModules = SSS:WaitForChild("Modules", 10)
+    or error("[LaneDefenseMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
 
 local Boot      = require(SharedModules:WaitForChild("PlaceBootstrap"))
 local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
 local ctx       = Boot.MakeContext("LaneDefense")
 local IsAdmin   = ctx.IsAdmin
 
-_G.LaneDefenseRequireLoaded = ctx.RequireLoaded
+-- §T0P2/X19: _G.LaneDefenseRequireLoaded removed — write-only global.
 
 -- ───────────────────────────────────────────────────────────
 -- CONFIG
@@ -154,13 +156,17 @@ ctx.Load(SharedModules, "VoteManager")
 ctx.loaded["TeleportDataReader"] = require(SharedModules:WaitForChild("TeleportDataReader"))
 ctx.loaded["TeleportDataReader"].Init("Defense")
 
--- Difficulty from teleport data
-pcall(function()
-    local tdr = ctx.loaded["TeleportDataReader"]
+-- §T0P2/X2: difficulty arrives with the FIRST processed player's
+-- teleport data (lobby-owned — DQ-B), not at boot. The old boot-time
+-- GetDifficulty() read always returned "Normal" because ProcessPlayer
+-- hadn't run yet — the lobby's difficulty selection never reached the
+-- spawner. OnDifficultyResolved fires once, validated, when it's real.
+ctx.loaded["TeleportDataReader"].OnDifficultyResolved(function(difficulty)
     local spawner = ctx.loaded["MobSpawner"]
-    if not tdr or not spawner then return end
-    local difficulty = tdr.GetDifficulty() or "Normal"
-    spawner.SetDifficulty(tostring(difficulty))
+    if spawner then spawner.SetDifficulty(tostring(difficulty)) end
+    local vm = ctx.loaded["VoteManager"]
+    if vm then vm.SetRunState({ difficulty = tostring(difficulty) }) end
+    print("[LaneDefense] Difficulty resolved:", difficulty)
 end)
 
 -- §LD1 fix: anchor mob levels to the highest player level — but only
@@ -227,10 +233,9 @@ ctx.loaded["DefenseLine"].LateInit()
 -- Card / vote system
 do
     local vm = ctx.loaded["VoteManager"]
+    -- §T0P2/X2: "Normal" is only the pre-arrival default; the real
+    -- difficulty lands via OnDifficultyResolved above.
     local laneDifficulty = "Normal"
-    pcall(function()
-        laneDifficulty = tostring(ctx.loaded["TeleportDataReader"].GetDifficulty())
-    end)
     vm.Setup({
         NetworkManager   = ctx.loaded["NetworkManager"],
         CardRegistry     = ctx.loaded["CardRegistry"],

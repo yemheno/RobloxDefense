@@ -116,9 +116,10 @@ function PlayerClassSystem.UnlockClass(player, className)
 	local data = playerDataStore[player]
 	if not data then return false, "No player data" end
 
-	-- Block unknown classes
-	if Config.ClassUnlockRequirements[className] == nil
-		and className ~= "Aegis" then
+	-- §T1.2/D4: hardcoded Aegis exception removed. Every known class has
+	-- an entry in ClassUnlockRequirements (derived from ClassConfig); an
+	-- absent entry means the class is genuinely unknown.
+	if Config.ClassUnlockRequirements[className] == nil then
 		return false, "Unknown class: " .. className
 	end
 

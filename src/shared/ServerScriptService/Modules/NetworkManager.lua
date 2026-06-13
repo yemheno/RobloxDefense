@@ -215,9 +215,6 @@ local EVENTS = {
     ShopPurchase           = { rateLimit = nil,  readyGated = false },
     GetShopState           = { rateLimit = nil,  readyGated = false },
 
-    -- ── Character creation ───────────────────────────────────────────
-    RequestCharacterCreationCheck = { rateLimit = nil, readyGated = false },
-
     -- ── Inventory ────────────────────────────────────────────────────
     GetInventory           = { rateLimit = nil,  readyGated = false },
     EquipAccessory         = { rateLimit = nil,  readyGated = false },
@@ -251,7 +248,22 @@ local EVENTS = {
     AdminAction            = { rateLimit = nil,  readyGated = false },
     AdminActionResult      = { rateLimit = nil,  readyGated = false },
     DebugCommand           = { rateLimit = nil,  readyGated = false },
+    ModifySystemStat       = { rateLimit = nil,  readyGated = false }, -- §T0P2/X10: was created ad-hoc by SharedEventHandlers
+
+    -- ── §T0P2/X10: previously used but missing from the manifest ─────
+    -- These were created ad-hoc via GetEvent AFTER the pre-register
+    -- pass, undocumented and invisible to the planned lint pass.
+    DeathState             = { rateLimit = nil,  readyGated = false }, -- DeathSystem push
+    RequestRespawn         = { rateLimit = 4,    readyGated = false }, -- DeathSystem; one per death, 4× headroom
+    HordePaused            = { rateLimit = nil,  readyGated = false }, -- HordePauseManager broadcast
+    NPCProximity           = { rateLimit = nil,  readyGated = false }, -- NPCManager proximity push
 }
+
+-- §T0P2/X10: manifest entries with NO server-side reference today —
+-- either dead or pushes that were never wired. Verify at their owning
+-- tier before deleting: ArmorRefinementResult / ArmorTierUp /
+-- WeaponRefinementResult / WeaponTierUp (T6 equipment), HealNumber (T2
+-- combat — heals may be intended to ride DamageNumber instead).
 
 -- ─────────────────────────────────────────────────────────────────────
 -- RATE LIMITER (per-event)

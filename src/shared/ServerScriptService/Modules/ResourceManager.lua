@@ -29,6 +29,31 @@ local function _voteManagerCheck()
 	return false
 end
 
+-- §T1.4/R1: HitTracker hot-path cache. ResourceManager.Update runs at
+-- 10 Hz per player and used to call Modules:FindFirstChild("HitTracker")
+-- on every tick. Resolve once, cache function refs, then it's a plain
+-- table read forever after.
+local _htResolved          = false
+local _htGetTimeSinceDealt  = nil
+local _htGetTimeSinceRcvd   = nil
+local function _hitTrackerTimers(player)
+	if not _htResolved then
+		_htResolved = true
+		local mod = Modules:FindFirstChild("HitTracker")
+		if mod then
+			local ok, ht = pcall(require, mod)
+			if ok and ht then
+				_htGetTimeSinceDealt = ht.GetTimeSinceLastHitDealt
+				_htGetTimeSinceRcvd  = ht.GetTimeSinceLastHitReceived
+			end
+		end
+	end
+	if not _htGetTimeSinceDealt then
+		return math.huge, math.huge
+	end
+	return _htGetTimeSinceDealt(player), _htGetTimeSinceRcvd(player)
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- CONFIGURATION
 -- ═══════════════════════════════════════════════════════════
@@ -106,6 +131,24 @@ function ResourceManager.Init()
 	-- Setup existing players
 	for _, player in ipairs(Players:GetPlayers()) do
 		ResourceManager.SetupPlayer(player)
+	end
+
+	-- §T1.4/R6: register hit hooks via HitTracker's existing callback API
+	-- instead of relying on HitTracker.NotifyResourceManager. Hit-tracker
+	-- no longer needs to know ResourceManager exists; any future
+	-- per-hit consumer (achievements, runes, future stat tracking)
+	-- registers the same way.
+	local htMod = Modules:FindFirstChild("HitTracker")
+	if htMod then
+		local okHt, ht = pcall(require, htMod)
+		if okHt and ht and ht.OnHitDealt and ht.OnHitReceived then
+			ht.OnHitDealt(function(player, hitData)
+				ResourceManager.OnHitDealt(player, hitData)
+			end)
+			ht.OnHitReceived(function(player, hitData)
+				ResourceManager.OnHitReceived(player, hitData)
+			end)
+		end
 	end
 
 	-- §2.7a: fixed-tick regen scheduler.
@@ -306,18 +349,15 @@ function ResourceManager.Update(dt)
 			continue
 		end
 
-		-- Get HitTracker for timing info
-		local HitTracker = Modules:FindFirstChild("HitTracker")
-		local timeSinceHitDealt = math.huge
-		local timeSinceHitReceived = math.huge
+		-- §T1.4/R1: cached HitTracker timer read; no per-tick FindFirstChild.
+		local timeSinceHitDealt, timeSinceHitReceived = _hitTrackerTimers(player)
 
-		if HitTracker then
-			local ht = require(HitTracker)
-			timeSinceHitDealt = ht.GetTimeSinceLastHitDealt(player)
-			timeSinceHitReceived = ht.GetTimeSinceLastHitReceived(player)
-		end
-
-		-- Calculate rate from behavior
+		-- §T1.4/R2: `max` here is the CLASS-BASE max, not effective
+		-- (effective = base + ResourceMax bonus from gear/talents).
+		-- Class behaviors are intentionally regen-as-absolute-numbers per
+		-- class config; their rates do not scale with ResourceMax bonus.
+		-- If a future behavior wants regen-as-percentage-of-effective, add
+		-- an `effectiveMax = getEffectiveMax(player, data)` field here.
 		local rate = behavior.GetResourceRate(player, {
 			current = data.current,
 			max = data.max,
@@ -473,11 +513,17 @@ function ResourceManager.NotifyClient(player, force)
 
 	data.lastNotifiedValue = data.current
 
+	-- §T1.4/R3: single getEffectiveMax + locally computed percent.
+	-- Avoids the redundant second evaluation that GetResourcePercent's
+	-- internal getEffectiveMax call used to introduce on every push.
+	local effectiveMax = getEffectiveMax(player, data)
+	local percent = (effectiveMax > 0) and (data.current / effectiveMax) * 100 or 0
+
 	NetworkManager.FireClient(player, "ResourceUpdate", {
-		current = data.current,
-		max = getEffectiveMax(player, data),
-		percent = ResourceManager.GetResourcePercent(player),
-		name = ResourceManager.GetResourceName(player),
+		current   = data.current,
+		max       = effectiveMax,
+		percent   = percent,
+		name      = ResourceManager.GetResourceName(player),
 		className = data.className,
 	})
 end

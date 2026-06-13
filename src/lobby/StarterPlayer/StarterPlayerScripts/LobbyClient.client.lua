@@ -58,6 +58,9 @@ Load(LobbyModules, "SceneController")
 Load(LobbyModules, "NPCInteraction")
 
 -- Listen for server ready
+-- §T0P2/X25: intentionally empty — reserved as the loading-screen
+-- dismiss hook. ServerReady is ReadyGate-routed (§T0P2/X9), so it
+-- reliably arrives after this client's ClientReady handshake.
 local NetworkManager = loadedModules["NetworkManager"]
 if NetworkManager then
 	NetworkManager.OnServerEvent("ServerReady", function()

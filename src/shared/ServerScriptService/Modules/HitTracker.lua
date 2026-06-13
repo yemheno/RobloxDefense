@@ -223,10 +223,8 @@ function HitTracker.RecordHitDealt(player, hitData)
 	-- Update combo
 	HitTracker.UpdateComboOnHit(player, hitData, now)
 
-	-- Notify ResourceManager (if exists)
-	HitTracker.NotifyResourceManager(player, "HitDealt", hitData)
-
-	-- Notify hit-dealt listeners (AchievementManager, etc.)
+	-- §T1.4/R6: ResourceManager now registers via OnHitDealt() like every
+	-- other consumer. No bespoke dispatcher path required here.
 	for _, cb in ipairs(hitDealtCallbacks) do
 		task.spawn(cb, player, hitData)
 	end
@@ -273,10 +271,8 @@ function HitTracker.RecordHitReceived(player, hitData)
 	-- Update combat timestamp
 	stats.combat.lastHitReceivedTime = now
 
-	-- Notify ResourceManager (if exists)
-	HitTracker.NotifyResourceManager(player, "HitReceived", hitData)
-
-	-- Notify hit-received listeners (AchievementManager, etc.)
+	-- §T1.4/R6: ResourceManager + AchievementManager + future per-hit
+	-- consumers all dispatch through the single callback list.
 	for _, cb in ipairs(hitReceivedCallbacks) do
 		task.spawn(cb, player, hitData)
 	end
@@ -429,21 +425,10 @@ function HitTracker.GetTimeSinceLastHitReceived(player)
 	return os.clock() - stats.combat.lastHitReceivedTime
 end
 
--- ═══════════════════════════════════════════════════════════
--- RESOURCE MANAGER INTEGRATION
--- ═══════════════════════════════════════════════════════════
-
-function HitTracker.NotifyResourceManager(player, eventType, hitData)
-	local ResourceManager = Modules:FindFirstChild("ResourceManager")
-	if not ResourceManager then return end
-
-	local rm = require(ResourceManager)
-
-	if eventType == "HitDealt" and rm.OnHitDealt then
-		rm.OnHitDealt(player, hitData)
-	elseif eventType == "HitReceived" and rm.OnHitReceived then
-		rm.OnHitReceived(player, hitData)
-	end
-end
+-- §T1.4/R6: HitTracker.NotifyResourceManager removed. Per-hit consumers
+-- (ResourceManager, AchievementManager, future achievement / rune /
+-- proc-on-hit systems) register through HitTracker.OnHitDealt and
+-- HitTracker.OnHitReceived. One dispatch path; no per-hit
+-- FindFirstChild + require lookup.
 
 return HitTracker
