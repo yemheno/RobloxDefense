@@ -448,7 +448,7 @@ local function SaveCharacterCreation(player, payload)
     cd.skinColor = skinColor
     cd.isCreated = true
 
-    print("[CharacterManager]", player.Name, "→ Created:", gender, "Skin:", skinColor)
+    -- §T1.4/Y12: character-created info print removed.
     -- Response to client→server submit; client already has a listener for
     -- this event, so a plain FireClient is fine (no ReadyGate needed).
     NetworkManager.FireClient(player, "CharacterCreationSaved", {

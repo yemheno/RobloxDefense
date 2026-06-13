@@ -60,6 +60,25 @@ end
 -- RESOURCE RATE
 -- ═══════════════════════════════════════════════════════════
 
+-- §T1.4/Y3: cache the proximity scan. GetResourceRate is called at the
+-- resource tick rate (10 Hz) per LifeSteward, but the wounded-ally count
+-- changes slowly — recompute at most every PROXIMITY_REFRESH seconds and
+-- reuse the cached value in between. Weak-keyed so leavers GC; no
+-- PlayerRemoving hook needed.
+local PROXIMITY_REFRESH = 0.5
+local proximityCache = setmetatable({}, { __mode = "k" })
+
+local function getCachedProximityBonus(player)
+	local now = os.clock()
+	local entry = proximityCache[player]
+	if entry and (now - entry.time) < PROXIMITY_REFRESH then
+		return entry.value
+	end
+	local value = LifeStewardBehavior.CalculateProximityBonus(player)
+	proximityCache[player] = { value = value, time = now }
+	return value
+end
+
 function LifeStewardBehavior.GetResourceRate(player, resourceData)
 	local config = LifeStewardBehavior.CONFIG
 	local regen = config.BaseRegen
@@ -70,9 +89,8 @@ function LifeStewardBehavior.GetResourceRate(player, resourceData)
 		regen = regen * config.InCombatRegenMultiplier
 	end
 
-	-- Proximity boost: regen faster when nearby allies are low HP
-	local bonus = LifeStewardBehavior.CalculateProximityBonus(player)
-	regen = regen + bonus
+	-- Proximity boost: regen faster when nearby allies are low HP (cached)
+	regen = regen + getCachedProximityBonus(player)
 
 	return regen
 end

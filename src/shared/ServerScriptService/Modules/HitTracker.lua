@@ -46,49 +46,17 @@ end
 -- HELPERS: Create Default Structures
 -- ═══════════════════════════════════════════════════════════
 
-local function CreateTierStats()
-	return {
-		hits = 0,
-		crits = 0,
-		damage = 0,
-		kills = 0,
-	}
-end
-
-local function CreateReceivedTierStats()
-	return {
-		hits = 0,
-		damage = 0,
-	}
-end
-
-local function CreateStatsBlock()
-	return {
-		dealt = {
-			normal = CreateTierStats(),
-			miniboss = CreateTierStats(),
-			boss = CreateTierStats(),
-		},
-		received = {
-			normal = CreateReceivedTierStats(),
-			miniboss = CreateReceivedTierStats(),
-			boss = CreateReceivedTierStats(),
-		},
-		totals = {
-			hitsDealt = 0,
-			hitsReceived = 0,
-			damageDealt = 0,
-			damageReceived = 0,
-			kills = 0,
-			crits = 0,
-		},
-	}
-end
-
+-- §T1.4/Y5: CreateTierStats / CreateReceivedTierStats / CreateStatsBlock
+-- removed with the lifetime/session blocks they fed (see below).
+--
+-- §T1.4/Y5: the lifetime/session dealt+received accumulation blocks were
+-- removed. They were written every hit but never read anywhere, and they
+-- DUPLICATED the authoritative lifetime stats that AchievementManager
+-- keeps in PlayerData (via the OnHitDealt callback below). HitTracker now
+-- owns only what's actually consumed: live combo state + combat
+-- timestamps (for ResourceManager's in-combat checks).
 local function CreatePlayerStats()
 	return {
-		lifetime = CreateStatsBlock(),
-		session = CreateStatsBlock(),
 		combo = {
 			current = 0,
 			best = 0,
@@ -131,21 +99,12 @@ end
 
 function HitTracker.SetupPlayer(player)
 	playerStats[player] = CreatePlayerStats()
-	print("[HitTracker] Setup complete for", player.Name)
 end
 
 function HitTracker.RemovePlayer(player)
-	-- Persist lifetime stats before dropping the in-memory entry
-	HitTracker.SaveLifetimeStats(player)
+	-- §T1.4/Y5: no lifetime-stats persist step — AchievementManager owns
+	-- the persisted lifetime stats (PlayerData) via the OnHitDealt hook.
 	playerStats[player] = nil
-end
-
-function HitTracker.SaveLifetimeStats(player)
-	local stats = playerStats[player]
-	if not stats then return end
-
-	-- FUTURE: wire into PlayerDataManager:Save() once DataStore schema is finalised
-	print("[HitTracker] Would save lifetime stats for", player.Name)
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -168,54 +127,10 @@ function HitTracker.RecordHitDealt(player, hitData)
 	if not stats then return end
 
 	local now = os.clock()
-	local tier = hitData.mobTier or "normal"
-	local damage = hitData.damage or 0
-	local isCrit = hitData.isCrit or false
-	local critProcs = hitData.critProcs or 0
-	local isKill = hitData.isKill or false
 
-	-- Update lifetime stats
-	local lifetimeTier = stats.lifetime.dealt[tier]
-	lifetimeTier.hits = lifetimeTier.hits + 1
-	lifetimeTier.damage = lifetimeTier.damage + damage
-	if isCrit then
-		lifetimeTier.crits = lifetimeTier.crits + critProcs
-	end
-	if isKill then
-		lifetimeTier.kills = lifetimeTier.kills + 1
-	end
-
-	-- Update lifetime totals
-	local lifetimeTotals = stats.lifetime.totals
-	lifetimeTotals.hitsDealt = lifetimeTotals.hitsDealt + 1
-	lifetimeTotals.damageDealt = lifetimeTotals.damageDealt + damage
-	if isCrit then
-		lifetimeTotals.crits = lifetimeTotals.crits + critProcs
-	end
-	if isKill then
-		lifetimeTotals.kills = lifetimeTotals.kills + 1
-	end
-
-	-- Update session stats (same structure)
-	local sessionTier = stats.session.dealt[tier]
-	sessionTier.hits = sessionTier.hits + 1
-	sessionTier.damage = sessionTier.damage + damage
-	if isCrit then
-		sessionTier.crits = sessionTier.crits + critProcs
-	end
-	if isKill then
-		sessionTier.kills = sessionTier.kills + 1
-	end
-
-	local sessionTotals = stats.session.totals
-	sessionTotals.hitsDealt = sessionTotals.hitsDealt + 1
-	sessionTotals.damageDealt = sessionTotals.damageDealt + damage
-	if isCrit then
-		sessionTotals.crits = sessionTotals.crits + critProcs
-	end
-	if isKill then
-		sessionTotals.kills = sessionTotals.kills + 1
-	end
+	-- §T1.4/Y5: per-hit stat accumulation removed — AchievementManager
+	-- consumes hitData via the OnHitDealt callback below and persists the
+	-- authoritative totals. HitTracker keeps only combat timing + combo.
 
 	-- Update combat timestamp
 	stats.combat.lastHitDealtTime = now
@@ -247,26 +162,9 @@ function HitTracker.RecordHitReceived(player, hitData)
 	if not stats then return end
 
 	local now = os.clock()
-	local tier = hitData.mobTier or "normal"
-	local damage = hitData.damage or 0
 
-	-- Update lifetime stats
-	local lifetimeTier = stats.lifetime.received[tier]
-	lifetimeTier.hits = lifetimeTier.hits + 1
-	lifetimeTier.damage = lifetimeTier.damage + damage
-
-	local lifetimeTotals = stats.lifetime.totals
-	lifetimeTotals.hitsReceived = lifetimeTotals.hitsReceived + 1
-	lifetimeTotals.damageReceived = lifetimeTotals.damageReceived + damage
-
-	-- Update session stats
-	local sessionTier = stats.session.received[tier]
-	sessionTier.hits = sessionTier.hits + 1
-	sessionTier.damage = sessionTier.damage + damage
-
-	local sessionTotals = stats.session.totals
-	sessionTotals.hitsReceived = sessionTotals.hitsReceived + 1
-	sessionTotals.damageReceived = sessionTotals.damageReceived + damage
+	-- §T1.4/Y5: per-hit stat accumulation removed (AchievementManager owns
+	-- persisted totals via OnHitReceived). Combat timing only.
 
 	-- Update combat timestamp
 	stats.combat.lastHitReceivedTime = now
@@ -380,17 +278,13 @@ function HitTracker.ResetSession(player)
 	local stats = playerStats[player]
 	if not stats then return end
 
-	-- Reset session stats
-	stats.session = CreateStatsBlock()
-
-	-- Reset session combo best (keep lifetime)
+	-- §T1.4/Y5: only combo session state remains to reset (the session
+	-- stat block was removed). Lifetime-best combo is preserved.
 	stats.combo.current = 0
 	stats.combo.best = 0
 	stats.combo.damageInCombo = 0
 	stats.combo.critsInCombo = 0
 	stats.combo.lastHitTime = 0
-
-	print("[HitTracker] Session reset for", player.Name)
 end
 
 function HitTracker.ResetAllSessions()

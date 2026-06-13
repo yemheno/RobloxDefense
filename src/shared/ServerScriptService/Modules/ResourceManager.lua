@@ -88,6 +88,25 @@ local function getEffectiveMax(player, data)
 	return data.max + getResourceMaxBonus(player)
 end
 
+-- §T1.4/Y4: zero-regen fallback for a behavior that fails to load. Keeps
+-- the class playable (a sane resource pool, no regen/procs) instead of
+-- silently leaving ClassBehaviors[class] nil. CONFIG mirrors the shape
+-- SetupPlayer reads so the resource bar still shows a 0/100 pool.
+function ResourceManager._FallbackBehavior(className)
+	return {
+		CONFIG = {
+			ResourceName     = className .. " (unavailable)",
+			MaxResource      = 100,
+			StartingResource = 0,
+		},
+		GetResourceRate = function() return 0 end,
+		OnHitDealt      = function() return 0 end,
+		OnHitReceived   = function() return 0 end,
+		OnResourceFull  = function() end,
+		OnResourceEmpty = function() end,
+	}
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
 -- ═══════════════════════════════════════════════════════════
@@ -101,24 +120,29 @@ function ResourceManager.Init()
 	if behaviorsFolder then
 		for _, behaviorModule in ipairs(behaviorsFolder:GetChildren()) do
 			if behaviorModule:IsA("ModuleScript") then
+				-- Extract class name from module name (e.g. "AegisBehavior" → "Aegis")
+				local className = behaviorModule.Name:gsub("Behavior", "")
 				local success, behavior = pcall(require, behaviorModule)
 				if success then
-					-- Extract class name from module name (e.g., "AegisBehavior" → "Aegis")
-					local className = behaviorModule.Name:gsub("Behavior", "")
 					ClassBehaviors[className] = behavior
-
-					if behavior.Init then
-						behavior.Init()
-					end
-
-					print("[ResourceManager] Loaded behavior:", className)
+					if behavior.Init then behavior.Init() end
+					-- §T1.4/Y12: removed the per-behavior "Loaded" print.
 				else
-					warn("[ResourceManager] Failed to load behavior:", behaviorModule.Name, behavior)
+					-- §T1.4/Y4: a behavior that fails to load used to leave its
+					-- class with NO regen and only a quiet warn. Install a
+					-- documented zero-regen fallback so the class still
+					-- functions, and shout loudly so the broken module is
+					-- obvious at boot rather than mid-playtest.
+					ClassBehaviors[className] = ResourceManager._FallbackBehavior(className)
+					warn(string.format(
+						"[ResourceManager] ⚠ FAILED to load behavior '%s' — class '%s' falls back to " ..
+						"ZERO regen. Fix the module. Error: %s",
+						behaviorModule.Name, className, tostring(behavior)))
 				end
 			end
 		end
 	else
-		warn("[ResourceManager] ClassBehaviors folder not found!")
+		warn("[ResourceManager] ClassBehaviors folder not found! No class will regen resource.")
 	end
 
 	-- Create network events
@@ -199,8 +223,7 @@ function ResourceManager.SetupPlayer(player)
 
 	-- Notify client of initial state
 	ResourceManager.NotifyClient(player, true)
-
-	print("[ResourceManager] Setup for", player.Name, "- Class:", className, "- Resource:", startingResource, "/", maxResource)
+	-- §T1.4/Y12: per-player setup print removed (boot/join noise).
 end
 
 function ResourceManager.RemovePlayer(player)

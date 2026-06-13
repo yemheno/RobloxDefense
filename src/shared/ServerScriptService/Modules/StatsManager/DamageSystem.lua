@@ -144,10 +144,14 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 	damage = damage * elementMult
 
 	-- Step 7: Vulnerability multiplier (applied by skill debuffs, e.g. Meteorite)
+	-- §T1P2/Y2: interim runaway clamp. The full max-stacks system (TODO
+	-- §T1P2-STACKS) lands at T2 with the mob-debuff rework; until then this
+	-- ceiling stops a stacking bug or a mis-tuned skill from multiplying
+	-- damage without bound. Current skills set ~1.25×; 3.0 leaves headroom.
 	if targetMob then
 		local vulnerability = targetMob:GetAttribute("Vulnerability") or 0
 		if vulnerability > 0 then
-			damage = damage * vulnerability
+			damage = damage * math.min(vulnerability, 3.0)
 		end
 	end
 

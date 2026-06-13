@@ -54,8 +54,7 @@ function PlayerStatSystem.ResetHealth(player)
 	local totalHealth = math.floor(PlayerStatSystem.GetTotalStat(player, "Health"))
 	humanoid.MaxHealth = totalHealth
 	humanoid.Health = totalHealth
-
-	print("[PlayerStatSystem] Reset health for", player.Name)
+	-- §T1.4/Y12: info print removed.
 end
 
 --============================================

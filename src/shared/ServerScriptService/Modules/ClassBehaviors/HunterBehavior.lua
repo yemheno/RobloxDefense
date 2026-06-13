@@ -20,7 +20,9 @@ HunterBehavior.CONFIG = {
 
 	-- Crit bonus (Hunters are crit-focused!)
 	GainPerCrit = 2,                -- §29.1: +2 on crit
-	MultiCritBonus = 0,             -- §29.1: no multi-crit bonus specified
+	-- §T1.4/Y11: MultiCritBonus removed — stale class-specific knob (was
+	-- always 0). Multi-crit is owned by the dedicated CriticalSystem
+	-- (geometric multi-proc), not per-behavior resource gain.
 
 	-- On kill
 	GainPerKill = 3,                -- §29.1: +3 on kill
@@ -58,11 +60,6 @@ function HunterBehavior.OnHitDealt(player, hitData, resourceData)
 	-- Crit bonus (Hunter specialty!)
 	if hitData.isCrit and hitData.critProcs then
 		gain = gain + config.GainPerCrit
-
-		-- Multi-crit bonus
-		if hitData.critProcs > 1 then
-			gain = gain + (config.MultiCritBonus * (hitData.critProcs - 1))
-		end
 	end
 
 	-- Kill bonus
