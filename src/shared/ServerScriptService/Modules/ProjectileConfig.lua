@@ -59,6 +59,10 @@ ProjectileConfig.Projectiles = {
 		},
 	},
 
+	-- §T2/Z8: PiercingArrow / FrostBolt / ExplosiveShot below are
+	-- FUTURE-CONTENT templates — no class or skill references them yet.
+	-- Kept deliberately as authoring examples for new ranged content.
+
 	-- Piercing arrow (Archer ability)
 	PiercingArrow = {
 		template = "BasicProjectile",
@@ -98,6 +102,9 @@ ProjectileConfig.Projectiles = {
 }
 
 -- Default projectile per class
+-- §T2/Z8: Aegis and LifeSteward are INTENTIONALLY absent — melee /
+-- support classes have no basic-attack projectile. Don't re-flag this
+-- in future audits.
 ProjectileConfig.ClassDefaults = {
 	Arcanist = "Fireball",
 	Hunter = "Arrow",

@@ -158,21 +158,34 @@ end
 -- READING
 -- ═══════════════════════════════════════════════════════════
 
+-- §T5-T9/S4: per-board TTL cache for the sorted page. Every client
+-- GetLeaderboard used to hit OrderedDataStore:GetSortedAsync directly —
+-- a quota burn under concurrent requests. The RAW page is cached; the
+-- §LB3 viewer-row substitution still runs per request on a copy, so
+-- each viewer keeps seeing their live score.
+local BOARD_CACHE_TTL = 30
+local boardCache = {}  -- [board] = { time = os.clock(), page = {...} }
+
 --- Fetch top entries from an OrderedDataStore.
 --- Returns { {rank, name, userId, score}, ... }
 function LeaderboardManager.GetTopEntries(board, count, viewer)
     count = count or MAX_ENTRIES
-    local store = getStore(board)
-    if not store then return {} end
 
-    local ok, pages = pcall(store.GetSortedAsync, store, false, count)
-    if not ok or not pages then return {} end
+    local cached = boardCache[board]
+    local pageData
+    if cached and (os.clock() - cached.time) < BOARD_CACHE_TTL then
+        pageData = cached.page
+    else
+        local store = getStore(board)
+        if not store then return {} end
+        local ok, pages = pcall(store.GetSortedAsync, store, false, count)
+        if not ok or not pages then return {} end
+        pageData = pages:GetCurrentPage()
+        boardCache[board] = { time = os.clock(), page = pageData }
+    end
 
     local entries = {}
     local rank = 0
-
-    -- Read first page
-    local pageData = pages:GetCurrentPage()
     for _, entry in ipairs(pageData) do
         rank = rank + 1
         local userId = tonumber(string.match(entry.key, "player_(%d+)"))

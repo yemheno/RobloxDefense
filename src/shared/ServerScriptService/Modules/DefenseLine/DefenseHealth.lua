@@ -252,15 +252,37 @@ function DefenseHealth.BroadcastHealth()
 	})
 end
 
+-- §T4/V3 (X9 family): the late-joiner push fires from the data-ready
+-- path — exactly the boot window where a raw FireClient drops if the
+-- client hasn't subscribed yet. Route through ReadyGate when available.
+local _ReadyGate = nil
+local function getReadyGate()
+	if _ReadyGate ~= nil then return _ReadyGate or nil end
+	local mod = script.Parent.Parent:FindFirstChild("ReadyGate")
+	if mod then
+		local ok, rg = pcall(require, mod)
+		_ReadyGate = (ok and rg) or false
+	else
+		_ReadyGate = false
+	end
+	return _ReadyGate or nil
+end
+
 function DefenseHealth.SendStateToPlayer(player)
 	if not DefenseHealth.NetworkManager then return end
 
-	DefenseHealth.NetworkManager.FireClient(player, "DefenseLineUpdate", {
+	local payload = {
 		currentHealth = currentHealth,
 		maxHealth = maxHealth,
 		percent = DefenseHealth.GetHealthPercent(),
 		isDestroyed = isDestroyed,
-	})
+	}
+	local rg = getReadyGate()
+	if rg then
+		rg.FireClient(player, "DefenseLineUpdate", payload)
+	else
+		DefenseHealth.NetworkManager.FireClient(player, "DefenseLineUpdate", payload)
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════

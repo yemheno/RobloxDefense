@@ -276,6 +276,38 @@ function BaseSkills.GetForwardCastPosition(player, skill, inputData)
 	return playerPos + lookDir * castDistance
 end
 
+--- §T2/Z3: single cast-direction resolver — replaces six copy-pasted
+--- variants across Aegis/Arcanist/Hunter skill files. Returns a flat,
+--- normalized, never-NaN direction.
+---
+--- inputData handling is deliberate:
+---   • Pass `inputData`  → prefer the client's lookDirection (Hunter
+---     projectile skills — matches the client's aim correction).
+---   • Pass `nil`        → server CFrame.LookVector only (Aegis /
+---     Arcanist melee & beam skills keep their server-authoritative
+---     aim; passing inputData here would CHANGE aiming behavior).
+---
+--- The zero-guard runs AFTER flattening: the old Hunter client-look
+--- branch normalized `Vector3.new(x, 0, z)` unguarded, so a vertical
+--- lookDirection (e.g. (0,1,0) — magnitude 1, passed the pre-check)
+--- produced a NaN direction that poisoned the shape math.
+function BaseSkills.GetCastDirection(rootPart, inputData)
+	local flat
+	if inputData and typeof(inputData.lookDirection) == "Vector3"
+		and inputData.lookDirection.Magnitude > 0.001 then
+		local cl = inputData.lookDirection
+		flat = Vector3.new(cl.X, 0, cl.Z)
+	end
+	if not flat or flat.Magnitude < 0.001 then
+		local lv = rootPart.CFrame.LookVector
+		flat = Vector3.new(lv.X, 0, lv.Z)
+	end
+	if flat.Magnitude < 0.001 then
+		return Vector3.new(0, 0, -1)
+	end
+	return flat.Unit
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- SHARED SKILL GETTERS (injected into class modules to avoid duplication)
 -- ═══════════════════════════════════════════════════════════

@@ -337,9 +337,9 @@ function ArcanistSkills.ArcaneBeamExec(player, skill, inputData)
 	if not rootPart then return false end
 
 	local origin    = rootPart.Position
-	local lookVec = rootPart.CFrame.LookVector
-	local flatDir = Vector3.new(lookVec.X, 0, lookVec.Z)
-	local direction = if flatDir.Magnitude > 0.001 then flatDir.Unit else Vector3.new(0, 0, -1)
+	-- §T2/Z3: server-authoritative aim (no inputData on purpose — see
+	-- BaseSkills.GetCastDirection doc).
+	local direction = Base.GetCastDirection(rootPart)
 
 	-- Visual
 	Base.SendVisualToAll("ArcaneBeam", {
@@ -356,7 +356,7 @@ function ArcanistSkills.ArcaneBeamExec(player, skill, inputData)
 	local targets = Base.GetTargetsInShape(origin, direction, skill)
 	local hits    = Base.DamageTargets(targets, player, skill.damageMultiplier, skill.id, skill.element)
 
-	print("[ArcanistSkills] Arcane Beam — Hits:", hits)
+	-- §T2/Z6: telemetry print removed.
 	return true
 end
 
@@ -394,7 +394,7 @@ function ArcanistSkills.FrostBindExec(player, skill, inputData)
 	-- Apply Slow + DpS to mobs in area
 	Effects.ApplyEffectsToMobs(player, skill.effects, targets)
 
-	print("[ArcanistSkills] Frost Bind — Hits:", hits, "at range", (targetPos - playerPos).Magnitude)
+	-- §T2/Z6: telemetry print removed.
 	return true
 end
 
@@ -407,9 +407,9 @@ function ArcanistSkills.ArcaneSurgeExec(player, skill, inputData)
 	if not rootPart then return false end
 
 	local origin    = rootPart.Position
-	local lookVec = rootPart.CFrame.LookVector
-	local flatDir = Vector3.new(lookVec.X, 0, lookVec.Z)
-	local direction = if flatDir.Magnitude > 0.001 then flatDir.Unit else Vector3.new(0, 0, -1)
+	-- §T2/Z3: server-authoritative aim (no inputData on purpose — see
+	-- BaseSkills.GetCastDirection doc).
+	local direction = Base.GetCastDirection(rootPart)
 
 	-- Visual
 	Base.SendVisualToAll("ArcaneSurge", {
@@ -429,7 +429,7 @@ function ArcanistSkills.ArcaneSurgeExec(player, skill, inputData)
 	-- Knockback
 	Effects.ApplyEffects(player, skill.effects, origin)
 
-	print("[ArcanistSkills] Arcane Surge — Hits:", hits)
+	-- §T2/Z6: telemetry print removed.
 	return true
 end
 
@@ -454,10 +454,7 @@ function ArcanistSkills.MeteoriteExec(player, skill, inputData)
 	local div  = skill.resourceScalingDiv or 100
 	local scaledMult = base * (1 + resourceUsed / div)
 
-	print(string.format(
-		"[ArcanistSkills] Meteorite — Resource: %d | Per-element mult: %.2f | Area: %d",
-		resourceUsed, scaledMult, skill.shapeParams.range
-	))
+	-- §T2/Z6: telemetry print removed.
 
 	-- Find targets once
 	local targets = Base.GetTargetsInCircle(targetPos, skill.shapeParams.range)

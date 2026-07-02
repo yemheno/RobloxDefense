@@ -238,6 +238,13 @@ function MobRegistry.GetScaledMob(mobId, level, difficultyOverrides)
 		end
 	end
 
+	-- §T3/W7: defensive clamps — a zero/negative multiplier or a large
+	-- negative armorFlatBonus from a bad override would otherwise spawn
+	-- dead (HP 0) or negative-armor mobs silently.
+	if scaledMob.health then scaledMob.health = math.max(1, scaledMob.health) end
+	if scaledMob.damage then scaledMob.damage = math.max(0, scaledMob.damage) end
+	if scaledMob.armor  then scaledMob.armor  = math.max(0, scaledMob.armor)  end
+
 	-- Store level info
 	scaledMob.level = level
 	-- For debugging/UI: expose health multiplier (most relevant)

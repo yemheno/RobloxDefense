@@ -169,13 +169,13 @@ ctx.loaded["TeleportDataReader"].OnDifficultyResolved(function(difficulty)
     print("[LaneDefense] Difficulty resolved:", difficulty)
 end)
 
--- §LD1 fix: anchor mob levels to the highest player level — but only
--- after the first player's DataStore load completes. Mirrors §3.1 in
--- HordeMode.
-local laneAnchorApplied = false
-local function applyLaneAnchorOnce()
-    if laneAnchorApplied then return end
-    laneAnchorApplied = true
+-- §LD1 fix + §T3/W8: anchor mob levels to the highest player level,
+-- re-computed on EVERY player's data-ready (mirrors HordeMode's extras
+-- re-anchor). The old once-flag anchored to whichever player's data
+-- loaded FIRST — a later-loading higher-level player never counted, so
+-- subsequent waves under-scaled (carried G6). SetPartyAnchorLevel only
+-- affects future waves, which is exactly what we want here.
+local function applyLaneAnchor()
     local ok, err = pcall(function()
         local spawner = ctx.loaded["MobSpawner"]
         local pdm = ctx.loaded["PlayerDataManager"]
@@ -193,10 +193,10 @@ local function applyLaneAnchorOnce()
 end
 
 if ctx.loaded["PlayerDataManager"] and ctx.loaded["PlayerDataManager"].OnPlayerDataReady then
-    ctx.loaded["PlayerDataManager"].OnPlayerDataReady(function() applyLaneAnchorOnce() end)
+    ctx.loaded["PlayerDataManager"].OnPlayerDataReady(function() applyLaneAnchor() end)
 else
     warn("[LaneDefense] PlayerDataManager.OnPlayerDataReady missing; applying anchor immediately")
-    applyLaneAnchorOnce()
+    applyLaneAnchor()
 end
 
 ctx.Load(SharedModules, "AdminTesting")

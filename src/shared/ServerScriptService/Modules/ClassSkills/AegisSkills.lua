@@ -346,9 +346,9 @@ function AegisSkills.ShieldBoomerang(player, skill, inputData)
 	if not rootPart then return false end
 
 	local origin    = rootPart.Position
-	local lookVec = rootPart.CFrame.LookVector
-	local flatDir = Vector3.new(lookVec.X, 0, lookVec.Z)
-	local direction = if flatDir.Magnitude > 0.001 then flatDir.Unit else Vector3.new(0, 0, -1)
+	-- §T2/Z3: server-authoritative aim (no inputData on purpose — see
+	-- BaseSkills.GetCastDirection doc).
+	local direction = Base.GetCastDirection(rootPart)
 
 	Base.SendVisualToAll("Boomerang", {
 		skillId   = skill.id,
@@ -365,7 +365,7 @@ function AegisSkills.ShieldBoomerang(player, skill, inputData)
 	-- PASS 1: Outgoing
 	local outTargets = Base.GetTargetsInShape(origin, direction, skill)
 	local hitCount   = Base.DamageTargets(outTargets, player, skill.outgoingMultiplier, skill.id, skill.element)
-	print("[AegisSkills] Shield Boomerang OUT — Hits:", hitCount)
+	-- §T2/Z6: telemetry print removed.
 
 	-- PASS 2: Returning (delayed)
 	task.delay(skill.travelTime + (skill.returnDelay or 0), function()
@@ -373,7 +373,7 @@ function AegisSkills.ShieldBoomerang(player, skill, inputData)
 		if not rp then return end
 		local retTargets = Base.GetTargetsInShape(rp.Position, direction, skill)
 		local retHits    = Base.DamageTargets(retTargets, player, skill.returningMultiplier, skill.id .. "_return", skill.element)
-		print("[AegisSkills] Shield Boomerang BACK — Hits:", retHits)
+		-- §T2/Z6: telemetry print removed.
 	end)
 
 	return true
@@ -439,9 +439,9 @@ function AegisSkills.SunderingStrikesExec(player, skill, inputData)
 	if not rootPart then return false end
 
 	local origin    = rootPart.Position
-	local lookVec = rootPart.CFrame.LookVector
-	local flatDir = Vector3.new(lookVec.X, 0, lookVec.Z)
-	local direction = if flatDir.Magnitude > 0.001 then flatDir.Unit else Vector3.new(0, 0, -1)
+	-- §T2/Z3: server-authoritative aim (no inputData on purpose — see
+	-- BaseSkills.GetCastDirection doc).
+	local direction = Base.GetCastDirection(rootPart)
 
 	-- Visual
 	Base.SendVisualToAll("SunderingStrikes", {
@@ -462,7 +462,7 @@ function AegisSkills.SunderingStrikesExec(player, skill, inputData)
 	-- Apply stacking debuff effects to each mob
 	Effects.ApplyStackingEffects(player, skill.effects, targets)
 
-	print("[AegisSkills] Sundering Strikes — Targets:", #targets)
+	-- §T2/Z6: telemetry print removed.
 	return true
 end
 
@@ -489,10 +489,7 @@ function AegisSkills.BattleBeastExec(player, skill, inputData)
 	-- Allies always receive 100% DR (full protection — no cap applies to ultimates)
 	local allyFullDR = 100
 
-	print(string.format(
-		"[AegisSkills] Battle Beast — Resource: %d | Self DR: %.1f%% (uncapped) | Ally DR: %d%% (full shield) | Duration: %ds",
-		resourceUsed, selfDR, allyFullDR, dur
-	))
+	-- §T2/Z6: telemetry print removed.
 
 	-- Apply self DR buff via the UNCAPPED path (bypasses the 75% stat cap)
 	Effects.ApplyEffect(player, {

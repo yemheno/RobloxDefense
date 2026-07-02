@@ -335,8 +335,7 @@ function LifeStewardSkills.MendingTouchExec(player, skill, inputData)
 		color     = skill.debugColor,
 	})
 
-	print("[LifeStewardSkills] Mending Touch — healed", target.Name, "for", math.floor(healResult.heal),
-		healResult.wasCrit and "(CRIT)" or "")
+	-- §T2/Z6: telemetry print removed.
 	return true
 end
 
@@ -373,7 +372,7 @@ function LifeStewardSkills.VerdantBloomExec(player, skill, inputData)
 			Effects.ApplyHealOverTime(player, skill.hotHealing, origin)
 		end
 
-		print("[LifeStewardSkills] Verdant Bloom — healed", #allies, "allies")
+		-- §T2/Z6: telemetry print removed.
 	end
 
 	-- Visual
@@ -420,7 +419,7 @@ function LifeStewardSkills.NaturesPurgeExec(player, skill, inputData)
 		color    = skill.debugColor,
 	})
 
-	print("[LifeStewardSkills] Nature's Purge — cleansed", cleansedCount, "allies")
+	-- §T2/Z6: telemetry print removed.
 	return true
 end
 
@@ -482,8 +481,7 @@ function LifeStewardSkills.GenesisExec(player, skill, inputData)
 					color     = skill.debugColor,
 				})
 
-				print("[LifeStewardSkills] Genesis — REVIVED", knockedTarget.Name, "with",
-					math.floor(healthPct * 100) .. "% HP,", math.floor(resourcePct * 100) .. "% resource")
+				-- §T2/Z6: telemetry print removed.
 				return true
 			end
 		end
@@ -521,7 +519,7 @@ function LifeStewardSkills.GenesisExec(player, skill, inputData)
 			isGenesis = true,
 		})
 
-		print("[LifeStewardSkills] Genesis — FULL HEALED", target.Name, "to 100% HP")
+		-- §T2/Z6: telemetry print removed.
 		return true
 	end
 

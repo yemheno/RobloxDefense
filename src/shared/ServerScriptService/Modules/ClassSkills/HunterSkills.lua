@@ -321,15 +321,9 @@ function HunterSkills.SwiftArrowExec(player, skill, inputData)
 
 	-- Prefer client's authoritative look direction (already flat/normalised by SkillInput)
 	-- Falls back to server rootPart LookVector if not provided
-	local direction
-	local clientLook = inputData and inputData.lookDirection
-	if clientLook and clientLook.Magnitude > 0.001 then
-		direction = Vector3.new(clientLook.X, 0, clientLook.Z).Unit
-	else
-		local lookVec = rootPart.CFrame.LookVector
-		local flatDir = Vector3.new(lookVec.X, 0, lookVec.Z)
-		direction = if flatDir.Magnitude > 0.001 then flatDir.Unit else Vector3.new(0, 0, -1)
-	end
+	-- §T2/Z3: client-look preferred, server fallback, NaN-proof (the old
+	-- inline version normalized the flattened client vector unguarded).
+	local direction = Base.GetCastDirection(rootPart, inputData)
 
 	-- Visual
 	Base.SendVisualToAll("Projectile", {
@@ -359,7 +353,7 @@ function HunterSkills.SwiftArrowExec(player, skill, inputData)
 		hitCount = hitCount + 1
 	end
 
-	print("[HunterSkills] Swift Arrow — Hits:", hitCount)
+	-- §T2/Z6: telemetry print removed.
 	return true
 end
 
@@ -374,15 +368,9 @@ function HunterSkills.BarrageExec(player, skill, inputData)
 	local origin = rootPart.Position
 
 	-- Prefer client's authoritative look direction
-	local direction
-	local clientLook = inputData and inputData.lookDirection
-	if clientLook and clientLook.Magnitude > 0.001 then
-		direction = Vector3.new(clientLook.X, 0, clientLook.Z).Unit
-	else
-		local lookVec = rootPart.CFrame.LookVector
-		local flatDir = Vector3.new(lookVec.X, 0, lookVec.Z)
-		direction = if flatDir.Magnitude > 0.001 then flatDir.Unit else Vector3.new(0, 0, -1)
-	end
+	-- §T2/Z3: client-look preferred, server fallback, NaN-proof (the old
+	-- inline version normalized the flattened client vector unguarded).
+	local direction = Base.GetCastDirection(rootPart, inputData)
 
 	local arrowCount = skill.arrowCount or 5
 	local arrowDelay = skill.arrowDelay or 0.12
@@ -430,7 +418,7 @@ function HunterSkills.BarrageExec(player, skill, inputData)
 		player:SetAttribute("CastingLockAttack", false)
 	end)
 
-	print("[HunterSkills] Barrage — Firing", arrowCount, "arrows")
+	-- §T2/Z6: telemetry print removed.
 	return true
 end
 
@@ -450,9 +438,9 @@ function HunterSkills.RainOfArrowsExec(player, skill, inputData)
 	local targetPos = Base.GetForwardCastPosition(player, skill, inputData)
 
 	-- Capture player facing at cast time for shape orientation
-	local lookVec = rootPart.CFrame.LookVector
-	local flatDir = Vector3.new(lookVec.X, 0, lookVec.Z)
-	local direction = if flatDir.Magnitude > 0.001 then flatDir.Unit else Vector3.new(0, 0, -1)
+	-- §T2/Z3: seventh copy of the direction block, missed by the first
+	-- sweep — server-look on purpose (shape orientation, not aim).
+	local direction = Base.GetCastDirection(rootPart)
 
 	-- Visual
 	Base.SendVisualToAll("RainOfArrows", {
@@ -471,7 +459,7 @@ function HunterSkills.RainOfArrowsExec(player, skill, inputData)
 			-- Hit targets at the target position (not player position)
 			local targets = Base.GetTargetsInShape(targetPos, direction, skill)
 			local hits    = Base.DamageTargets(targets, player, skill.damageMultiplier, skill.id, skill.element)
-			print("[HunterSkills] Rain of Arrows wave", wave, "— Hits:", hits)
+			-- §T2/Z6: telemetry print removed.
 		end)
 	end
 
@@ -490,10 +478,7 @@ function HunterSkills.EagleEyeExec(player, skill, inputData)
 	local atkPenalty   = skill.attackSpeedPenalty or 40
 	local dur          = skill.buffDuration or 6
 
-	print(string.format(
-		"[HunterSkills] Eagle Eye — Resource: %d | +CritChance: %.1f | -AtkSpeed: %d%% | Duration: %ds",
-		resourceUsed, critBonus, atkPenalty, dur
-	))
+	-- §T2/Z6: telemetry print removed.
 
 	-- Apply Crit Chance buff
 	Effects.ApplyEffect(player, {

@@ -156,6 +156,18 @@ function VoteManager.Setup(deps)
         VoteManager._OnVoteCastPersonal(player, cardIndex)
     end)
 
+    -- §T5/S1: mid-run leaver cleanup. These four tables are Player-keyed
+    -- and were only cleared by the between-run Reset(), so every mid-run
+    -- leaver left entries behind for the rest of the run. (Rejoiners get
+    -- a NEW Player instance, so stale entries never blocked anyone —
+    -- pure leak, now closed at the source.)
+    Players.PlayerRemoving:Connect(function(player)
+        playersVoted[player]          = nil
+        personalVote[player]          = nil
+        personalCooldowns[player]     = nil
+        fragmentRolledThisRun[player] = nil
+    end)
+
 end
 
 --- Set mode-specific dependencies (defenseLine, mobSpawner, etc.)
@@ -655,6 +667,22 @@ function VoteManager._Resolve()
     local winnerIndex = winners[math.random(#winners)]
     local winnerCardId = voteOptions[winnerIndex]
     local winnerCard   = CardRegistry.GetCard(winnerCardId)
+
+    -- §T5/S2: nil-guard. voteOptions were valid at StartVote, but if the
+    -- registry ever loses the card between start and resolve, the old
+    -- code crashed here — leaving voteActive stuck true (vote system
+    -- deadlocked for the run). Complete the lifecycle with a stub result
+    -- instead: clients close their vote UI, no reward applies.
+    if not winnerCard then
+        warn("[VoteManager] Winner card missing from registry:", tostring(winnerCardId),
+            "— resolving vote with no reward")
+        winnerCard = {
+            id = winnerCardId,
+            name = "(unavailable)",
+            description = "",
+            apply = function() end,
+        }
+    end
 
     -- §VM3: cooldown is now recorded AFTER a successful apply (see below).
 

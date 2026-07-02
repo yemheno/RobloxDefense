@@ -102,14 +102,34 @@ function MatchmakingManager.QueueForMode(player, modeId, difficulty)
 
 	-- Validate difficulty (server-authoritative — default to Normal if invalid)
 	-- "Auto" or nil → pick the highest tier all party members qualify for
-	if difficulty == "Auto" or type(difficulty) ~= "string" or not DifficultyConfig.IsValid(difficulty) then
+	local partyLevels = {}
+	do
 		local members = PartyManager.GetPartyMembers(player)
-		local levels = {}
 		for _, m in ipairs(members) do
 			local acct = PlayerDataManager.GetAccountData(m)
-			table.insert(levels, acct and acct.Level or 1)
+			table.insert(partyLevels, acct and acct.Level or 1)
 		end
-		difficulty = DifficultyConfig.AutoSelect(levels)
+	end
+	if difficulty == "Auto" or type(difficulty) ~= "string" or not DifficultyConfig.IsValid(difficulty) then
+		difficulty = DifficultyConfig.AutoSelect(partyLevels)
+	else
+		-- §T5-T9/S3: enforce requiredLevel on EXPLICIT picks too. A valid
+		-- tier name ("Nightmare") used to skip the auto-select branch —
+		-- and requiredLevel was only enforced inside AutoSelect — so a
+		-- level-1 party could queue Nightmare with a hand-crafted packet.
+		local tier = DifficultyConfig.GetDifficulty(difficulty)
+		local minLevel = math.huge
+		for _, lvl in ipairs(partyLevels) do
+			minLevel = math.min(minLevel, lvl)
+		end
+		if minLevel < (tier.requiredLevel or 1) then
+			MatchmakingManager.SendUpdate(player, {
+				status = "Error",
+				message = difficulty .. " requires level " .. (tier.requiredLevel or 1)
+					.. " (party lowest: " .. (minLevel == math.huge and 1 or minLevel) .. ").",
+			})
+			return false
+		end
 	end
 
 	local mode = GameModeConfig.GetMode(modeId)

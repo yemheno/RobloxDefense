@@ -9,6 +9,7 @@ local MobAI = require(Modules:WaitForChild("MobAI"))
 local MobRegistry = require(Modules:WaitForChild("MobRegistry"))
 local WaveConfig = require(Modules:WaitForChild("WaveConfig"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
+local MobSpawnHelper = require(Modules:WaitForChild("MobSpawnHelper"))  -- §T3/W9
 
 -- RunModifiers (lazy-loaded)
 local RunModifiers      = nil
@@ -428,9 +429,11 @@ function MobSpawner.SpawnWave(waveData)
 				task.wait(0.25)
 			end
 		end
-		if not spawned then
+		if not spawned and waveState ~= "idle" then
+			-- §T3/W9: with never-fail clone, reaching here means a CONFIG
+			-- error (unknown mobId / missing template) — requeues can't fix it.
 			warn(string.format(
-				"[MobSpawner] Guaranteed slot %s UNRECOVERABLE after %d re-queues — wave count will be short.",
+				"[MobSpawner] Guaranteed slot %s UNRECOVERABLE (config error?) after %d re-queues — wave count will be short.",
 				tostring(mobId), MAX_WAVE_REQUEUES
 			))
 		end
@@ -471,9 +474,10 @@ function MobSpawner.SpawnWave(waveData)
 				task.wait(0.25)
 			end
 		end
-		if not spawned then
+		if not spawned and waveState ~= "idle" then
+			-- §T3/W9: only reachable on a config error now (see above).
 			warn(string.format(
-				"[MobSpawner] Wave slot %s UNRECOVERABLE after %d re-queues — wave count will be short.",
+				"[MobSpawner] Wave slot %s UNRECOVERABLE (config error?) after %d re-queues — wave count will be short.",
 				tostring(mobId), MAX_WAVE_REQUEUES
 			))
 		end
@@ -543,33 +547,12 @@ function MobSpawner.SpawnMob(mobId, level, overridesArg)
 		return nil
 	end
 
-	-- §2.2b fix: pcall the Clone with retry. Waves can't silently miss mobs,
-	-- so if a single Clone fails we try again up to MAX_CLONE_RETRIES; if all
-	-- retries fail we return nil and let the caller re-queue this mob.
-	local MAX_CLONE_RETRIES = 3
-	local mob
-	for attempt = 1, MAX_CLONE_RETRIES do
-		local ok, result = pcall(function() return template:Clone() end)
-		if ok and result then
-			mob = result
-			break
-		else
-			warn(string.format(
-				"[MobSpawner] Clone failed for %s on attempt %d/%d: %s",
-				tostring(mobId), attempt, MAX_CLONE_RETRIES, tostring(result)
-			))
-			if attempt < MAX_CLONE_RETRIES then
-				task.wait(0.1)
-			end
-		end
-	end
-	if not mob then
-		warn(string.format(
-			"[MobSpawner] Clone permanently failed for %s after %d attempts — caller should re-queue.",
-			tostring(mobId), MAX_CLONE_RETRIES
-		))
-		return nil
-	end
+	-- §T3/W9a: NEVER-FAIL clone (Pablo: runs must always deliver the full
+	-- mob count — a skipped miniboss is a blunder). Retries forever with
+	-- backoff; returns nil only if the wave was reset while retrying.
+	local mob = MobSpawnHelper.CloneTemplate(template, mobId, "[MobSpawner]",
+		function() return waveState == "idle" end)
+	if not mob then return nil end
 
 	mob.Name = mobData.name or mobId
 	mob:SetAttribute("IsMob", true)
@@ -595,14 +578,10 @@ function MobSpawner.SpawnMob(mobId, level, overridesArg)
 	-- (the root cause of the "phantom box at spawn" intermittent bug).
 	mob.Parent = workspace
 	if spawnPoint then
-		local zOffset = (math.random() - 0.5) * 10
-		-- §LD-MS1 fix: lift the spawn pivot 3 studs above the spawn part so
-		-- the mob's bounding box clears the ground. Spawn parts sit at
-		-- ground level (Y ≈ 0.5) and PivotTo without a Y offset put the
-		-- mob's center at that Y, leaving its lower half clipped through
-		-- the floor for the first physics tick.
-		local SPAWN_Y_OFFSET = 3
-		mob:PivotTo(spawnPoint.CFrame * CFrame.new(0, SPAWN_Y_OFFSET, zOffset))
+		-- §T3/W9b: uniform scatter across the WHOLE spawn part (was a
+		-- fixed-X, ±5-stud-Z line). Resize the spawn part in Studio to
+		-- reshape the area. Keeps the §LD-MS1 3-stud ground-clip lift.
+		mob:PivotTo(MobSpawnHelper.GetSpawnCFrame(spawnPoint, 3))
 	end
 
 	MobAI.RegisterMob(mob, mobId, level, activeDifficultyOverrides)
@@ -615,25 +594,10 @@ function MobSpawner.SpawnMob(mobId, level, overridesArg)
 	return mob
 end
 
+-- §T3/W9: delegates to the shared helper (was a verbatim copy of the
+-- same algorithm living in HordeModeSpawner too).
 function MobSpawner.GetRandomMobId(weights)
-	local totalWeight = 0
-	for _, weight in pairs(weights) do
-		totalWeight = totalWeight + weight
-	end
-
-	local roll = math.random() * totalWeight
-	local cumulative = 0
-
-	for mobId, weight in pairs(weights) do
-		cumulative = cumulative + weight
-		if roll <= cumulative then
-			return mobId
-		end
-	end
-
-	for mobId, _ in pairs(weights) do
-		return mobId
-	end
+	return MobSpawnHelper.PickWeightedId(weights)
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -666,6 +630,11 @@ function MobSpawner.Reset()
 	waveState = "idle"
 	mobsSpawnedThisWave = 0
 	mobsToSpawnThisWave = 0
+	-- §T3/W1: clear the per-run level anchors. Servers are one-run today
+	-- (DQ-C), but if Reset is ever used for an in-place rerun, a stale
+	-- anchor would spawn old-party-level mobs for a fresh party.
+	partyAnchorLevel = nil
+	rewardLevel = nil
 	print("[MobSpawner] Reset complete")
 end
 

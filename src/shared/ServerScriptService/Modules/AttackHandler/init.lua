@@ -11,6 +11,21 @@ local Modules = script.Parent
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local ClassManager = require(Modules:WaitForChild("ClassManager"))
 
+-- §T2/Z5 (§14b): per-player Janitor for the CharacterAdded +
+-- DeathState-attribute connections wired in setupPlayerCharacterHandler.
+-- Player destruction disconnects them in practice; tracking them keeps
+-- AttackHandler consistent with the L1/L2 lifetime pattern.
+local Janitor = require(Modules:WaitForChild("Janitor"))
+local playerJanitors = setmetatable({}, { __mode = "k" })
+local function getPlayerJanitor(player)
+	local jan = playerJanitors[player]
+	if not jan then
+		jan = Janitor.new()
+		playerJanitors[player] = jan
+	end
+	return jan
+end
+
 -- Child Systems
 local DamageHandler
 
@@ -80,12 +95,13 @@ function AttackHandler.Init()
 			playerCooldowns[player] = nil
 		end
 
-		player.CharacterAdded:Connect(function()
+		local jan = getPlayerJanitor(player)
+		jan:Add(player.CharacterAdded:Connect(function()
 			resetAttackState()
 			task.defer(function()
 				AttackHandler.SendCombatConfig(player)
 			end)
-		end)
+		end))
 		-- If player already has character, send config immediately
 		if player.Character then
 			task.defer(function()
@@ -99,7 +115,7 @@ function AttackHandler.Init()
 		-- and Dead→Alive respawn). PlayerAttack on the client also resets its
 		-- attackId counter on these transitions, so the server must mirror
 		-- that to avoid `attackId <= lastAttackId` rejections.
-		player:GetAttributeChangedSignal("DeathState"):Connect(function()
+		jan:Add(player:GetAttributeChangedSignal("DeathState"):Connect(function()
 			if player:GetAttribute("DeathState") == "Alive" then
 				resetAttackState()
 				task.defer(function()
@@ -108,7 +124,7 @@ function AttackHandler.Init()
 					end
 				end)
 			end
-		end)
+		end))
 	end
 
 	-- Handle future joins
@@ -302,9 +318,13 @@ function AttackHandler.HandleHitReport(player, data)
 
 	-- Per-target dedup: reject repeated hits on the same mob within one attack
 	if ticket.targetsHit[target] then return end
-	ticket.targetsHit[target] = true
-	ticket.hitsUsed = ticket.hitsUsed + 1
 
+	-- §T2/Z1: VALIDATE FIRST, CONSUME AFTER. The old order marked the
+	-- target + burned a hit slot BEFORE the alive/range checks, so a
+	-- report invalidated by lag (mob died in flight, player moved) still
+	-- consumed the slot and permanently dedup'd that target for the
+	-- attack — the player's legit follow-up hit was rejected. Painful
+	-- on pierce projectiles (maxHits 3).
 	local humanoid = target:FindFirstChild("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
 
@@ -319,6 +339,10 @@ function AttackHandler.HandleHitReport(player, data)
 	local distance = (rootPart.Position - mobRoot.Position).Magnitude
 	local maxRange = AttackHandler.GetMaxBasicAttackRange(player)
 	if distance > maxRange then return end
+
+	-- Hit accepted — consume the slot and mark the target.
+	ticket.targetsHit[target] = true
+	ticket.hitsUsed = ticket.hitsUsed + 1
 
 	-- Apply damage (server-authoritative — no client-controlled multiplier)
 	DamageHandler.DamageMob(target, player, {})
@@ -368,6 +392,12 @@ function AttackHandler.RemovePlayer(player)
 	playerCooldowns[player] = nil
 	pendingAttacks[player] = nil
 	lastAttackId[player] = nil
+	-- §T2/Z5: tear down the per-player connections.
+	local jan = playerJanitors[player]
+	if jan then
+		jan:Destroy()
+		playerJanitors[player] = nil
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════
