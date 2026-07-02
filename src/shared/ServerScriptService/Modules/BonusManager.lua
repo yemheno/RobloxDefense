@@ -24,7 +24,11 @@
         "armor"       — armor defense + rolls             — PlayerBonusSystem
         "buff"        — active SkillManager buffs         — SkillManager
         "talent"      — talent tree passives              — TalentEffectAggregator
-        "achievement" — achievement bonuses (future)
+        "achievement" — achievement stat bonuses. §DISC/D5: CORE-planned,
+                        keep this seam. Achievements will grant permanent
+                        stat bonuses AND gate features (e.g. the chapter
+                        hard-cap boss achievement unlocks levels past each
+                        50). AchievementManager wires here when those land.
         "innate"      — class innateBonuses               — ClassManager
         "acc_trinket" — equipped trinket                  — InventoryManager
         "acc_ring1"   — equipped ring 1                   — InventoryManager
@@ -132,6 +136,25 @@ function BonusManager.Init()
     end)
     for _, p in ipairs(Players:GetPlayers()) do
         BonusManager.SetupPlayer(p)
+    end
+
+    -- §T1.3/Y7: Recalculate's "write defaultValue + agg for every catalog
+    -- entry" relies on EVERY BonusStats default being 0. If a future stat
+    -- ships a non-zero default, a stat cleared from all sources would keep
+    -- that default instead of zeroing the contribution — the exact
+    -- stale-after-clear bug the single-pass design fixed. Assert the
+    -- invariant loudly at boot so it can't regress silently.
+    local cfg = getConfig()
+    if cfg and cfg.BonusStats then
+        for statName, defaultValue in pairs(cfg.BonusStats) do
+            if defaultValue ~= 0 then
+                warn(string.format(
+                    "[BonusManager] INVARIANT VIOLATION: BonusStats.%s default is %s (expected 0). " ..
+                    "Recalculate assumes all BonusStats defaults are 0; a non-zero default will not " ..
+                    "clear when its sources are removed. Either make the default 0 or rework Recalculate.",
+                    statName, tostring(defaultValue)))
+            end
+        end
     end
 end
 
@@ -244,9 +267,15 @@ function BonusManager.AddTimedBonus(player, tagName, statName, value, durationSe
     end
 
     -- Start the fresh expire-thread.
+    -- §T1.3/Y8: error-isolate the expiry. If ClearSource ever throws, an
+    -- unguarded thread would die mid-cleanup, leaving the buff applied
+    -- forever and the thread ref dangling until PlayerRemoving.
     local newThread = task.delay(durationSec, function()
         if not player or not player.Parent then return end
-        BonusManager.ClearSource(player, source)
+        local ok, err = pcall(BonusManager.ClearSource, player, source)
+        if not ok then
+            warn(string.format("[BonusManager] timed-bonus expiry for %s failed: %s", source, tostring(err)))
+        end
         local perP = timedThreads[player]
         if perP then perP[source] = nil end
     end)

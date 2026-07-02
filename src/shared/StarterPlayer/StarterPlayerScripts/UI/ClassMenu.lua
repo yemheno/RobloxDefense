@@ -18,6 +18,7 @@ local Modules        = script.Parent.Parent:WaitForChild("Modules")
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local Locale         = require(Modules:WaitForChild("Locale"))
 local ClassCatalog   = require(Modules:WaitForChild("ClassCatalog"))
+local AppWindow      = require(script.Parent:WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
 
 -- ── Colour palette ────────────────────────────────────────────────────────────
 local C = {
@@ -327,38 +328,12 @@ local function ClassMenu(props)
 		})
 	end
 
-	-- Build the panel children (toast added conditionally)
+	-- §T10/U3: chrome (backdrop, panel, title, close) is owned by
+	-- AppWindow now — this table is only the window BODY.
 	local panelChildren = {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.015, 0) }),
-
-		title = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.03, 0.02),
-			Size                   = UDim2.fromScale(0.72, 0.07),
-			BackgroundTransparency = 1,
-			Text                   = Locale.Get("menu_classes_title"),
-			TextColor3             = C.text,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-		}),
-
-		close = React.createElement("TextButton", {
-			Position         = UDim2.fromScale(0.915, 0.015),
-			Size             = UDim2.fromScale(0.07, 0.09),
-			BackgroundColor3 = C.close_bg,
-			BorderSizePixel  = 0,
-			Text             = Locale.Get("menu_close"),
-			TextColor3       = C.close_text,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = onClose,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-		}),
-
 		columns = React.createElement("Frame", {
-			Position               = UDim2.fromScale(0, 0.10),
-			Size                   = UDim2.fromScale(1, 0.88),
+			Position               = UDim2.fromScale(0, 0.01),
+			Size                   = UDim2.fromScale(1, 0.98),
 			BackgroundTransparency = 1,
 		}, colChildren),
 	}
@@ -380,24 +355,14 @@ local function ClassMenu(props)
 		})
 	end
 
-	-- ── Root: full-screen semi-transparent backdrop ──────────────────────────
-	return React.createElement("Frame", {
-		Name                   = "ClassMenuBackdrop",
-		Size                   = UDim2.fromScale(1, 1),
-		BackgroundColor3       = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.42,
-		ZIndex                 = 10,
-	}, {
-		panel = React.createElement("Frame", {
-			Name             = "ClassMenuPanel",
-			AnchorPoint      = Vector2.new(0.5, 0.5),
-			Position         = UDim2.fromScale(0.5, 0.5),
-			Size             = UDim2.fromScale(0.88, 0.82),
-			BackgroundColor3 = C.bg_dark,
-			BorderSizePixel  = 0,
-			ZIndex           = 11,
-		}, panelChildren),
-	})
+	-- §T10/U3: standard windowed chrome.
+	return React.createElement(AppWindow, {
+		variant = "windowed",
+		title   = Locale.Get("menu_classes_title"),
+		icon    = "classes",
+		onClose = onClose,
+		zIndex  = 10,
+	}, panelChildren)
 end
 
 return ClassMenu
