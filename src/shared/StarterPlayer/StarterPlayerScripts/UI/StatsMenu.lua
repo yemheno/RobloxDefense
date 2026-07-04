@@ -16,6 +16,7 @@ local React = require(ReplicatedStorage.Packages.React)
 
 local Modules        = script.Parent.Parent:WaitForChild("Modules")
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
+local AppWindow      = require(script.Parent:WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
 
 -- ── Palette ───────────────────────────────────────────────────────────────────
 local C = {
@@ -285,52 +286,15 @@ local function StatsMenu(props)
 		Padding         = UDim.new(0.010, 0),
 	})
 
-	-- ── Assemble panel ────────────────────────────────────────────────────────
-	return React.createElement("Frame", {
-		Name                   = "StatsMenuBackdrop",
-		Size                   = UDim2.fromScale(1, 1),
-		BackgroundColor3       = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.42,
-		ZIndex                 = 10,
+	-- ── Assemble (§T10/U3: chrome owned by AppWindow) ─────────────────────────
+	return React.createElement(AppWindow, {
+		variant = "windowed",
+		title   = "Stats — Lv. " .. tostring(stats.level),
+		icon    = "stats",
+		onClose = onClose,
+		size    = UDim2.fromScale(0.72, 0.78),
+		zIndex  = 10,
 	}, {
-		panel = React.createElement("Frame", {
-			Name             = "StatsMenuPanel",
-			AnchorPoint      = Vector2.new(0.5, 0.5),
-			Position         = UDim2.fromScale(0.5, 0.5),
-			Size             = UDim2.fromScale(0.72, 0.78),
-			BackgroundColor3 = C.bg,
-			BorderSizePixel  = 0,
-			ZIndex           = 11,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.015, 0) }),
-
-			-- Title
-			title = React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.03, 0.02),
-				Size                   = UDim2.fromScale(0.72, 0.07),
-				BackgroundTransparency = 1,
-				Text                   = "Stats  —  Lv. " .. tostring(stats.level),
-				TextColor3             = C.text,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
-			}),
-
-			-- Close button
-			close = React.createElement("TextButton", {
-				Position         = UDim2.fromScale(0.915, 0.015),
-				Size             = UDim2.fromScale(0.07, 0.09),
-				BackgroundColor3 = C.close_bg,
-				BorderSizePixel  = 0,
-				Text             = "✕",
-				TextColor3       = C.close_text,
-				Font             = Enum.Font.GothamBold,
-				TextScaled       = true,
-				[React.Event.Activated] = onClose,
-			}, {
-				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-			}),
-
 			-- Points badge
 			pointsBadge = React.createElement("Frame", {
 				Position         = UDim2.fromScale(0.03, 0.11),
@@ -405,7 +369,6 @@ local function StatsMenu(props)
 					BackgroundTransparency = 1,
 				}, derivedRows),
 			}),
-		}),
 	})
 end
 

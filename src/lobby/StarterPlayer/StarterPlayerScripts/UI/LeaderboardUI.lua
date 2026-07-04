@@ -15,6 +15,7 @@ local React             = require(ReplicatedStorage.Packages.React)
 local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
+local AppWindow      = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
 
 local C = {
 	bg      = Color3.fromRGB(18, 18, 24),
@@ -156,51 +157,16 @@ local function LeaderboardUI(props)
 		end
 	end
 
-	return React.createElement("Frame", {
-		Name                   = "LeaderboardBackdrop",
-		Size                   = UDim2.fromScale(1, 1),
-		BackgroundColor3       = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.42,
-		ZIndex                 = 10,
+	-- §T10/U3: chrome owned by AppWindow (this file had the other
+	-- ~12-pixel close button).
+	return React.createElement(AppWindow, {
+		variant = "windowed",
+		title   = "Leaderboard",
+		icon    = "leaderboard",
+		onClose = onClose,
+		size    = UDim2.fromScale(0.50, 0.72),
+		zIndex  = 10,
 	}, {
-		panel = React.createElement("Frame", {
-			AnchorPoint      = Vector2.new(0.5, 0.5),
-			Position         = UDim2.fromScale(0.5, 0.5),
-			Size             = UDim2.fromScale(0.50, 0.72),
-			BackgroundColor3 = C.bg,
-			BorderSizePixel  = 0,
-			ZIndex           = 11,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 12) }),
-
-			titleLbl = React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.04, 0.02),
-				Size                   = UDim2.fromScale(0.75, 0.08),
-				BackgroundTransparency = 1,
-				Text                   = "🏆  Leaderboard",
-				TextColor3             = C.gold,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
-				ZIndex                 = 12,
-			}),
-
-			closeBtn = React.createElement("TextButton", {
-				AnchorPoint      = Vector2.new(1, 0),
-				Position         = UDim2.fromScale(0.97, 0.02),
-				Size             = UDim2.fromScale(0.018, 0.031),
-				BackgroundColor3 = C.close,
-				BorderSizePixel  = 0,
-				Text             = "✕",
-				TextColor3       = Color3.fromRGB(255, 255, 255),
-				Font             = Enum.Font.GothamBold,
-				TextScaled       = true,
-				ZIndex           = 12,
-				[React.Event.Activated] = onClose,
-			}, {
-				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-			}),
-
 			myScoreLbl = myScore and React.createElement("TextLabel", {
 				Position               = UDim2.fromScale(0.04, 0.91),
 				Size                   = UDim2.fromScale(0.92, 0.06),
@@ -230,7 +196,6 @@ local function LeaderboardUI(props)
 				CanvasSize            = UDim2.fromScale(0, 0),
 				ZIndex                = 12,
 			}, rows),
-		}),
 	})
 end
 

@@ -116,6 +116,13 @@ PlayerDataConfig.BonusStats = {
 	Thorns = 0,
 	Lifesteal = 0,
 	CooldownReduction = 0,
+	-- §T10/LIVE1: CastTimeReduction + StatusResistance were missing here,
+	-- so BonusManager warn-rejected every talent node granting them — 23
+	-- nodes were silently VOID in play (surfaced by the §S5 validator).
+	-- Both are real derived stats (DerivedBase + caster statDerivation);
+	-- GetTotalStat folds data.Bonus[stat] into them like any flat bonus.
+	CastTimeReduction = 0,
+	StatusResistance = 0,
 
 	-- Healing
 	HealingPower = 0,       -- Flat bonus healing

@@ -92,6 +92,38 @@ function TalentTreeValidator.Validate()
 		end
 	end
 
+	-- 6b) §T5-T9/S5: stat-name integrity. TalentEffectAggregator passes
+	--     effect stats straight into BonusManager, which warn-once
+	--     REJECTS unknown names at write time — so a typo'd stat in the
+	--     tree config silently voided that node's effect in play. Catch
+	--     it here, loudly, at validation time instead.
+	do
+		local okCfg, PlayerDataConfig = pcall(function()
+			return require(script.Parent:WaitForChild("PlayerDataConfig"))
+		end)
+		if okCfg and type(PlayerDataConfig) == "table" then
+			local primarySet = {}
+			for _, p in ipairs(PlayerDataConfig.PrimaryStats or {}) do
+				primarySet[p] = true
+			end
+			local bonusStats = PlayerDataConfig.BonusStats or {}
+			for _, node in ipairs(TalentTreeConfig.Nodes) do
+				for j, eff in ipairs(node.effects or {}) do
+					if eff.primary and not primarySet[eff.primary] then
+						table.insert(errors, string.format(
+							"Node '%s' effect #%d has unknown primary stat '%s'",
+							node.id, j, tostring(eff.primary)))
+					end
+					if eff.stat and not eff.rule and bonusStats[eff.stat] == nil then
+						table.insert(errors, string.format(
+							"Node '%s' effect #%d has unknown bonus stat '%s' (not in PlayerDataConfig.BonusStats)",
+							node.id, j, tostring(eff.stat)))
+					end
+				end
+			end
+		end
+	end
+
 	-- 7) Node count guard (soft max reflects the intended full web size)
 	local nodeCount = TalentTreeConfig.GetNodeCount()
 	if nodeCount > 350 then
@@ -110,5 +142,8 @@ function TalentTreeValidator.Validate()
 
 	return { ok = ok, errors = errors }
 end
+
+-- §T10/LIVE1: the §S5 auto-run was removed — TalentManager.Init already
+-- calls Validate() at boot (it was printing every report twice).
 
 return TalentTreeValidator

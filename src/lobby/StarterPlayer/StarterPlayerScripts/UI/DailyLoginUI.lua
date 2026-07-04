@@ -15,6 +15,7 @@ local React             = require(ReplicatedStorage.Packages.React)
 local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
+local AppWindow      = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
 
 local C = {
 	bg     = Color3.fromRGB(18, 18, 24),
@@ -65,51 +66,16 @@ local function DailyLoginUI(props)
 	local rewardText  = (status and status.nextReward) and table.concat(status.nextReward, ",  ") or "—"
 	local canClaim    = status and status.canClaim == true
 
-	return React.createElement("Frame", {
-		Name                   = "DailyLoginBackdrop",
-		Size                   = UDim2.fromScale(1, 1),
-		BackgroundColor3       = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.42,
-		ZIndex                 = 10,
+	-- §T10/U3: chrome owned by AppWindow. (The old close button here was
+	-- 0.018×0.031 scale ≈ a dozen pixels — the "incredibly small" one.)
+	return React.createElement(AppWindow, {
+		variant = "windowed",
+		title   = "Daily Login",
+		icon    = "dailyLogin",
+		onClose = onClose,
+		size    = UDim2.fromScale(0.38, 0.46),
+		zIndex  = 10,
 	}, {
-		panel = React.createElement("Frame", {
-			AnchorPoint      = Vector2.new(0.5, 0.5),
-			Position         = UDim2.fromScale(0.5, 0.5),
-			Size             = UDim2.fromScale(0.38, 0.46),
-			BackgroundColor3 = C.bg,
-			BorderSizePixel  = 0,
-			ZIndex           = 11,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 12) }),
-
-			titleLbl = React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.05, 0.04),
-				Size                   = UDim2.fromScale(0.80, 0.12),
-				BackgroundTransparency = 1,
-				Text                   = "📅  Daily Login",
-				TextColor3             = C.gold,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
-				ZIndex                 = 12,
-			}),
-
-			closeBtn = React.createElement("TextButton", {
-				AnchorPoint      = Vector2.new(1, 0),
-				Position         = UDim2.fromScale(0.97, 0.04),
-				Size             = UDim2.fromScale(0.018, 0.031),
-				BackgroundColor3 = C.close,
-				BorderSizePixel  = 0,
-				Text             = "✕",
-				TextColor3       = Color3.fromRGB(255, 255, 255),
-				Font             = Enum.Font.GothamBold,
-				TextScaled       = true,
-				ZIndex           = 12,
-				[React.Event.Activated] = onClose,
-			}, {
-				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-			}),
-
 			streakLbl = React.createElement("TextLabel", {
 				Position               = UDim2.fromScale(0.05, 0.22),
 				Size                   = UDim2.fromScale(0.90, 0.13),
@@ -178,7 +144,6 @@ local function DailyLoginUI(props)
 			}, {
 				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
 			}),
-		}),
 	})
 end
 

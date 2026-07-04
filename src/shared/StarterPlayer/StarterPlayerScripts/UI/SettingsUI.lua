@@ -21,6 +21,7 @@ local SharedModules = PlayerScripts:WaitForChild("Modules")
 
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 local SoundManager   = require(SharedModules:WaitForChild("SoundManager"))
+local AppWindow      = require(script.Parent:WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
 local InputSystem    = require(SharedModules:WaitForChild("InputSystem"))
 local InputActions   = require(SharedModules:WaitForChild("InputSystem"):WaitForChild("InputActions"))
 
@@ -460,51 +461,18 @@ local function SettingsUI(props)
         })
     end
 
-    return React.createElement("Frame", {
-        Name = "SettingsBackdrop",
-        Size = UDim2.fromScale(1, 1),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 0.42,
-        ZIndex = 10,
+    -- §T10/U3: chrome owned by AppWindow (close also clears key-listen state).
+    return React.createElement(AppWindow, {
+        variant = "windowed",
+        title   = "Settings",
+        icon    = "settings",
+        onClose = function()
+            setListeningFor(nil)
+            onClose()
+        end,
+        size    = UDim2.fromScale(0.48, 0.68),
+        zIndex  = 10,
     }, {
-        panel = React.createElement("Frame", {
-            Name = "SettingsPanel",
-            AnchorPoint = Vector2.new(0.5, 0.5),
-            Position = UDim2.fromScale(0.5, 0.5),
-            Size = UDim2.fromScale(0.48, 0.68),
-            BackgroundColor3 = C.bg,
-            BorderSizePixel = 0,
-            ZIndex = 11,
-        }, {
-            corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.02, 0) }),
-            title = React.createElement("TextLabel", {
-                Position = UDim2.fromScale(0.05, 0.03),
-                Size = UDim2.fromScale(0.55, 0.08),
-                BackgroundTransparency = 1,
-                Text = "Settings",
-                TextColor3 = C.text,
-                Font = Enum.Font.GothamBold,
-                TextScaled = true,
-                TextXAlignment = Enum.TextXAlignment.Left,
-                ZIndex = 12,
-            }),
-            close = React.createElement("TextButton", {
-                Position = UDim2.fromScale(0.90, 0.02),
-                Size = UDim2.fromScale(0.08, 0.09),
-                BackgroundColor3 = C.close_bg,
-                BorderSizePixel = 0,
-                Text = "✕",
-                TextColor3 = C.close_text,
-                Font = Enum.Font.GothamBold,
-                TextScaled = true,
-                ZIndex = 12,
-                [React.Event.Activated] = function()
-                    setListeningFor(nil)
-                    onClose()
-                end,
-            }, {
-                corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-            }),
             tabBar = React.createElement("Frame", {
                 Position = UDim2.fromScale(0.04, 0.13),
                 Size = UDim2.fromScale(0.92, 0.07),
@@ -523,7 +491,6 @@ local function SettingsUI(props)
                 TextScaled = true,
                 ZIndex = 12,
             }),
-        }),
     })
 end
 
