@@ -1014,6 +1014,19 @@ ORPHANS).
 Next: Pablo live-test (suggested smoke tests in T0_PASS2_SURFACE.md
 status header) → Pablo commits → resume tier roadmap at T2 (§6.1).
 
+### 13.2 Final state (end of Fable 5 session)
+
+ALL TIERS CLOSED and COMMITTED (T0×2, T1×2, T2, T3, T4, T5-T9 sweep,
+T10 in-progress items). Two discussion rounds (§DISC D1-D8) executed,
+incl. the wipe-revive failsafe (§DISC/D3b), PartyRequirements seam,
+NPC distance auto-close. UI: AppWindow/Theme standard (6 menus
+converted, 14 remain — TODO §T10/U3), LoadingScreen, radial talent
+tree. Operational review in CODEBASE_REVIEW.md (assets are
+place-managed BY DESIGN — do not re-flag untracked rbxmx). Heavy
+binaries untracked. Remaining backlog lives in docs/TODO.md (§19 +
+§DISC + §T10 sections). Next work is implementation, not audit:
+menu conversions, icon art (§T10/ICONS brief), §16 alpha-blockers.
+
 ---
 
 End of Audit_4.7.md.
