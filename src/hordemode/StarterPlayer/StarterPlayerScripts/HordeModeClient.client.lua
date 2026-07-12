@@ -45,6 +45,7 @@ end
 -- ───────────────────────────────────────────────────────────
 -- SHARED CLIENT MODULES
 -- ───────────────────────────────────────────────────────────
+Load(SharedModules, "LoadingScreen")    -- §T10/U1: overlay up FIRST, dismissed on ServerReady
 Load(SharedModules, "NetworkManager")
 Load(SharedModules, "ResourceCache")    -- early listener
 Load(SharedModules, "AnimationSystem")
@@ -99,6 +100,9 @@ end
 local NetworkManager = loadedModules["NetworkManager"]
 if NetworkManager then
 	NetworkManager.OnServerEvent("ServerReady", function()
+		-- §T10/U1: dismiss the loading screen.
+		local ls = loadedModules["LoadingScreen"]
+		if ls then ls.Dismiss() end
 	end)
 
 	-- ── Pause/resume ──────────────────────────────────────────

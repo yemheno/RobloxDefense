@@ -39,6 +39,7 @@ end
 -- ───────────────────────────────────────────────────────────
 -- SHARED CLIENT MODULES
 -- ───────────────────────────────────────────────────────────
+Load(SharedModules, "LoadingScreen")    -- §T10/U1: overlay up FIRST, dismissed on ServerReady
 Load(SharedModules, "NetworkManager")
 Load(SharedModules, "ResourceCache")    -- early listener — prevents ResourceUpdate queue exhaustion
 Load(SharedModules, "AnimationSystem")  -- centralized animation controller (emotes, idles, custom)
@@ -54,7 +55,9 @@ Load(SharedModules, "CameraSystem")     -- camera controller (avatar-preview mod
 local NetworkManager = loadedModules["NetworkManager"]
 if NetworkManager then
 	NetworkManager.OnServerEvent("ServerReady", function()
-		-- All appearance systems listen for their own events.
-		-- Nothing extra needed at the plaza client level for now.
+		-- §T10/U1: dismiss the loading screen. (Appearance systems
+		-- listen for their own events; nothing else needed here.)
+		local ls = loadedModules["LoadingScreen"]
+		if ls then ls.Dismiss() end
 	end)
 end

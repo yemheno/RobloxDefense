@@ -274,13 +274,20 @@ function SkillEffects.ApplyStackingMobEffect(player, effect, mob)
 	local maxStacks = effect.maxStacks or 1
 
 	if existing then
-		-- Add stack (up to max)
+		-- §T2/Z9 (§T1P2-STACKS rule, Pablo): below max stacks, adding a
+		-- stack refreshes normally. AT max stacks, a new application
+		-- refreshes the timer ONLY if it would extend it — a weaker/
+		-- shorter re-application can never cut an existing effect short.
 		if existing.stacks < maxStacks then
 			existing.stacks = existing.stacks + 1
-		end
-		-- Refresh duration
-		if effect.refreshDuration then
-			existing.endTime = os.clock() + (effect.duration or 6)
+			if effect.refreshDuration then
+				existing.endTime = os.clock() + (effect.duration or 6)
+			end
+		elseif effect.refreshDuration then
+			local newEnd = os.clock() + (effect.duration or 6)
+			if newEnd > existing.endTime then
+				existing.endTime = newEnd
+			end
 		end
 		existing.player = player
 	else
@@ -530,16 +537,28 @@ function SkillEffects.ApplyVulnerabilityToMob(mob, effect)
 	if not mob or not mob.Parent then return end
 
 	local mult = effect.damageMultiplier or 1.5
-	mob:SetAttribute("Vulnerability", mult)
-
 	local key = "Vulnerability_direct"
 	if not activeMobEffects[mob] then activeMobEffects[mob] = {} end
 
+	-- §T2/Z9 (§T1P2-STACKS rule): non-stacking debuff — a re-application
+	-- keeps the STRONGER multiplier and the LONGER remaining duration;
+	-- it can never weaken or shorten what's already on the mob. (The old
+	-- code replaced the entry unconditionally, so a weaker/shorter cast
+	-- from another player could downgrade an active debuff.)
+	local newEnd = os.clock() + (effect.duration or 3)
+	local existing = activeMobEffects[mob][key]
+	if existing then
+		mult = math.max(mult, existing.appliedMult or 0)
+		newEnd = math.max(newEnd, existing.endTime)
+	end
+
+	mob:SetAttribute("Vulnerability", mult)
 	activeMobEffects[mob][key] = {
-		type       = "Vulnerability",
-		stacks     = 1,
-		endTime    = os.clock() + (effect.duration or 3),
-		effectData = effect,
+		type        = "Vulnerability",
+		stacks      = 1,
+		endTime     = newEnd,
+		effectData  = effect,
+		appliedMult = mult,  -- §T2/Z9: the winning value, for the next comparison
 	}
 
 end

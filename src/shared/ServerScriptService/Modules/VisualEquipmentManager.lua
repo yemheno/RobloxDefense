@@ -55,19 +55,35 @@ function VisualEquipmentManager.Init()
 	-- Armors folder loaded when armor assets are available
 	ArmorsFolder = ServerStorage:FindFirstChild("Armors")
 
+	-- §T5-T9/S6 (§14b + §VEM-DEDUPE root cause): single wire-per-player.
+	-- The old code wired CharacterAdded from BOTH the PlayerAdded handler
+	-- AND the existing-players loop — a player joining during Init got
+	-- two connections, so every respawn ran ReattachAll twice (the
+	-- long-standing AttachClassWeapon 2× double-attach). Connections are
+	-- also tracked now and disconnected on leave.
+	local wiredPlayers = setmetatable({}, { __mode = "k" })  -- [player] = conn
+
+	local function wirePlayer(player)
+		if wiredPlayers[player] then return end
+		wiredPlayers[player] = player.CharacterAdded:Connect(function(_character)
+			task.wait(0.5)
+			VisualEquipmentManager.ReattachAll(player)
+		end)
+	end
+
 	-- Cleanup on player leaving
 	Players.PlayerRemoving:Connect(function(player)
 		VisualEquipmentManager.ClearAll(player)
 		playerVisuals[player.UserId] = nil
+		local conn = wiredPlayers[player]
+		if conn then
+			conn:Disconnect()
+			wiredPlayers[player] = nil
+		end
 	end)
 
 	-- Re-attach on respawn
-	Players.PlayerAdded:Connect(function(player)
-		player.CharacterAdded:Connect(function(_character)
-			task.wait(0.5)
-			VisualEquipmentManager.ReattachAll(player)
-		end)
-	end)
+	Players.PlayerAdded:Connect(wirePlayer)
 
 	-- Handle players already in game
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -77,10 +93,7 @@ function VisualEquipmentManager.Init()
 				VisualEquipmentManager.ReattachAll(player)
 			end)
 		end
-		player.CharacterAdded:Connect(function(_character)
-			task.wait(0.5)
-			VisualEquipmentManager.ReattachAll(player)
-		end)
+		wirePlayer(player)
 	end
 
 end

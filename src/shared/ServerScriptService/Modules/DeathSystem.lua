@@ -44,16 +44,60 @@ local CONFIG = {
 	KnockdownSpeed      = 4,        -- WalkSpeed while downed (default is 16)
 	ResourceDrainRate   = -10,      -- per second
 	RespawnDelay        = 1,        -- brief delay after clicking respawn
+
+	-- §DISC/D3b: party-wipe revive failsafe (Pablo). On full wipe the
+	-- game pauses (mobs + spawns) and players get a decision window to
+	-- buy a revive-in-place; otherwise the run ends. Essence-priced for
+	-- now — Robux Developer Product later (TODO §DISC/D3b).
+	WipeGraceSeconds    = 10,
+	WipeReviveEssence   = 25,       -- placeholder price, tune freely
+	WipeInvulnSeconds   = 3,        -- invulnerability after wipe-revive
 }
 
 -- ═══════════════════════════════════════════════════════════
 -- STATE
 -- ═══════════════════════════════════════════════════════════
 
--- { [player] = { state, knockdownTime, originalSpeed, diedConnection } }
-local playerStates: { [Player]: { state: string, knockdownTime: number, originalSpeed: number, diedConnection: RBXScriptConnection? } } = {}
+-- { [player] = { state, knockdownTime, originalSpeed, diedConnection,
+--   characterAddedConn (§T4/V1), respawnQueued (§T4/V2) } }
+local playerStates: { [Player]: { state: string, knockdownTime: number, originalSpeed: number, diedConnection: RBXScriptConnection?, characterAddedConn: RBXScriptConnection?, respawnQueued: boolean? } } = {}
 
 local initialized = false
+
+-- §DISC/D3b: wipe-grace state. `token` invalidates the pending defeat
+-- timer when a revive resolves the wipe first.
+local wipeGraceActive = false
+local wipeGraceToken  = 0
+local wipeGraceEndsAt = 0
+
+-- Lazy sibling getters (avoid load-order coupling)
+local _CurrencyManager
+local function getCurrencyManager()
+	if _CurrencyManager ~= nil then return _CurrencyManager or nil end
+	local mod = Modules:FindFirstChild("CurrencyManager")
+	local ok, result = mod and pcall(require, mod)
+	_CurrencyManager = (ok and result) or false
+	return _CurrencyManager or nil
+end
+
+local _MobAI
+local function getMobAI()
+	if _MobAI ~= nil then return _MobAI or nil end
+	local mod = Modules:FindFirstChild("MobAI")
+	local ok, result = mod and pcall(require, mod)
+	_MobAI = (ok and result) or false
+	return _MobAI or nil
+end
+
+local function getHordePauseManager()
+	local sss = game:GetService("ServerScriptService")
+	local folder = sss:FindFirstChild("HordeMode")
+	local mods = folder and folder:FindFirstChild("Modules")
+	local mod = mods and mods:FindFirstChild("HordePauseManager")
+	if not mod then return nil end
+	local ok, result = pcall(require, mod)
+	return ok and result or nil
+end
 
 -- ═══════════════════════════════════════════════════════════
 -- ANIMATION IDS (R6 placeholders — replace with custom later)
@@ -86,6 +130,14 @@ function DeathSystem.Init()
 	-- Listen for respawn requests
 	NetworkManager.OnClientEvent("RequestRespawn", function(player)
 		DeathSystem.HandleRespawnRequest(player)
+	end)
+
+	-- §DISC/D3b: wipe-revive events
+	NetworkManager.GetEvent("WipeReviveOffer")
+	NetworkManager.GetEvent("WipeReviveResolved")
+	NetworkManager.GetEvent("WipeReviveAccept")
+	NetworkManager.OnClientEvent("WipeReviveAccept", function(player)
+		DeathSystem.HandleWipeRevive(player)
 	end)
 
 	-- Setup existing players
@@ -130,7 +182,9 @@ function DeathSystem.SetupPlayer(player)
 	player:SetAttribute("DeathState", "Alive")
 
 	-- Spawn the character manually (since AutoLoads is off)
-	player.CharacterAdded:Connect(function(character)
+	-- §T4/V1 (§14b): tracked so CleanupPlayer can disconnect it —
+	-- diedConnection was cleaned but this one leaked per leaver.
+	playerStates[player].characterAddedConn = player.CharacterAdded:Connect(function(character)
 		DeathSystem.OnCharacterAdded(player, character)
 	end)
 
@@ -144,6 +198,10 @@ function DeathSystem.CleanupPlayer(player)
 	local data = playerStates[player]
 	if data and data.diedConnection then
 		data.diedConnection:Disconnect()
+	end
+	-- §T4/V1: disconnect the per-player CharacterAdded hook too.
+	if data and data.characterAddedConn then
+		data.characterAddedConn:Disconnect()
 	end
 	playerStates[player] = nil
 end
@@ -325,6 +383,110 @@ function DeathSystem.EnterDeath(player)
 	NetworkManager.FireClient(player, "DeathState", { state = "Dead" })
 
 	print("[DeathSystem]", player.Name, "is dead — waiting for respawn")
+
+	-- §DISC/D3 (was DQ-T4A): full party wipe ends the run.
+	DeathSystem.CheckPartyWipe()
+end
+
+-- §DISC/D3 + §DISC/D3b (Pablo): when EVERY player in the server is
+-- Dead, the game pauses immediately (mobs AND spawns — same freeze the
+-- card votes use) and players get CONFIG.WipeGraceSeconds to buy a
+-- revive-in-place. If someone revives: they come back where they died
+-- with brief invulnerability and the fight resumes. If nobody does,
+-- the run ends — everyone back to the lobby. Free respawn is disabled
+-- during the window (the paid revive is the only out).
+-- NOTE: a SOLO death triggers this immediately (no teammate to outlive).
+function DeathSystem.CheckPartyWipe()
+	if wipeGraceActive then return end
+	local all = Players:GetPlayers()
+	if #all == 0 then return end
+	for _, p in ipairs(all) do
+		local st = playerStates[p]
+		if not st or st.state ~= "Dead" then return end
+	end
+
+	-- GameStateManager is only loaded in combat places; lobby/plaza no-op.
+	local gsmMod = Modules:FindFirstChild("GameStateManager")
+	if not gsmMod then return end
+	local ok, gsm = pcall(require, gsmMod)
+	if not ok or not gsm or not gsm.TriggerDefeat then return end
+	if gsm.IsInGame and not gsm.IsInGame() then return end
+
+	warn(string.format(
+		"[DeathSystem] PARTY WIPE — pausing; %ds revive window (§DISC/D3b)",
+		CONFIG.WipeGraceSeconds))
+
+	wipeGraceActive = true
+	wipeGraceToken += 1
+	wipeGraceEndsAt = os.clock() + CONFIG.WipeGraceSeconds
+	local myToken = wipeGraceToken
+
+	-- Freeze combat: mob AI + movement everywhere; HordeMode also stops
+	-- its spawner/markers via the pause manager. (Lane wave spawns that
+	-- land during the window stand idle — MobAI.Update is pause-gated.)
+	local mobAI = getMobAI()
+	if mobAI and mobAI.SetPaused then pcall(mobAI.SetPaused, true) end
+	local hpm = getHordePauseManager()
+	if hpm and hpm.Pause then pcall(hpm.Pause) end
+
+	NetworkManager.FireAllClients("WipeReviveOffer", {
+		cost    = CONFIG.WipeReviveEssence,
+		seconds = CONFIG.WipeGraceSeconds,
+	})
+
+	task.delay(CONFIG.WipeGraceSeconds, function()
+		if not wipeGraceActive or wipeGraceToken ~= myToken then return end
+		wipeGraceActive = false
+		NetworkManager.FireAllClients("WipeReviveResolved", { revived = false })
+		gsm.TriggerDefeat()
+	end)
+end
+
+-- §DISC/D3b: a dead player accepts the wipe-revive offer. First
+-- successful payment wins the run back; the buyer revives IN PLACE
+-- with brief invulnerability and combat resumes for everyone.
+function DeathSystem.HandleWipeRevive(player)
+	if not wipeGraceActive then return end
+	local data = playerStates[player]
+	if not data or data.state ~= "Dead" then return end
+
+	local cm = getCurrencyManager()
+	if not cm or not cm.SpendEssence then return end
+	if not cm.SpendEssence(player, CONFIG.WipeReviveEssence) then
+		-- Personal denial — re-offer with the reason + remaining time.
+		NetworkManager.FireClient(player, "WipeReviveOffer", {
+			cost    = CONFIG.WipeReviveEssence,
+			seconds = math.max(0, wipeGraceEndsAt - os.clock()),
+			denied  = "Not enough Essence",
+		})
+		return
+	end
+
+	-- Payment cleared → resolve the wipe.
+	wipeGraceActive = false
+	wipeGraceToken += 1  -- invalidates the pending defeat timer
+
+	performRevive(player, false)  -- in place, per design
+
+	-- Invulnerability window.
+	player:SetAttribute("WipeInvulnerable", true)
+	task.delay(CONFIG.WipeInvulnSeconds, function()
+		if player and player.Parent then
+			player:SetAttribute("WipeInvulnerable", nil)
+		end
+	end)
+
+	-- Resume combat.
+	local mobAI = getMobAI()
+	if mobAI and mobAI.SetPaused then pcall(mobAI.SetPaused, false) end
+	local hpm = getHordePauseManager()
+	if hpm and hpm.Resume then pcall(hpm.Resume) end
+
+	NetworkManager.FireAllClients("WipeReviveResolved", {
+		revived = true,
+		name    = player.Name,
+	})
+	print("[DeathSystem]", player.Name, "bought the wipe-revive — run continues")
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -421,39 +583,40 @@ local function findSpawnLocation()
 	return CFrame.new(0, 50, 0)
 end
 
-function DeathSystem.HandleRespawnRequest(player)
+-- §DISC/D3b: revive core, shared by the normal respawn (teleports to
+-- spawn) and the wipe-revive (revives IN PLACE). Extracted verbatim
+-- from the old HandleRespawnRequest delayed body.
+local function performRevive(player, teleportToSpawn)
+	if not player or not player.Parent then return end
 	local data = playerStates[player]
 	if not data then return end
-	if data.state ~= "Dead" then return end
 
-	task.delay(CONFIG.RespawnDelay, function()
-		if not player or not player.Parent then return end
-		if not playerStates[player] then return end  -- left during delay
+	local character = player.Character
+	local humanoid  = character and character:FindFirstChildOfClass("Humanoid")
+	if not character or not humanoid then
+		-- Edge case: character was destroyed by something external.
+		-- Fall back to LoadCharacter so the player is at least playable;
+		-- visual systems will re-attach via their CharacterAdded hooks.
+		warn("[DeathSystem]", player.Name,
+			"has no live character at respawn — falling back to LoadCharacter")
+		player:LoadCharacter()
+		return
+	end
 
-		local character = player.Character
-		local humanoid  = character and character:FindFirstChildOfClass("Humanoid")
-		if not character or not humanoid then
-			-- Edge case: character was destroyed by something external.
-			-- Fall back to LoadCharacter so the player is at least playable;
-			-- visual systems will re-attach via their CharacterAdded hooks.
-			warn("[DeathSystem]", player.Name,
-				"has no live character at respawn — falling back to LoadCharacter")
-			player:LoadCharacter()
-			return
-		end
+	-- §LD-DS4: order matters. The Heartbeat Update loop pins
+	-- humanoid.Health = 0 while data.state == "Dead". So we MUST
+	-- flip data.state to "Alive" BEFORE writing Health = MaxHealth,
+	-- otherwise the very next Heartbeat tick wipes the heal we just
+	-- did and the player ends up at HP 0 with state = Alive (which
+	-- our re-attached HealthChanged listener then re-knocks-down).
+	data.state = "Alive"
+	data.knockdownTime = 0
 
-		-- §LD-DS4: order matters. The Heartbeat Update loop pins
-		-- humanoid.Health = 0 while data.state == "Dead". So we MUST
-		-- flip data.state to "Alive" BEFORE writing Health = MaxHealth,
-		-- otherwise the very next Heartbeat tick wipes the heal we just
-		-- did and the player ends up at HP 0 with state = Alive (which
-		-- our re-attached HealthChanged listener then re-knocks-down).
-		data.state = "Alive"
-		data.knockdownTime = 0
-
+	if teleportToSpawn then
 		-- Teleport to spawn first so the player doesn't briefly stand
 		-- alive at the death spot before being moved.
 		pcall(function() character:PivotTo(findSpawnLocation()) end)
+	end
 
 		-- §LD-DS4: clear every state Roblox can leave the humanoid in
 		-- when Health hit 0 with BreakJointsOnDeath=false. Without these
@@ -496,9 +659,30 @@ function DeathSystem.HandleRespawnRequest(player)
 		end)
 
 		player:SetAttribute("DeathState", "Alive")
-		NetworkManager.FireClient(player, "DeathState", { state = "Alive" })
+	NetworkManager.FireClient(player, "DeathState", { state = "Alive" })
 
-		print("[DeathSystem]", player.Name, "respawned in-place")
+	print("[DeathSystem]", player.Name, "revived",
+		teleportToSpawn and "(at spawn)" or "(in place)")
+end
+
+function DeathSystem.HandleRespawnRequest(player)
+	local data = playerStates[player]
+	if not data then return end
+	if data.state ~= "Dead" then return end
+
+	-- §DISC/D3b: during a wipe-grace window the free respawn is OFF the
+	-- table — the run is ending; the only out is the paid wipe-revive.
+	if wipeGraceActive then return end
+
+	-- §T4/V2: dedup — spamming RequestRespawn while dead used to queue
+	-- one delayed respawn thread per packet (each full-healing on fire).
+	if data.respawnQueued then return end
+	data.respawnQueued = true
+
+	task.delay(CONFIG.RespawnDelay, function()
+		if playerStates[player] then playerStates[player].respawnQueued = nil end
+		if wipeGraceActive then return end  -- wipe started during the delay
+		performRevive(player, true)
 	end)
 end
 

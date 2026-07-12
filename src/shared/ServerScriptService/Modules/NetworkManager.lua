@@ -255,6 +255,9 @@ local EVENTS = {
     -- pass, undocumented and invisible to the planned lint pass.
     DeathState             = { rateLimit = nil,  readyGated = false }, -- DeathSystem push
     RequestRespawn         = { rateLimit = 4,    readyGated = false }, -- DeathSystem; one per death, 4× headroom
+    WipeReviveOffer        = { rateLimit = nil,  readyGated = false }, -- §DISC/D3b: wipe grace window opened
+    WipeReviveResolved     = { rateLimit = nil,  readyGated = false }, -- §DISC/D3b: revived or defeat
+    WipeReviveAccept       = { rateLimit = 4,    readyGated = false }, -- §DISC/D3b: client buys the revive
     HordePaused            = { rateLimit = nil,  readyGated = false }, -- HordePauseManager broadcast
     NPCProximity           = { rateLimit = nil,  readyGated = false }, -- NPCManager proximity push
 }

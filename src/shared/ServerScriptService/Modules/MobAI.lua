@@ -74,12 +74,17 @@ end
 --- Each mob's WalkSpeed is set to baseSpeed × mult.
 --- No-op when hordeModeTargeting is false (safety guard).
 --- @param mult number  new multiplier (e.g. 1.15 for +15% on top of registered speed)
+-- §T3/W6 note: only ever called with 1.0 today (HordeModeSpawner.Stop
+-- reset) — phase speed boosts are baked into each mob's baseSpeed at
+-- spawn instead. Kept as the seam for a future live global speed lever.
 function MobAI.SetHordeGlobalSpeedMult(mult)
 	if not hordeModeTargeting then return end
 	hordeGlobalSpeedMult = mult
 	for _, data in pairs(activeMobs) do
 		if data.state ~= STATES.DEAD and data.humanoid and not paused then
-			data.humanoid.WalkSpeed = (data.baseSpeed or data.config.speed) * mult
+			-- §T3/W6: preserve frenzyMult (was dropped, same as SetPaused).
+			data.humanoid.WalkSpeed = (data.baseSpeed or data.config.speed)
+				* (data.frenzyMult or 1) * mult
 		end
 	end
 end
@@ -99,10 +104,14 @@ local castIdCounter = 0
 -- (paused declared near top of STATE block so SetHordeGlobalSpeedMult can see it)
 function MobAI.SetPaused(isPaused)
 	paused = isPaused == true
-	-- Immediately freeze or unfreeze walk speed for every active mob
+	-- Immediately freeze or unfreeze walk speed for every active mob.
+	-- §T3/W6: restore includes frenzyMult — the old restore dropped it,
+	-- so a resumed mob ran at pre-frenzy speed for up to 5 s until the
+	-- next frenzy tick happened to rewrite WalkSpeed.
 	for mob, data in pairs(activeMobs) do
 		if data.state ~= STATES.DEAD and data.humanoid then
 			local restoreSpeed = (data.baseSpeed or data.config.speed)
+				* (data.frenzyMult or 1)
 				* (hordeModeTargeting and hordeGlobalSpeedMult or 1)
 			data.humanoid.WalkSpeed = paused and 0 or restoreSpeed
 		end
@@ -116,7 +125,14 @@ end
 -- INITIALIZATION
 -- ═══════════════════════════════════════════════════════════
 
+local _initialized = false
+
 function MobAI.Init()
+	-- §T3/W5: run-once guard. A second Init would wire duplicate network
+	-- handlers, a duplicate Heartbeat, and a duplicate reaper thread.
+	if _initialized then return end
+	_initialized = true
+
 	local HitTrackerModule = Modules:FindFirstChild("HitTracker")
 	if HitTrackerModule then
 		HitTracker = require(HitTrackerModule)
@@ -269,15 +285,19 @@ function MobAI.RegisterMob(mob, mobId, level, difficultyOverrides)
 		end
 	end
 
-	humanoid.Died:Connect(function()
-		MobAI.OnMobDied(mob)
-	end)
-
-	mob.AncestryChanged:Connect(function(_, parent)
-		if not parent then
-			MobAI.UnregisterMob(mob)
-		end
-	end)
+	-- §T3/W4 (§14b): track the per-mob connections so UnregisterMob can
+	-- disconnect them explicitly — a mob :Destroy()ed without firing Died
+	-- no longer leaves dangling closures holding the mob table alive.
+	mobData.connections = {
+		humanoid.Died:Connect(function()
+			MobAI.OnMobDied(mob)
+		end),
+		mob.AncestryChanged:Connect(function(_, parent)
+			if not parent then
+				MobAI.UnregisterMob(mob)
+			end
+		end),
+	}
 
 	local tierText = config.mobTier ~= "normal" and " [" .. config.mobTier:upper() .. "]" or ""
 	local skillCount = #(config.skillPriority or {})
@@ -297,6 +317,14 @@ end
 function MobAI.UnregisterMob(mob)
 	if activeMobs[mob] then
 		activeMobs[mob].state = STATES.DEAD
+
+		-- §T3/W4: disconnect the tracked per-mob connections.
+		if activeMobs[mob].connections then
+			for _, conn in ipairs(activeMobs[mob].connections) do
+				pcall(conn.Disconnect, conn)
+			end
+			activeMobs[mob].connections = nil
+		end
 
 		-- Clean up pending skill hits and basic attacks for this mob.
 		-- §2.1b fix: match by mob reference, NOT by castId substring. The old
@@ -359,7 +387,11 @@ function MobAI.Update(dt)
 			local targetMult = frenzyMultFor(alive)
 			if math.abs(targetMult - (data.frenzyMult or 1.0)) > 1e-3 then
 				data.frenzyMult = targetMult
+				-- §T3/W6: include the horde global mult so all three
+				-- WalkSpeed writers (frenzy tick, SetPaused restore,
+				-- SetHordeGlobalSpeedMult) compute the same product.
 				data.humanoid.WalkSpeed = data.baseSpeed * targetMult
+					* (hordeModeTargeting and hordeGlobalSpeedMult or 1)
 			end
 		end
 
@@ -778,8 +810,10 @@ function MobAI.ResolveSkillHits(skillCastId)
 		})
 	end
 
-	-- Entry will be swept by the reaper thread (§2.1c) 2-17s after cast;
-	-- explicit cleanup no longer needed here.
+	-- §T3/W3: delete eagerly — a resolved entry has no further use, and
+	-- late client reports hit the "unknown castId → ignore" path anyway.
+	-- The reaper (§2.1c) stays as the fallback for never-resolved casts.
+	pendingSkillHits[skillCastId] = nil
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -867,7 +901,7 @@ function MobAI.ResolveBasicAttack(attackCastId)
 
 	local data = pending.mobData
 	if data.state == STATES.DEAD then
-		-- Entry will be swept by the reaper thread (§2.1c).
+		pendingBasicAttacks[attackCastId] = nil  -- §T3/W3: eager delete
 		return
 	end
 
@@ -892,7 +926,8 @@ function MobAI.ResolveBasicAttack(attackCastId)
 		MobAI.DamagePlayer(target, damage, data)
 	end
 
-	-- Entry will be swept by the reaper thread (§2.1c).
+	-- §T3/W3: delete eagerly (reaper stays as fallback for the unresolved).
+	pendingBasicAttacks[attackCastId] = nil
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -980,6 +1015,10 @@ function MobAI.DamagePlayer(player, baseDamage, mobData, skillId)
 
 	-- Skip players who are knocked down or dead – DeathSystem handles their fate
 	if player:GetAttribute("DeathState") ~= "Alive" then return end
+
+	-- §DISC/D3b: wipe-revive grace — freshly revived players are
+	-- untouchable for a few seconds.
+	if player:GetAttribute("WipeInvulnerable") then return end
 
 	local humanoid = character:FindFirstChild("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end

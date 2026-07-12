@@ -46,6 +46,7 @@ end
 -- Base values are read from GameModeConfig so there's a single source of truth;
 -- SetDifficulty() multiplies the chosen tier on top.
 local GameModeConfig = require(game:GetService("ServerScriptService"):WaitForChild("Modules"):WaitForChild("GameModeConfig"))
+local MobSpawnHelper = require(game:GetService("ServerScriptService"):WaitForChild("Modules"):WaitForChild("MobSpawnHelper"))  -- §T3/W9
 local _hordeModeCfg  = GameModeConfig.GetMode("HordeMode")
 local _baseMobMults  = _hordeModeCfg and _hordeModeCfg.mobMultipliers or {}
 
@@ -153,18 +154,10 @@ end
 -- ─────────────────────────────────────────────────────────────────────
 
 --- Weighted random pick from the current phase's weight table
+--- §T3/W9: delegates to the shared helper (was a verbatim copy of
+--- MobSpawner.GetRandomMobId's algorithm).
 local function pickMobId()
-    local weights = getPhase().weights
-    local total = 0
-    for _, w in pairs(weights) do total = total + w end
-    local roll = math.random() * total
-    local cum  = 0
-    for id, w in pairs(weights) do
-        cum = cum + w
-        if roll <= cum then return id end
-    end
-    -- fallback
-    for id in pairs(weights) do return id end
+    return MobSpawnHelper.PickWeightedId(getPhase().weights)
 end
 
 --- Returns true if `pos` is at least MIN_SPAWN_DIST from every living player.
@@ -288,32 +281,11 @@ local function spawnMobAt(spawnCFrame)
     -- silent spawner is worse than a delayed one. The retry yields, so
     -- the per-player spawn loop's task.wait timing is preserved on the
     -- happy path; only failures incur extra wait.
-    local mob
-    local backoff = 0.05
-    local attempt = 0
-    while not mob do
-        attempt = attempt + 1
-        local ok, result = pcall(function() return template:Clone() end)
-        if ok and result then
-            mob = result
-            if attempt > 1 then
-                warn(string.format(
-                    "[HordeModeSpawner] Clone for %s succeeded on attempt %d after %d retries.",
-                    tostring(mobId), attempt, attempt - 1))
-            end
-            break
-        end
-        warn(string.format(
-            "[HordeModeSpawner] Clone failed for %s (attempt %d): %s — retrying in %.2fs.",
-            tostring(mobId), attempt, tostring(result), backoff))
-        task.wait(backoff)
-        backoff = math.min(backoff * 2, 1)  -- exponential up to 1s
-        -- Safety: if the run was Stop()'d while we're retrying, bail.
-        if not running then
-            warn("[HordeModeSpawner] Aborting Clone retry — spawner stopped.")
-            return nil
-        end
-    end
+    -- §T3/W9a: shared never-fail clone (this module's semantics won —
+    -- retry forever with backoff, abort only when the spawner stops).
+    local mob = MobSpawnHelper.CloneTemplate(template, mobId, "[HordeModeSpawner]",
+        function() return not running end)
+    if not mob then return nil end
 
     mob.Name = mobData.name or mobId
     mob:SetAttribute("IsMob", true)
@@ -505,10 +477,11 @@ local function createPlayerSpawner(player)
 
                     local spawnPos = marker.Position
                     if isSafeSpawnPosition(spawnPos) then
-                        -- §LD-MS1 follow-up: same 3-stud Y lift as the
-                        -- LaneDefense MobSpawner fix so the mob clears
-                        -- the ground plane on the first physics tick.
-                        local spawnCFrame = CFrame.new(spawnPos + Vector3.new(0, 3, 0))
+                        -- §T3/W9b: uniform scatter across the marker part
+                        -- (was the exact marker point). Resize markers in
+                        -- Studio to widen the area. Keeps the §LD-MS1
+                        -- 3-stud ground-clip lift.
+                        local spawnCFrame = MobSpawnHelper.GetSpawnCFrame(marker, 3)
                         local mob = spawnMobAt(spawnCFrame)
                         if mob then
                             spawnedThisTick = spawnedThisTick + 1
@@ -534,14 +507,14 @@ local function createPlayerSpawner(player)
                         if ally ~= player and ally.Parent and allySpawnerData and allySpawnerData.markers then
                             for _, marker in ipairs(allySpawnerData.markers) do
                                 if marker and marker.Parent and isSafeSpawnPosition(marker.Position) then
-                                    table.insert(viable, marker.Position)
+                                    table.insert(viable, marker)  -- §T3/W9b: keep the part, not just its position
                                 end
                             end
                         end
                     end
                     if #viable > 0 then
-                        local pos = viable[math.random(#viable)]
-                        local spawnCFrame = CFrame.new(pos + Vector3.new(0, 3, 0))
+                        -- §T3/W9b: uniform scatter across the picked marker part.
+                        local spawnCFrame = MobSpawnHelper.GetSpawnCFrame(viable[math.random(#viable)], 3)
                         local mob = spawnMobAt(spawnCFrame)
                         if mob then
                             spawnedThisTick = spawnedThisTick + 1
@@ -767,11 +740,14 @@ function HordeModeSpawner.SetDifficulty(tierName)
         return
     end
     local diff = DifficultyConfig.GetDifficulty(tierName)
-    -- Stack: HordeMode base (0.60/0.85/0.80) × difficulty tier
+    -- Stack: HordeMode base × difficulty tier.
+    -- §T3/W2: base multipliers come from GameModeConfig (_baseMobMults,
+    -- cached at module load) — the old hardcoded 0.60/0.85/0.80 here
+    -- silently diverged whenever GameModeConfig.mobMultipliers changed.
     activeDifficultyOverrides = {
-        hpMult     = 0.60  * diff.hpMult,
-        damageMult = 0.85  * diff.damageMult,
-        armorMult  = 0.80  * diff.armorMult,
+        hpMult     = (_baseMobMults.hpMult     or 0.60) * diff.hpMult,
+        damageMult = (_baseMobMults.damageMult or 0.85) * diff.damageMult,
+        armorMult  = (_baseMobMults.armorMult  or 0.80) * diff.armorMult,
         speedBonus = diff.speedBonus or 0,
     }
     print("[HordeModeSpawner] Difficulty set to:", tierName,

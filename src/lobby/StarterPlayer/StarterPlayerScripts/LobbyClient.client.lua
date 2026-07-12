@@ -41,6 +41,7 @@ end
 -- Lobby uses default Roblox camera and movement — CameraSystem
 -- and MovementSystem are available but not configured here.
 -- ───────────────────────────────────────────────────────────
+Load(SharedModules, "LoadingScreen")   -- §T10/U1: overlay up FIRST, dismissed on ServerReady
 Load(SharedModules, "NetworkManager")
 Load(SharedModules, "ResourceCache")   -- early listener prevents ResourceUpdate queue exhaustion
 Load(SharedModules, "AnimationSystem")  -- centralized animation controller
@@ -58,11 +59,14 @@ Load(LobbyModules, "SceneController")
 Load(LobbyModules, "NPCInteraction")
 
 -- Listen for server ready
--- §T0P2/X25: intentionally empty — reserved as the loading-screen
--- dismiss hook. ServerReady is ReadyGate-routed (§T0P2/X9), so it
--- reliably arrives after this client's ClientReady handshake.
+-- §T10/U1: the loading-screen dismiss hook (the seam §T0P2/X25 reserved).
+-- ServerReady is ReadyGate-routed (§T0P2/X9), so it reliably arrives
+-- after this client's ClientReady handshake — i.e. after every queued
+-- boot payload has been drained.
 local NetworkManager = loadedModules["NetworkManager"]
 if NetworkManager then
 	NetworkManager.OnServerEvent("ServerReady", function()
+		local ls = loadedModules["LoadingScreen"]
+		if ls then ls.Dismiss() end
 	end)
 end

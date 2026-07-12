@@ -24,10 +24,18 @@ function DamageHandler.OnMobKilled(callback)
 	if KillRewardManager then
 		KillRewardManager.OnMobKilled(callback)
 	else
-		-- Queue until Init resolves KillRewardManager
+		-- Queue until Init resolves KillRewardManager.
+		-- §T2/Z6: bounded — the old loop polled forever if KRM never
+		-- loaded. 10 s covers any legitimate boot ordering; past that,
+		-- warn loudly and drop (loud-at-boot over silent spin).
 		task.spawn(function()
-			repeat task.wait(0.05) until KillRewardManager ~= nil
-			KillRewardManager.OnMobKilled(callback)
+			local deadline = os.clock() + 10
+			repeat task.wait(0.05) until KillRewardManager ~= nil or os.clock() > deadline
+			if KillRewardManager then
+				KillRewardManager.OnMobKilled(callback)
+			else
+				warn("[DamageHandler] OnMobKilled callback dropped — KillRewardManager never loaded (10 s)")
+			end
 		end)
 	end
 end

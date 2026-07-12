@@ -177,7 +177,12 @@ local function getEligibleXPRecipients(killer, mobPosition)
 
 	local recipients = {}
 	for _, member in ipairs(partyMembers) do
-		if member and member.Parent and isWithinRange(member, mobPosition, XP_SHARE_RANGE_STUDS) then
+		-- §T2/Z2 (DQ-T2A): DEAD players earn nothing — anti AFK-carry.
+		-- KnockedDown still earns: it's a seconds-long combat state the
+		-- player fought their way into, not AFK leeching.
+		if member and member.Parent
+			and member:GetAttribute("DeathState") ~= "Dead"
+			and isWithinRange(member, mobPosition, XP_SHARE_RANGE_STUDS) then
 			table.insert(recipients, member)
 		end
 	end

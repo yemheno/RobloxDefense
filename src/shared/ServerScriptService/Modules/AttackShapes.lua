@@ -40,39 +40,29 @@ local function getModelPosition(model)
 end
 
 -- Get all potential targets in workspace
-local function getPotentialTargets(filterAttribute)
-	local targets = {}
-
-	-- Check workspace children
-	for _, child in ipairs(workspace:GetChildren()) do
-		if child:IsA("Model") and child:FindFirstChild("Humanoid") then
-			-- Filter by attribute if specified
-			if filterAttribute then
-				if child:GetAttribute(filterAttribute) then
+-- §T2/Z7: dead-but-not-yet-destroyed models are skipped up front —
+-- downstream DamageMob no-ops on them anyway; this just saves the
+-- geometry work in the shape loops (and dedupes the two scan blocks).
+local function collectFrom(container, filterAttribute, targets)
+	for _, child in ipairs(container:GetChildren()) do
+		if child:IsA("Model") then
+			local humanoid = child:FindFirstChild("Humanoid")
+			if humanoid and humanoid.Health > 0 then
+				if not filterAttribute or child:GetAttribute(filterAttribute) then
 					table.insert(targets, child)
 				end
-			else
-				table.insert(targets, child)
 			end
 		end
 	end
+end
 
-	-- Also check Mobs folder if it exists
+local function getPotentialTargets(filterAttribute)
+	local targets = {}
+	collectFrom(workspace, filterAttribute, targets)
 	local mobsFolder = workspace:FindFirstChild("Mobs")
 	if mobsFolder then
-		for _, mob in ipairs(mobsFolder:GetChildren()) do
-			if mob:IsA("Model") and mob:FindFirstChild("Humanoid") then
-				if filterAttribute then
-					if mob:GetAttribute(filterAttribute) then
-						table.insert(targets, mob)
-					end
-				else
-					table.insert(targets, mob)
-				end
-			end
-		end
+		collectFrom(mobsFolder, filterAttribute, targets)
 	end
-
 	return targets
 end
 
