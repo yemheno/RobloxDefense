@@ -24,6 +24,7 @@ local Modules        = script.Parent.Parent:WaitForChild("Modules")
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local ResourceCache  = require(Modules:WaitForChild("ResourceCache"))
 local Locale         = require(Modules:WaitForChild("Locale"))
+local LightningBar   = require(script.Parent:WaitForChild("Common"):WaitForChild("LightningBar"))
 
 local LocalPlayer = Players.LocalPlayer
 local cachedDefenseHP = nil
@@ -55,6 +56,37 @@ local function StatusBar(props)
 	local pct     = math.clamp(current / max, 0, 1)
 	local valText = math.floor(current) .. " / " .. math.floor(max)
 
+	-- §BEAUTY/P2: opt-in lightning crackle (effect = "lightning") — used by
+	-- the Resource row. LightningBar brings its own track/fill chrome.
+	local track
+	if props.effect == "lightning" then
+		track = React.createElement(LightningBar, {
+			value       = pct,
+			color       = color,
+			position    = UDim2.fromScale(0.19, 0.15),
+			size        = UDim2.fromScale(0.55, 0.70),
+			anchorPoint = Vector2.new(0, 0),
+			intensity   = 0.9,
+			zIndex      = 2,
+		})
+	else
+		track = React.createElement("Frame", {
+			Position         = UDim2.fromScale(0.19, 0.15),
+			Size             = UDim2.fromScale(0.55, 0.70),
+			BackgroundColor3 = C.bar_bg,
+			BorderSizePixel  = 0,
+		}, {
+			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+			fill = React.createElement("Frame", {
+				Size             = UDim2.fromScale(pct, 1),
+				BackgroundColor3 = color,
+				BorderSizePixel  = 0,
+			}, {
+				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+			}),
+		})
+	end
+
 	return React.createElement("Frame", {
 		Size                   = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
@@ -70,21 +102,7 @@ local function StatusBar(props)
 			TextXAlignment         = Enum.TextXAlignment.Left,
 		}),
 
-		track = React.createElement("Frame", {
-			Position         = UDim2.fromScale(0.19, 0.15),
-			Size             = UDim2.fromScale(0.55, 0.70),
-			BackgroundColor3 = C.bar_bg,
-			BorderSizePixel  = 0,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-			fill = React.createElement("Frame", {
-				Size             = UDim2.fromScale(pct, 1),
-				BackgroundColor3 = color,
-				BorderSizePixel  = 0,
-			}, {
-				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-			}),
-		}),
+		track = track,
 
 		val = React.createElement("TextLabel", {
 			Position               = UDim2.fromScale(0.75, 0),
@@ -601,6 +619,7 @@ local function HUD(props)
 					current = res.cur,
 					max     = res.max,
 					color   = C.bar_res,
+					effect  = "lightning",  -- §BEAUTY/P2: mana crackle
 				}),
 			}),
 

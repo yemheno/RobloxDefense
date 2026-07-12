@@ -679,6 +679,10 @@ function DeathSystem.HandleRespawnRequest(player)
 	if data.respawnQueued then return end
 	data.respawnQueued = true
 
+	-- §EASY/§2.4d: per-run respawn counter. Consumers pending (end-of-run
+	-- panel + "Die N times" achievements — see TODO §5).
+	data.respawnCount = (data.respawnCount or 0) + 1
+
 	task.delay(CONFIG.RespawnDelay, function()
 		if playerStates[player] then playerStates[player].respawnQueued = nil end
 		if wipeGraceActive then return end  -- wipe started during the delay

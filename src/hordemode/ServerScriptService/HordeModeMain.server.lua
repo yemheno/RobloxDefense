@@ -314,6 +314,23 @@ HordePauseManager.Setup({
     NetworkManager   = NetworkManager,
 })
 
+-- §EASY/E4 (§AM4): HordeMode has no MobSpawner waves, so wavesSurvived /
+-- highestWave never advanced for horde players. Watch the horde level
+-- and feed each increment into the SAME public hook the wave system uses.
+task.spawn(function()
+    local amMod = ctx.loaded["AchievementManager"]
+    if not amMod or not amMod.OnWaveCompleted then return end
+    local lastLevel = HordeModeSpawner.GetLevel() or 1
+    while hordeRunActive do
+        task.wait(2)
+        local lv = HordeModeSpawner.GetLevel() or lastLevel
+        while lv > lastLevel do
+            lastLevel += 1
+            amMod.OnWaveCompleted(lastLevel)
+        end
+    end
+end)
+
 VoteManager.Setup({
     NetworkManager    = NetworkManager,
     CardRegistry      = ctx.loaded["CardRegistry"],

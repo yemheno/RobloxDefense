@@ -97,4 +97,33 @@ function Theme.GetIcon(name)
 	return id
 end
 
+-- ── Image registry (§BEAUTY: Claude Design drop, source PNGs in assets/ui/) ───
+-- Same placeholder convention as Icons. `slice` = SliceCenter for 9-slice
+-- plates (source sizes: buttons 256², barFrame 512×128).
+Theme.Images = {
+	-- 9-slice button plates
+	btnPrimary   = { id = "rbxassetid://0", slice = Rect.new(48, 48, 208, 208) },
+	btnSecondary = { id = "rbxassetid://0", slice = Rect.new(48, 48, 208, 208) },
+	btnDanger    = { id = "rbxassetid://0", slice = Rect.new(48, 48, 208, 208) },
+	btnLocked    = { id = "rbxassetid://0", slice = Rect.new(48, 48, 208, 208) },
+
+	-- Vitals bar kit (fills stay code-side UIGradients)
+	barFrame     = { id = "rbxassetid://0", slice = Rect.new(80, 32, 432, 96) },
+	barShine     = { id = "rbxassetid://0" }, -- stretch overlay, no slice
+
+	-- 2D particle sprites — WHITE on transparent; tint via ImageColor3
+	pGlow        = { id = "rbxassetid://0" },
+	pSpark       = { id = "rbxassetid://0" },
+	pBolt        = { id = "rbxassetid://0" }, -- 256×64, horizontally tileable
+	pStreak      = { id = "rbxassetid://0" },
+	pEmber       = { id = "rbxassetid://0" },
+}
+
+--- Image entry or nil while still a placeholder (same contract as GetIcon).
+function Theme.GetImage(name)
+	local entry = Theme.Images[name]
+	if not entry or entry.id == "rbxassetid://0" then return nil end
+	return entry
+end
+
 return Theme

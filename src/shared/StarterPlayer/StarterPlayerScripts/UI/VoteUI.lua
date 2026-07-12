@@ -174,6 +174,8 @@ local function VoteUI()
     local resumeCountdown, setResumeCountdown = React.useState(nil)
     local timerTaskRef     = React.useRef(nil)
     local pendingTaskRef   = React.useRef(nil)
+    -- §UI3: guards the 2 s auto-dismiss delays against firing after unmount.
+    local mountedRef       = React.useRef(true)
     local resumeTaskRef    = React.useRef(nil)
     -- §VG5: anti-misclick guard. When the cards first appear, players who
     -- happened to be left-click attacking can fire a vote inadvertently in
@@ -208,6 +210,7 @@ local function VoteUI()
             -- VoteCountdown event below takes over with the "Get ready!"
             -- counter for the next 3 s before world resumes.
             task.delay(2, function()
+                if not mountedRef.current then return end  -- §UI3
                 setVoteData(nil)
                 setWinnerIndex(nil)
             end)
@@ -266,12 +269,14 @@ local function VoteUI()
             setWinnerIndex(data.winnerIndex)
             -- §VG4: 2 s display, countdown handled by VoteCountdown.
             task.delay(2, function()
+                if not mountedRef.current then return end  -- §UI3
                 setVoteData(nil)
                 setWinnerIndex(nil)
             end)
         end)
 
         return function()
+            mountedRef.current = false  -- §UI3
             if conn1 then conn1:Disconnect() end
             if conn2 then conn2:Disconnect() end
             if connCountdown then connCountdown:Disconnect() end

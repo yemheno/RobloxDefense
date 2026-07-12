@@ -136,6 +136,21 @@ function PlayerClassSystem.UnlockClass(player, className)
 	data.Classes[className] = Config.CreateClassData()
 
 	print("[PlayerClassSystem]", player.Name, "unlocked class:", className)
+
+	-- §EASY/E6: class-unlock toast — rides the existing AchievementUnlocked
+	-- pipeline (AchievementClient → toast queue), no new client code.
+	task.spawn(function()
+		local nmMod = Modules:FindFirstChild("NetworkManager")
+		local ok, nm = nmMod and pcall(require, nmMod)
+		if ok and nm and nm.FireClient then
+			nm.FireClient(player, "AchievementUnlocked", {
+				id   = "class_unlock_" .. className,
+				name = "Class Unlocked!",
+				desc = className .. " is now available in the Class menu.",
+				icon = "🗡",
+			})
+		end
+	end)
 	return true
 end
 

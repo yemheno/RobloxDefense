@@ -52,8 +52,18 @@ function VisualEquipmentManager.Init()
 		warn("[VisualEquipmentManager] ServerStorage.Weapons not found!")
 	end
 
-	-- Armors folder loaded when armor assets are available
+	-- Armors folder loaded when armor assets are available.
+	-- §EASY/E3 (§V2): assets actually live under ServerStorage.Models.Armors
+	-- (DefaultArmor.rbxmx) — the old lookup only checked ServerStorage.Armors,
+	-- which no project maps, so armor visuals could never resolve.
 	ArmorsFolder = ServerStorage:FindFirstChild("Armors")
+	if not ArmorsFolder then
+		local models = ServerStorage:FindFirstChild("Models")
+		ArmorsFolder = models and models:FindFirstChild("Armors")
+	end
+	if not ArmorsFolder then
+		warn("[VisualEquipmentManager] No Armors folder (ServerStorage.Armors or .Models.Armors) — armor visuals disabled")
+	end
 
 	-- §T5-T9/S6 (§14b + §VEM-DEDUPE root cause): single wire-per-player.
 	-- The old code wired CharacterAdded from BOTH the PlayerAdded handler
@@ -297,7 +307,11 @@ end
 local function resolveArmorTemplate(className, slot)
 	if not ArmorsFolder then return nil end
 	local assetName = string.format("%s_a%d", className, slot)
-	return ArmorsFolder:FindFirstChild(assetName), assetName
+	-- §EASY/E3: per-class asset preferred; DefaultArmor is the stub
+	-- fallback (Pablo authored it for exactly this wiring).
+	local asset = ArmorsFolder:FindFirstChild(assetName)
+		or ArmorsFolder:FindFirstChild("DefaultArmor")
+	return asset, assetName
 end
 
 -- ═══════════════════════════════════════════════════════════

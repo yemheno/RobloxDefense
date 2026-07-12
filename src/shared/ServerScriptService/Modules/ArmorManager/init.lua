@@ -130,6 +130,23 @@ end
 --============================================
 -- STARTER ARMOR
 --============================================
+-- §EASY/E3 (§V2): attach the armor VISUAL alongside the data equip.
+-- Lazy VEM (same shape as WeaponManager's attach path). Slot comes from
+-- the armor def when present, else 1; VEM falls back to the DefaultArmor
+-- stub asset when no per-class model exists yet.
+local _VEM
+local function attachArmorVisual(player, className, armorId)
+	if _VEM == nil then
+		local mod = script.Parent:FindFirstChild("VisualEquipmentManager")
+		local ok, result = mod and pcall(require, mod)
+		_VEM = (ok and result) or false
+	end
+	if not _VEM or not _VEM.AttachClassArmor then return end
+	local def = ArmorRegistry.GetArmor and ArmorRegistry.GetArmor(armorId)
+	local slot = (def and def.armorSlot) or 1
+	task.spawn(_VEM.AttachClassArmor, player, className, slot)
+end
+
 function ArmorManager.EnsureStarterArmor(player)
 	local activeClass = PlayerDataManager.GetActiveClass(player)
 	local classData   = PlayerDataManager.GetActiveClassData(player)
@@ -150,6 +167,8 @@ function ArmorManager.EnsureStarterArmor(player)
 			armorData = classData.EquippedArmor,
 			stats     = ArmorManager.GetCalculatedStats(player),
 		})
+		-- §EASY/E3: returning player — attach the visual too.
+		attachArmorVisual(player, activeClass, classData.EquippedArmor.armorId)
 		return
 	end
 
@@ -165,6 +184,9 @@ function ArmorManager.EnsureStarterArmor(player)
 		print("[ArmorManager] Gave starter armor to", player.Name, ":", starterArmorId)
 
 		PlayerDataManager.RefreshArmorStats(player)
+
+		-- §EASY/E3: first-time grant — attach the visual.
+		attachArmorVisual(player, activeClass, starterArmorId)
 
 		fireArmorEquipped(player, {
 			armorId   = starterArmorId,
