@@ -548,10 +548,19 @@ tags in code).
   attribute (party-selected class) but nothing reads it yet. The new
   map's spawn flow should consume it — and MUST validate the class is
   unlocked for the player before applying.
-- `[P1]` **§T0P2-RESPEC-SCROLL — Verify respec_scroll acquisition
-  path.** The RespecStats handler consumes `respec_scroll` first, then
-  Essence — but it looks like nothing grants the scroll yet. Either add
-  it to a shop/drop/quest table or drop the item until it's obtainable.
+- ~~§T0P2-RESPEC-SCROLL~~ **RESOLVED (§DISC/D1, confirmed 2×).** Full
+  chain verified wired: RespecFragment final-card (10%/player/supply-
+  vote, once per run — matches Pablo's spec exactly), fragments
+  auto-combine 4→1 scroll (InventoryManager.tryAutoConvert), respec
+  consumes scroll, shop fallback (50 Essence). `[P2/Balance]` remaining:
+  boss drop sources + project the acquisition curve (not too hard, not
+  too easy).
+- `[P1/Monetization]` **§DISC/D3b — Wipe-revive: Robux product.** The
+  Essence-priced wipe-revive is LIVE (DeathSystem CONFIG:
+  WipeGraceSeconds=10, WipeReviveEssence=25 placeholder,
+  WipeInvulnSeconds=3). Later: a Developer Product purchase path that
+  calls the same DeathSystem.HandleWipeRevive resolution (skip the
+  essence spend, verify the receipt instead).
 - `[P2]` **§T0P2-MASTERY — Sweep the dead Class Mastery system.** Class
   XP was superseded by gear XP (WeaponXPSystem). `AddClassMasteryXP` is
   deleted (§T0P2/X21); still present: `ClassMasteryConfig.lua`, the
@@ -568,6 +577,121 @@ tags in code).
   per-place manifest subsets (`places = {...}` field per entry), or
   accept the cost (RemoteEvents are cheap) and document. Also covers
   trimming per-place module loadlists.
+### T1 pass-2 (§T1P2)
+
+- `[P2/Balance]` **§T1P2-STACKS — mostly CLOSED at T2 (§T2/Z9).** The
+  mob-debuff side is done: SkillEffects' stacking path already had
+  `maxStacks` + refresh; Z9 added Pablo's rule (at max stacks, refresh
+  only if the new duration extends) and made Vulnerability re-applies
+  keep the stronger multiplier + longer remaining duration. The
+  DamageSystem ≤3.0 clamp stays as belt-and-suspenders. REMAINING
+  (balance, not code): decide which debuffs get `maxStacks > 1`
+  (only Sundering Strikes stacks today); player-side timed buffs
+  (BonusManager.AddTimedBonus) stay refresh-only until a buff actually
+  needs stacks.
+- `[P2]` **§T1P2-PEN — Add %-penetration as a second stat.** Decision
+  (Pablo): mirror the defense model — have BOTH flat penetration (current,
+  `armor - flatPen`, stays as-is and uncapped) AND a percentage
+  penetration (`armor * (1 - pct/100)`) capped by `StatCaps.Penetration`
+  (60 = 60%). %-pen doesn't exist in the pipeline yet, so nothing to clamp
+  today; this is a feature to add (new BonusStat + DamageSystem step +
+  cap). → was Y1.
+- ~~§T1P2-HITTRACKER — T2 HitTracker pass.~~ **CLOSED / won't-fix.** Y6
+  (callback registry has no unsubscribe) needs no fix: the only consumers
+  (AchievementManager, ResourceManager) register once at boot, and all
+  durable hit data already lives in dedicated tables (achievement stats,
+  gear/weapon XP), so no dynamic subscriber will ever need teardown. The
+  Y5 dedup (HitTracker no longer accumulates duplicate lifetime stats)
+  already settled the ownership question. The OnHitDealt/OnHitReceived
+  dispatch itself stays — it's the live event path.
+
+### T10 UI outcomes (§T10, 2026-06-12)
+
+- **§T10/STACK — React-lua is canonical (Pablo).** The
+  `StarterGui/AppGui` static stack (rbxmx backdrops + Controllers) was
+  an abandoned React→instances migration that CONFLICTED at runtime
+  with the React roots (both shipped; LobbyUI destroyed one copy but
+  StarterGui re-copied per spawn → double UI stacks / dead
+  controllers). Neutralized via meta.json (ScreenGui Enabled=false,
+  controllers Disabled=true) — files kept for reference. `[P2]` archive
+  the folder fully during final cleanup; §UI1/§UI2 above referenced the
+  controller stack and are now MOOT for those files (re-check their
+  React equivalents: DailyLoginUI + SocialPanel components).
+- **§T10/U1 — LoadingScreen** landed: pre-app imperative overlay
+  (deliberately NOT React — it covers the React mount itself), shown
+  from each place client's first Load, dismissed on ReadyGate-routed
+  ServerReady, 25 s failsafe. Restyle freely in code (Scale-based).
+- **§T10/U2 — TalentTreeUI rework** landed: organic layout transform
+  (config untouched — polar jitter/bloom over the grid blocks),
+  per-branch hue tints from node tags, two-layer edges with
+  next-step highlighting, wheel zoom + pan. `[P2]` follow-ups: node
+  icons per branch, allocate/refund sounds, keystone showcase panel.
+
+- `[P1/UI]` **§T10/U3 — Window standardization sweep.** Two window
+  types now exist: `UI/Common/AppWindow.lua` (`variant = "windowed" |
+  "fullscreen"`, anime/speed chrome: slanted accent ribbon, uppercase
+  title, motion lines, icon slot, headerContent slot, standard close)
+  + `UI/Common/Theme.lua` (single palette/fonts/icon registry).
+  CONVERTED: ClassMenu (windowed exemplar), TalentTreeUI (fullscreen
+  exemplar). Recipe per remaining menu: (1) require AppWindow;
+  (2) delete the menu's own backdrop/panel/title/close chrome;
+  (3) return AppWindow{variant, title, icon, onClose[, headerContent]}
+  with the body children; (4) migrate hardcoded colors to Theme.Colors.
+  CONVERTED (batch 2, §T10/U3): StatsMenu, SettingsUI, DailyLoginUI,
+  LeaderboardUI (the last two had ~12-pixel close buttons — the
+  "incredibly small" ones). REMAINING: EquipmentUI, WardrobeUI,
+  AchievementsUI, GlobalShopUI, KeybindSettings, CharacterCreation
+  (fullscreen), BattleClassUI + lobby: MainMenu, ShopUI, WeaponSmithUI,
+  InventoryUI, SocialPanel, MatchmakingUI, NPCDialog. (Toasts/wheels — EmoteWheel, PartyInviteToast, VoteUI,
+  DeathUI, HUD, TeammateVitals — are NOT windows; leave as-is.)
+- `[P1/Art]` **§T10/ICONS — Icon set (anime / speed).** Theme.Icons is
+  the one-file registry (placeholders render as no-icon fallback).
+  Workflow: generate → upload to Roblox as Decals → paste ids.
+  ART BRIEF for Claude Design / any image tool: flat cel-shaded icons,
+  bold 3-4px dark outlines, dynamic 15° forward slant, motion-streak
+  accents trailing left, palette anchored on speed-orange #FFAA28 +
+  electric-blue #5ABEFF over dark #12121C, high contrast, readable at
+  64×64, transparent background, consistent 512×512 canvas. Set needed:
+  classes/stats/talents/equipment/wardrobe/achievements/settings/shop/
+  inventory/dailyLogin/leaderboard/social + essence/merits currency
+  glyphs + attack/skillLocked combat glyphs (16 total, see Theme.Icons).
+
+### Discussion-batch outcomes (§DISC, 2026-06-12)
+
+- `[🚀]` **§DISC/D2 — Persistent parties.** Pablo: party = everyone in
+  the battle map (no hardening needed — reserved servers make this
+  true). FUTURE feature: party persistence across server hops — a
+  unique party ID minted at party creation, carried in teleport data,
+  re-associated in the lobby on return. Pairs naturally with the
+  MemoryStore matchmaking plan (§7).
+- `[P1/Core]` **§DISC/D5 — Achievement-driven bonuses + gates.**
+  Achievements grant permanent stat bonuses via the reserved
+  BonusManager "achievement" source, AND gate features: (a) the chapter
+  hard-cap at each 50 requires that chapter's boss achievement to
+  unlock further leveling (wire into ChapterConfig.GetChapterLevelCap
+  / PlayerLevelSystem cap check); (b) **class unlocks** (round 2):
+  future classes gated behind achievements — extend
+  ClassConfig.unlockRequirements with `requiredAchievement` and teach
+  PlayerClassSystem.CheckUnlockRequirements to read
+  AchievementManager's unlocked set. Core element per Pablo.
+- **§DISC/D6 — REVISED round 2, BUILT.** Pablo: folding more cap/gate
+  features is common, worth the seam. New shared
+  `Modules/PartyRequirements.lua` (MaxLevelGap/FitsLevelGap/CheckLevels)
+  now backs BOTH PartyManager invite checks and TeleportManager launch
+  validation — future gates (achievement locks §D5, class comp,
+  per-difficulty floors) get added there once and apply at both gates.
+- `[P1/Content]` **§DISC/D7 — Shop rotation + paid refresh.** Build:
+  rotation timer (server-side, per catalog section), plus a manual
+  "refresh now" costing Essence. ShopConfig is currently a static
+  catalog — needs rotation state + UI. Content pass.
+- **§DISC/D8 — REVISED round 2, BUILT (better design, Pablo's).**
+  Instead of an error channel: NPC UIs auto-close when the player walks
+  away. New `UI/Common/useNpcDistanceClose` hook (16-stud threshold vs
+  the server's 12-stud INTERACT_RANGE, so no boundary flicker), wired
+  into NPCDialog (dialogue/quest/teleport panels). `[P2]` also wire into
+  ShopUI + WeaponSmithUI (same one-liner, they carry npcId in their
+  open events). Scene/card server warns stay as-is.
+
 - `[P2]` **§T0P2-ORPHANS — Verify 5 unreferenced manifest events.**
   `ArmorRefinementResult`, `ArmorTierUp`, `WeaponRefinementResult`,
   `WeaponTierUp` (check at T6 — refine/tier flows may be missing their
