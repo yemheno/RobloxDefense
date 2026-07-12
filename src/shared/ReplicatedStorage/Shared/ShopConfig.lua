@@ -2,6 +2,11 @@
 --[[
     Centralized shop catalog for the 3-tab shop system.
 
+    ⚠ §DISC/D7 (Pablo): the CURRENT ITEMS ARE PLACEHOLDERS ("random
+    nonsense objects") — don't balance-audit them. The real shop pass
+    (curated catalog + rotation timer + paid Essence refresh) is
+    tracked in docs/TODO.md §DISC/D7.
+
     Three tabs:
       Cosmetics    — headgear & outfits (unlocks, not consumable)
       Consumables  — potions, scrolls, buff items (stackable)

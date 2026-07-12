@@ -57,18 +57,9 @@ local PLACE_IDS = {
 }
 local LANE_DEFENSE_PLACE_ID = Shared.PlaceIds.LaneDefense
 
--- §L11: read MaxLevelGap from PlayerDataConfig (single source of truth).
-local MAX_LEVEL_GAP = 10
-do
-	local ok, cfg = pcall(function()
-		return require(SharedModules:WaitForChild("PlayerDataConfig"))
-	end)
-	if ok and cfg and cfg.Matchmaking and cfg.Matchmaking.MaxLevelGap then
-		MAX_LEVEL_GAP = cfg.Matchmaking.MaxLevelGap
-	else
-		warn("[TeleportManager] PlayerDataConfig.Matchmaking.MaxLevelGap missing — defaulting to 10")
-	end
-end
+-- §DISC/D6: party rules live in the shared PartyRequirements module
+-- (same functions PartyManager uses at invite-time).
+local PartyRequirements = require(SharedModules:WaitForChild("PartyRequirements"))
 
 -- ── Dependencies (set in Init) ────────────────────────────
 local NetworkManager = nil
@@ -148,19 +139,39 @@ function TeleportManager.TeleportToGameMode(players, options)
 	local teleportOptions = Instance.new("TeleportOptions")
 	teleportOptions:SetTeleportData(teleportData)
 
-	-- Attempt teleport
-	local success, errorMsg = pcall(function()
-		TeleportService:TeleportAsync(
-			placeId,
-			players,
-			teleportOptions
-		)
-	end)
+	-- Attempt teleport.
+	-- §T7/G4 (carried since the first audit): retry with backoff. A
+	-- transient TeleportService hiccup used to permanently strand the
+	-- matched party in "Launching" after a single failed pcall.
+	local success, errorMsg = false, nil
+	local RETRIES, delaySec = 3, 1
+	for attempt = 1, RETRIES do
+		success, errorMsg = pcall(function()
+			TeleportService:TeleportAsync(placeId, players, teleportOptions)
+		end)
+		if success then break end
+		warn(string.format("[TeleportManager] Teleport attempt %d/%d failed: %s",
+			attempt, RETRIES, tostring(errorMsg)))
+		if attempt < RETRIES then
+			task.wait(delaySec)
+			delaySec = delaySec * 2
+			-- Players may have left while we waited; drop them from the batch.
+			for i = #players, 1, -1 do
+				if not players[i] or not players[i].Parent then
+					table.remove(players, i)
+				end
+			end
+			if #players == 0 then
+				errorMsg = "all players left during teleport retries"
+				break
+			end
+		end
+	end
 
 	if success then
 		print("[TeleportManager] Teleported", #players, "to", modeId, "(difficulty:", teleportData.difficulty, ")")
 	else
-		warn("[TeleportManager] Teleport failed:", errorMsg)
+		warn("[TeleportManager] Teleport failed after retries:", errorMsg)
 		-- §L9 fix: notify clients of the error AND cancel their queue
 		-- state. Without the cancel, MatchmakingManager still believes
 		-- they're "Launching" and they have no path back to the queue UI.
@@ -196,17 +207,16 @@ function TeleportManager.ValidateParty(teleportData)
 	local partyData = teleportData.partyData
 	if not partyData or #partyData == 0 then return true, nil end
 
-	-- Find min/max level in the party
-	local minLevel, maxLevel = math.huge, 0
+	-- §DISC/D6: shared rule. Future launch gates (achievement locks,
+	-- class composition) also fold into PartyRequirements.
+	local levels = {}
 	for _, member in ipairs(partyData) do
-		local lvl = member.level or 1
-		if lvl < minLevel then minLevel = lvl end
-		if lvl > maxLevel then maxLevel = lvl end
+		table.insert(levels, member.level or 1)
 	end
-
-	-- Anti-carry: reject if level gap exceeds threshold
-	if maxLevel - minLevel > MAX_LEVEL_GAP then
-		return false, "Party level gap too large (max " .. MAX_LEVEL_GAP .. "). Highest: " .. maxLevel .. ", Lowest: " .. minLevel .. "."
+	local ok, minLevel, maxLevel = PartyRequirements.CheckLevels(levels)
+	if not ok then
+		return false, "Party level gap too large (max " .. PartyRequirements.MaxLevelGap()
+			.. "). Highest: " .. maxLevel .. ", Lowest: " .. minLevel .. "."
 	end
 
 	return true, nil

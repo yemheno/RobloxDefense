@@ -89,8 +89,26 @@ local function DeathUI()
 	local knockdownEndsAt = React.useRef(0)
 	local countdownTaskRef = React.useRef(nil)
 
+	-- §DISC/D3b: wipe-revive offer state ({cost, endsAt, denied?} or nil)
+	local wipeOffer, setWipeOffer = React.useState(nil)
+	local wipeTimer, setWipeTimer = React.useState(0)
+
 	-- Listen for server events
 	React.useEffect(function()
+		local wipeConn = NetworkManager.OnServerEvent("WipeReviveOffer", function(data)
+			setWipeOffer({
+				cost   = data.cost or 0,
+				endsAt = os.clock() + (data.seconds or 10),
+				denied = data.denied,
+			})
+		end)
+		local wipeDone = NetworkManager.OnServerEvent("WipeReviveResolved", function(_data)
+			-- Either someone revived (combat resumes; the buyer's own
+			-- DeathState flips to Alive separately) or the run is over
+			-- (teleport to lobby imminent). Both close the offer.
+			setWipeOffer(nil)
+		end)
+
 		local conn = NetworkManager.OnServerEvent("DeathState", function(data)
 			local newState = data.state
 			setDeathState(newState)
@@ -113,9 +131,26 @@ local function DeathUI()
 
 		return function()
 			if conn then conn:Disconnect() end
+			if wipeConn then wipeConn:Disconnect() end
+			if wipeDone then wipeDone:Disconnect() end
 			ClearEffects()
 		end
 	end, {})
+
+	-- §DISC/D3b: countdown for the wipe window
+	React.useEffect(function()
+		if not wipeOffer then return end
+		local running = true
+		task.spawn(function()
+			while running do
+				local remaining = math.max(0, wipeOffer.endsAt - os.clock())
+				setWipeTimer(remaining)
+				if remaining <= 0 then break end
+				task.wait(0.1)
+			end
+		end)
+		return function() running = false end
+	end, { wipeOffer })
 
 	-- Countdown timer for knockdown
 	React.useEffect(function()
@@ -256,13 +291,58 @@ local function DeathUI()
 					TextColor3             = C.headerDead,
 					TextStrokeTransparency = 0.3,
 					TextStrokeColor3       = Color3.new(0, 0, 0),
-					Text                   = "YOU DIED",
+					Text                   = wipeOffer and "PARTY WIPED" or "YOU DIED",
 					LayoutOrder            = 1,
 				}),
 
-				-- Respawn button
-				respawnBtn = React.createElement("TextButton", {
-					Size                   = UDim2.fromScale(0.115, 0.046),
+				-- §DISC/D3b: during a wipe window the free respawn is gone;
+				-- the paid revive is the only out.
+				wipeTimerLbl = wipeOffer and React.createElement("TextLabel", {
+					Size                   = UDim2.new(1, 0, 0, 40),
+					BackgroundTransparency = 1,
+					Font                   = Enum.Font.GothamBold,
+					TextScaled             = true,
+					TextColor3             = C.timerText,
+					TextStrokeTransparency = 0.3,
+					TextStrokeColor3       = Color3.new(0, 0, 0),
+					Text                   = string.format("%.0f", math.max(0, wipeTimer)),
+					LayoutOrder            = 2,
+				}) or nil,
+
+				reviveBtn = wipeOffer and React.createElement("TextButton", {
+					-- §T10/LIVE2 sizing: offset height, generous width.
+					Size                   = UDim2.new(0.8, 0, 0, 46),
+					BackgroundColor3       = Color3.fromRGB(45, 175, 95),
+					Font                   = Enum.Font.GothamBold,
+					TextScaled             = true,
+					TextColor3             = Color3.fromRGB(255, 255, 255),
+					Text                   = "REVIVE IN PLACE  —  " .. tostring(wipeOffer.cost) .. " ♦",
+					LayoutOrder            = 3,
+					AutoButtonColor        = true,
+					[React.Event.Activated] = function()
+						NetworkManager.FireServer("WipeReviveAccept")
+					end,
+				}, {
+					corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
+				}) or nil,
+
+				deniedLbl = (wipeOffer and wipeOffer.denied) and React.createElement("TextLabel", {
+					Size                   = UDim2.new(1, 0, 0, 24),
+					BackgroundTransparency = 1,
+					Font                   = Enum.Font.Gotham,
+					TextScaled             = true,
+					TextColor3             = Color3.fromRGB(255, 120, 120),
+					TextStrokeTransparency = 0.5,
+					TextStrokeColor3       = Color3.new(0, 0, 0),
+					Text                   = wipeOffer.denied,
+					LayoutOrder            = 4,
+				}) or nil,
+
+				-- Respawn button (hidden during the wipe window)
+				-- §T10/LIVE2: old size was 0.115×0.046 of a 0.35×0.3 panel
+				-- ≈ 50×10 px — another of the "incredibly small" buttons.
+				respawnBtn = (not wipeOffer) and React.createElement("TextButton", {
+					Size                   = UDim2.new(0.6, 0, 0, 44),
 					BackgroundColor3       = C.btnBg,
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
@@ -281,7 +361,7 @@ local function DeathUI()
 						PaddingTop    = UDim.new(0, 6),
 						PaddingBottom = UDim.new(0, 6),
 					}),
-				}),
+				}) or nil,
 			}),
 		})
 	end

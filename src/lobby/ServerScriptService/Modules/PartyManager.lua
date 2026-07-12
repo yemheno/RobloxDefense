@@ -39,20 +39,11 @@ local pendingInvites = {}   -- [player]  = { partyId, from, expiresAt }
 
 local MAX_PARTY_SIZE = 5
 local INVITE_TIMEOUT = 30  -- seconds
--- §L11: read MaxLevelGap from PlayerDataConfig so PartyManager and
--- TeleportManager can't drift apart. Late-load with a sane fallback so
--- a missing config doesn't crash the lobby — just warns.
-local MAX_LEVEL_GAP  = 10
-do
-	local ok, cfg = pcall(function()
-		return require(SharedModules:WaitForChild("PlayerDataConfig"))
-	end)
-	if ok and cfg and cfg.Matchmaking and cfg.Matchmaking.MaxLevelGap then
-		MAX_LEVEL_GAP = cfg.Matchmaking.MaxLevelGap
-	else
-		warn("[PartyManager] PlayerDataConfig.Matchmaking.MaxLevelGap missing — defaulting to 10")
-	end
-end
+-- §DISC/D6: party rules live in the shared PartyRequirements module —
+-- PartyManager (invite-time) and TeleportManager (launch-time) call the
+-- SAME functions, so future gates (achievement locks, class comp) fold
+-- into one place.
+local PartyRequirements = require(SharedModules:WaitForChild("PartyRequirements"))
 
 -- Lazy-loaded PlayerDataManager for level checks
 local PlayerDataManager = nil
@@ -392,14 +383,14 @@ function PartyManager.AcceptInvite(player)
 		return false
 	end
 
-	-- Level gap check: no two members may differ by more than MAX_LEVEL_GAP
+	-- Level gap check (§DISC/D6: shared rule in PartyRequirements)
 	local joinerLevel = getPlayerLevel(player)
 	for _, member in ipairs(party.members) do
 		local memberLevel = getPlayerLevel(member)
-		if math.abs(joinerLevel - memberLevel) > MAX_LEVEL_GAP then
+		if not PartyRequirements.FitsLevelGap(joinerLevel, memberLevel) then
 			pendingInvites[player] = nil
 			PartyManager.SendError(player,
-				"Level gap too large (max " .. MAX_LEVEL_GAP .. "). "
+				"Level gap too large (max " .. PartyRequirements.MaxLevelGap() .. "). "
 				.. member.Name .. " is level " .. memberLevel .. ".")
 			return false
 		end

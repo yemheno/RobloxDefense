@@ -16,8 +16,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players           = game:GetService("Players")
 local React             = require(ReplicatedStorage.Packages.React)
 
-local SharedModules  = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
+local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
+local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
+local useNpcDistanceClose = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useNpcDistanceClose"))  -- §DISC/D8
 
 -- ── Palette ───────────────────────────────────────────────
 local C = {
@@ -132,6 +134,12 @@ local function NPCDialog(props)
 		setCurrentNode(nil)
 		onClose()
 	end
+
+	-- §DISC/D8: auto-close when the player walks away from the NPC.
+	local activeNpcId = (dialogData and dialogData.npcId)
+		or (questData and questData.npcId)
+		or (teleportData and teleportData.npcId)
+	useNpcDistanceClose(activeNpcId, activeNpcId ~= nil, closeDialog)
 
 	------------------------------------------------------------
 	-- Nothing to show
