@@ -71,14 +71,15 @@ The audit walks every subsystem tier-by-tier. Each tier produces:
 | T1.2 | ClassManager + ClassConfig                  | ✅ Closed | this branch      |
 | T1.3 | StatsManager + BonusManager                 | ✅ Closed | this branch      |
 | T1.4 | ResourceManager + ClassBehaviors            | ✅ Closed | this branch      |
-| T2   | Combat (AttackHandler, HitTracker pass-2, SkillManager)| ⏭ Pending |              |
-| T3   | Mob (MobAI, MobSpawner, MobAssetLoader)     | ⏭ Pending  |                  |
-| T4   | Death / Game flow (DeathSystem, GameStateManager) | ⏭ Pending |             |
-| T5   | Vote / Run modifiers (VoteManager, CardRegistry, RunModifiers) | ⏭ Pending | |
-| T6   | Equipment (Weapon/Armor managers, VEM, Registries, Refinement, Tier, BonusSystem) | ⏭ Pending | |
-| T7   | Lobby (PartyManager, MatchmakingManager, SceneManager, TeleportManager) | ⏭ Pending | |
-| T8   | Progression (PlayerLevelSystem, talent system, achievement, daily login) | ⏭ Pending | |
-| T9   | Shop / NPC (ShopManager, NPC handlers, quest, lore) | ⏭ Pending |          |
+| T1   | **pass-2 re-audit (§T1P2, Y1–Y12)**         | ✅ Closed | next commit      |
+| T2   | Combat (AttackHandler, HitTracker pass-2, SkillManager)| ✅ Closed | **§T2/Z1-Z9 (T2_SURFACE.md), next commit** |
+| T3   | Mob (MobAI, MobSpawner, MobAssetLoader)     | ✅ Closed | **§T3/W1-W8 (T3_SURFACE.md), next commit; W9 spawner-consolidation DQ open** |
+| T4   | Death / Game flow (DeathSystem, GameStateManager) | ✅ Closed | **§T4/V1-V3 (T4_SURFACE.md), next commit; DQ-T4A party-wipe open** |
+| T5   | Vote / Run modifiers (VoteManager, CardRegistry, RunModifiers) | ✅ Closed | **T5-T9 sweep (§T5-T9/S1-S2), next commit** |
+| T6   | Equipment (Weapon/Armor managers, VEM, Registries, Refinement, Tier, BonusSystem) | ✅ Closed | **T5-T9 sweep (§T5-T9/S6 VEM-DEDUPE root cause), next commit** |
+| T7   | Lobby (PartyManager, MatchmakingManager, SceneManager, TeleportManager) | ✅ Closed | **T5-T9 sweep (§T7/G4 retry, §T5-T9/S3), next commit** |
+| T8   | Progression (PlayerLevelSystem, talent system, achievement, daily login) | ✅ Closed | **T5-T9 sweep (§T5-T9/S4-S5), next commit** |
+| T9   | Shop / NPC (ShopManager, NPC handlers, quest, lore) | ✅ Closed | **T5-T9 sweep (verified safe; F-notes in T5-T9_SWEEP.md), next commit** |
 | T10  | UI (every client React component, CombatApp, Lobby app, panels) | ⏭ Pending | |
 | T11  | Cross-cutting follow-ups (Janitor leak audit, balance audit, hang-recovery UI) | ⏭ Pending | |
 
