@@ -58,8 +58,9 @@
 
 ## 1. Combat (Attack / Damage)
 
-- `[P1]` **§EV12** — Six client→server event-name mismatches still silently
-  no-op buttons:
+- ~~§EV12~~ **MOOT (§EASY sweep):** all six wrong-name emitters live in
+  the DISABLED legacy StarterGui controllers (§T10/STACK); the React UIs
+  fire the correct names. Original list kept for the legacy-archive PR:
   - `EquipItem` → server expects `EquipAccessory(player, itemId, slot)`;
     inventory list UI must thread the slot.
   - `NPCDialogChoice` → server expects `NPCResponse{ npcId, action="Choice" }`.
@@ -116,19 +117,17 @@
 
 ## 5. Death / Respawn
 
-- `[P1]` **§2.4d — Respawn counter** — `data.respawnCount` not tracked.
-  Add `data.respawnCount = data.respawnCount + 1` in
-  `DeathSystem.HandleRespawnRequest` so we can (a) surface deaths in the
-  end-of-run panel and (b) feed Achievements ("Die 100 times" / "Die 0
-  times per run"). Small wire-up in AchievementManager listener.
+- `[P2]` **§2.4d — Respawn counter: TRACKED (§EASY sweep), consumers
+  pending.** `data.respawnCount` now increments in HandleRespawnRequest.
+  Remaining: (a) end-of-run panel surfacing, (b) Achievements wire
+  ("Die 100 times" / deathless-run). Note: the horde spawn-proximity
+  failsafe Pablo associates with this is a DIFFERENT, working system
+  (HordeModeSpawner spawnDebt).
 
 ## 6. Votes / Cards
 
-- `[P2]` **§UI3 — VoteUI auto-dismiss task.delay not cancelled on unmount**
-  — `VoteResult` and `VoteResultPersonal` schedule `task.delay` chains
-  that keep calling `setVoteData(nil)` after unmount. React handles
-  unmount-then-set-state with a warning, not a crash. Track each delay
-  in a ref and cancel in `useEffect` cleanup like the timer countdowns.
+- ~~§UI3~~ **DONE (§EASY sweep):** mountedRef guard added to both
+  auto-dismiss delays in VoteUI.
 - `[??]` **BountyBoard intent** — `ApplyTimedModifier("meritScalar", 1.0,
   30)` is additive making total 2.0× (doubling) for 30s. Confirm
   "2× merits for 30s" is the intended effect.
@@ -149,11 +148,12 @@
     fires `MatchmakingRequest{ action="Queue" }` with the selected
     mode/difficulty. Reuses `PartyManager.EnsureParty` so solo players
     don't need to manually create a party first.
-- `[P2/Doc]` **§EV6 Friends-online pipeline never wired** —
-  `FriendsOnlineList`, `GetFriendsOnline` events have no server emitter.
-  SocialPanel subscriptions guarded with `Events:FindFirstChild` so they
-  no-op cleanly. Either wire a real friends-online provider or rip the
-  client subscription.
+- ~~§EV6~~ **SUPERSEDED (§EASY sweep):** those subscriptions belong to
+  the disabled LEGACY panel. The React SocialPanel already does what
+  Pablo asked (friends sorted first via IsFriendsWith + Invite button
+  per row) for players IN the lobby. `[🚀]` future: list friends who
+  are online in the experience but in OTHER servers (needs presence
+  API + follow/teleport-to-friend design).
 
 ## 8. Shop / Currency
 
@@ -166,21 +166,22 @@
 
 ## 9. Inventory / Equipment / Cosmetics
 
-- `[P2]` **§V2 — AttachClassArmor implemented but never wired** —
-  `VisualEquipmentManager.AttachClassArmor` works; no caller. Body
-  appearance is currently CosmeticManager material/color swaps. When
-  real armor visuals ship, also handle the `ServerStorage.Armors`
-  lazy-load path.
+- ~~§V2~~ **DONE (§EASY/E3, Pablo's #6):** AttachClassArmor now wired
+  from ArmorManager.EnsureStarterArmor (both returning-player and
+  starter-grant branches → covers login + class switch + respawn via
+  ReattachAll). Root cause was a PATH bug: VEM looked up
+  `ServerStorage.Armors` but assets live at `ServerStorage.Models.Armors`
+  — fixed with fallback; per-class `<Class>_a<slot>` assets preferred,
+  `DefaultArmor` stub as fallback. `[P1/Art]` author per-class armor
+  models when ready.
 - `[🚀]` **Headgear "model" visual type stub** —
   `ApplyHeadgearVisual()` has no implementation for `visual.type ==
   "model"`. Reserved for future accessory models.
-- `[P2]` **§VEM-DEDUPE re-check** — T0 live test shows `AttachClassWeapon`
-  still fires 2× on player spawn (down from 3× pre-§VEM-DEDUPE but not 1×
-  as intended). Both attaches complete the clone+weld pipeline. The
-  dedupe early-return condition (same class+slot already attached and
-  clone still parented) isn't catching the second call. Investigate
-  during Tier 6 equipment pass — likely a race between the first
-  attach's parenting and the second call's dedup check.
+- ~~§VEM-DEDUPE~~ **ROOT-CAUSED + FIXED (§T5-T9/S6):** the 2× was two
+  CharacterAdded connections wired per player (PlayerAdded handler +
+  existing-players loop both fired for Init-window joiners). Single
+  wire-per-player now. Verify 1× in the next live test, then delete
+  this entry.
 - `[🚀]` **Accessories — post-alpha polish** — equip pcall + rollback
   already landed in §2.5c. Deeper:
   - Per-slot rarity tiers and how they stack with the 2×Ring constraint.
@@ -286,13 +287,10 @@
   retrying..." prompt + a retry button. Threshold needs UX care so we
   don't kick slow PCs/mobiles mid-load; suggested 30s as a starting
   point with the prompt being non-modal.
-- `[P1]` **OnReady → loading-screen dismiss wiring** —
-  `ReadyGate.OnReady(callback)` is the right hook to gate the
-  loading-screen dismiss on "client + server both ready." When the
-  loading screen ships, register an OnReady handler that fades the
-  screen out; until then, OnReady is unused. Cross-references
-  §NM-D5 (xpcall wrap landed in T0.1 so a callback failure can't strand
-  the player on the loading screen).
+- ~~OnReady → loading-screen dismiss~~ **DONE (§T10/U1):** LoadingScreen
+  shipped; dismissal rides the ReadyGate-routed ServerReady in each
+  place client (equivalent hook, client-side), 25 s failsafe included.
+  ReadyGate.OnReady stays available as a server-side seam.
 
 ## 12. Game State / Defense Line
 
@@ -309,10 +307,11 @@
 
 ## 13. NPC / Quest / Lore
 
-- `[P0]` **Ultimate skills `ultimateLocked = false` for testing** — all
-  four `ClassSkills/*.lua` files have ultimates unlocked for testing.
-  Set to `true` before production; wire unlock logic into a mission
-  system.
+- ~~Ultimate skills unlock~~ **DONE (§EASY/E1, Pablo: base level 10):**
+  server gate in SkillManager's ultimate branch — below level 10 the
+  cast is rejected with "Ultimate unlocks at level 10". (The old
+  `ultimateLocked` flag never existed in the code — stale entry name.)
+  `[P2/UI]` later: dim/lock the ultimate slot client-side pre-10.
 - `[P1]` **Quest & lore progress not persisted** — quest progress and
   lore flags (`TalkedTo_*`) live in player `Attributes` (lost on
   rejoin). Migrate to `PlayerDataManager`.
@@ -327,12 +326,11 @@
   `DailyLoginResult{ ok=true }` / `PartyUpdated` handler; on
   `{ ok=false }` re-enable the button with the original label and
   display the reason.
-- `[P2]` **§UI2 — SocialPanel invite-friend wiring is dead** —
-  `SocialPanel.client.lua:107-115` watches the friend list for `Frame`
-  children with `InviteBtn` descendants, but `populateFriendsList` only
-  inserts `TextLabel`s. Either rebuild the list to use a Frame-per-
-  friend layout with `InviteBtn`, or remove the dead handler. Defer
-  until the party UX gets a polish pass.
+- ~~§UI2~~ **MOOT (§EASY sweep):** that wiring is the disabled LEGACY
+  panel's. The React SocialPanel already renders Frame-per-player rows
+  with Invite buttons, friends sorted first (Pablo's #5 confirmed
+  in-place for in-server friends; cross-server listing parked under the
+  §EV6 successor note above).
 - *(§T1.1 closed — `CharacterManager.ApplyTemplate` now properly fans
   out by `bodyModel` / gender via `CharacterConfig.GetTemplateName`,
   with schema seams for headModel, hairModel, and the three color
@@ -644,17 +642,28 @@ tags in code).
   (fullscreen), BattleClassUI + lobby: MainMenu, ShopUI, WeaponSmithUI,
   InventoryUI, SocialPanel, MatchmakingUI, NPCDialog. (Toasts/wheels — EmoteWheel, PartyInviteToast, VoteUI,
   DeathUI, HUD, TeammateVitals — are NOT windows; leave as-is.)
-- `[P1/Art]` **§T10/ICONS — Icon set (anime / speed).** Theme.Icons is
-  the one-file registry (placeholders render as no-icon fallback).
-  Workflow: generate → upload to Roblox as Decals → paste ids.
-  ART BRIEF for Claude Design / any image tool: flat cel-shaded icons,
-  bold 3-4px dark outlines, dynamic 15° forward slant, motion-streak
-  accents trailing left, palette anchored on speed-orange #FFAA28 +
-  electric-blue #5ABEFF over dark #12121C, high contrast, readable at
-  64×64, transparent background, consistent 512×512 canvas. Set needed:
-  classes/stats/talents/equipment/wardrobe/achievements/settings/shop/
-  inventory/dailyLogin/leaderboard/social + essence/merits currency
-  glyphs + attack/skillLocked combat glyphs (16 total, see Theme.Icons).
+- `[Done]` **§PERF/BP — Boot profiler (2026-07-16).** Shared
+  `ReplicatedStorage/Shared/BootProfiler` (Mark/Begin spans). Hooks:
+  PlaceBootstrap.Load (every require + Init, all 5 places),
+  PlaceLifecycle OnPlayerReady + ServerReady, PlayerDataManager
+  DataLoad span, ReadyGate ClientReady drain, 5 client bootstraps'
+  Load + ServerReady/dismiss, 5 UI scripts' ClientReady fire.
+  Report auto-dumps ~5 s after boot quiets: Output block +
+  StringValue snapshots (ServerStorage.BootProfile_SERVER /
+  PlayerGui.BootProfile_CLIENT). Flags: ⚠ SLOW ≥100 ms,
+  ⚠ gap ≥350 ms silence, ⚠ UNFINISHED = span never closed (race/hang
+  evidence). `[P1]` set `ENABLED = false` in BootProfiler before
+  release (alpha keeps it on).
+
+- `[P1/Art]` **§T10/ICONS — Icon set (anime / speed): ART DELIVERED,
+  ids pending.** Claude Design produced the full 27-asset drop
+  (16 icons + 4 button plates + barFrame/barShine + 5 white particle
+  sprites), QA'd (alpha, tintability, 24px readability, pBolt tiling)
+  and stored in `assets/ui/` (527 KB — small enough for git, Pablo's
+  call). Brief lives in `docs/CLAUDE_DESIGN_BRIEF.md`.
+  REMAINING: Studio → Asset Manager → Bulk Import `assets/ui/`, then
+  paste ids into `Theme.Icons` (16) and the new `Theme.Images` (11,
+  slice rects pre-filled). All UI falls back gracefully until then.
 
 ### Discussion-batch outcomes (§DISC, 2026-06-12)
 
