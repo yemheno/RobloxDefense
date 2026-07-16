@@ -24,7 +24,12 @@
 local PlaceBootstrap = {}
 
 local SSS = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local SharedModules = SSS:WaitForChild("Modules")
+
+-- §PERF/BP: boot timeline — every Load (require + Init) is timed here,
+-- which covers the entire module boot of all five places.
+local BootProfiler = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("BootProfiler"))
 
 -- Admin allowlist is centralised in PlayerDataConfig.AdminUserIds.
 local _AdminCfg = require(SharedModules:WaitForChild("PlayerDataConfig"))
@@ -53,6 +58,9 @@ function PlaceBootstrap.MakeContext(placeName)
         IsAdmin       = PlaceBootstrap.IsAdmin,
     }
 
+    BootProfiler.SetContext(placeName)
+    BootProfiler.Mark("MakeContext " .. placeName)
+
     --- Load a module under `parent` by name. Silent on success (loud
     --- on-success prints removed per §PB-D4); warns on missing-module and
     --- on require errors. Runs `.Init()` on the module if present.
@@ -62,7 +70,9 @@ function PlaceBootstrap.MakeContext(placeName)
             warn(string.format("[%sMain] Module not found: %s", placeName, tostring(name)))
             return nil
         end
+        local doneRequire = BootProfiler.Begin("require " .. tostring(name))
         local ok, result = pcall(require, mod)
+        doneRequire()
         if not ok then
             warn(string.format("[%sMain] Failed to load %s: %s", placeName, tostring(name), tostring(result)))
             return nil
@@ -77,7 +87,9 @@ function PlaceBootstrap.MakeContext(placeName)
         end
         ctx.loaded[name] = result
         if type(result.Init) == "function" then
+            local doneInit = BootProfiler.Begin(tostring(name) .. ".Init")
             local initOk, initErr = pcall(result.Init)
+            doneInit()
             if not initOk then
                 warn(string.format("[%sMain] %s.Init() errored: %s", placeName, tostring(name), tostring(initErr)))
             end

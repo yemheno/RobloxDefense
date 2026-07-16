@@ -122,10 +122,17 @@ end
 -- HIT DETECTION (client-side spatial query)
 -- ═══════════════════════════════════════════════════════════
 
+-- §MEM/M6: reused across all projectiles — CheckHit runs per projectile
+-- per RenderStepped frame; a fresh OverlapParams + filter array each call
+-- was pure allocation churn.
+local hitParams = OverlapParams.new()
+hitParams.FilterType = Enum.RaycastFilterType.Exclude
+local hitFilter = { false }
+
 function ClientProjectile.CheckHit(data)
-	local params = OverlapParams.new()
-	params.FilterType = Enum.RaycastFilterType.Exclude
-	params.FilterDescendantsInstances = { data.part }
+	local params = hitParams
+	hitFilter[1] = data.part
+	params.FilterDescendantsInstances = hitFilter
 
 	local parts = workspace:GetPartBoundsInBox(
 		CFrame.new(data.part.Position),

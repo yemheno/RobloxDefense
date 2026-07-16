@@ -40,4 +40,7 @@ task.defer(function()
     local Modules = PlayerScripts:WaitForChild("Modules")
     local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
     NetworkManager.FireServer("ClientReady")
+    -- §PERF/BP: handshake landmark on the client timeline.
+    require(game:GetService("ReplicatedStorage")
+        :WaitForChild("Shared"):WaitForChild("BootProfiler")).Mark("ClientReady fired")
 end)

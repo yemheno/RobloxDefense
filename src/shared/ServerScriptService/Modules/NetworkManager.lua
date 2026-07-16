@@ -120,7 +120,9 @@ local EVENTS = {
     NPCShopOpen            = { rateLimit = nil,  readyGated = false },
     NPCResponse            = { rateLimit = nil,  readyGated = false },
     NPCSmithOpen           = { rateLimit = nil,  readyGated = false },
-    NPCInteract            = { rateLimit = nil,  readyGated = false },
+    -- §SCALE/S6: menu-rate cap — each NPCInteract triggers server work;
+    -- the 30/s default let one client force 900 handler runs/s at P=30.
+    NPCInteract            = { rateLimit = 4,    readyGated = false },
 
     -- ── Talents & Skills ─────────────────────────────────────────────
     TalentStateUpdate      = { rateLimit = nil,  readyGated = true  }, -- TalentManager.SendState already migrated
@@ -146,7 +148,11 @@ local EVENTS = {
     RequestCombatConfig    = { rateLimit = nil,  readyGated = false },
     PlayerHitReport        = { rateLimit = 250,  readyGated = false }, -- ~50/s peak Aegis AoE; 5× headroom
     DamageNumber           = { rateLimit = nil,  readyGated = false },
+    -- §PERF/F5: Tibia-style 0.1 s damage-number batching (array payload).
+    DamageNumberBatch      = { rateLimit = nil,  readyGated = false },
     HealNumber             = { rateLimit = nil,  readyGated = false },
+    -- §SCALE/S5: batched DoT/HoT number windows (array payloads).
+    HealNumberBatch        = { rateLimit = nil,  readyGated = false },
 
     -- ── Mob events ───────────────────────────────────────────────────
     MobSkillCast           = { rateLimit = nil,  readyGated = false },
@@ -175,9 +181,11 @@ local EVENTS = {
     MatchmakingUpdate      = { rateLimit = nil,  readyGated = false },
     GameStateChanged       = { rateLimit = nil,  readyGated = false },
     CountdownUpdate        = { rateLimit = nil,  readyGated = false },
-    MatchmakingRequest     = { rateLimit = nil,  readyGated = false },
-    PlayerListRequest      = { rateLimit = nil,  readyGated = false },
-    GetPartyState          = { rateLimit = nil,  readyGated = false },
+    -- §SCALE/S6: these trigger P-amplified rebroadcasts (party fan-outs)
+    -- — cap at menu rate instead of the 30/s default.
+    MatchmakingRequest     = { rateLimit = 4,    readyGated = false },
+    PlayerListRequest      = { rateLimit = 4,    readyGated = false },
+    GetPartyState          = { rateLimit = 4,    readyGated = false },
 
     -- ── Social ───────────────────────────────────────────────────────
     PartyUpdate            = { rateLimit = nil,  readyGated = false },
@@ -187,9 +195,10 @@ local EVENTS = {
     PartyRequest           = { rateLimit = nil,  readyGated = false },
 
     -- ── Combat requests (client→server) ──────────────────────────────
-    RequestStartGame       = { rateLimit = nil,  readyGated = false },
-    RequestNextWave        = { rateLimit = nil,  readyGated = false },
-    RequestReturnToLobby   = { rateLimit = nil,  readyGated = false },
+    -- §SCALE/S6: state-machine triggers — 2/s is generous for a button.
+    RequestStartGame       = { rateLimit = 2,    readyGated = false },
+    RequestNextWave        = { rateLimit = 2,    readyGated = false },
+    RequestReturnToLobby   = { rateLimit = 2,    readyGated = false },
 
     -- ── Stats / respec ───────────────────────────────────────────────
     RespecStats            = { rateLimit = nil,  readyGated = false },

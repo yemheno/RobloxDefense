@@ -144,6 +144,13 @@ end
 
 function SceneController.OnSceneChangedCallback(callback)
 	table.insert(sceneChangedCallbacks, callback)
+	-- §MEM/M10: return an unsubscribe (like ResourceCache.Subscribe) so a
+	-- React useEffect can clean up — without it every remount would leak
+	-- one callback forever. No callers yet; closing the trap early.
+	return function()
+		local idx = table.find(sceneChangedCallbacks, callback)
+		if idx then table.remove(sceneChangedCallbacks, idx) end
+	end
 end
 
 return SceneController

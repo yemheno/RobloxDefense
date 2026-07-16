@@ -348,13 +348,26 @@ function KillRewardManager.ProcessKill(player, mob, damageResult)
 	end
 
 	-- ── 6. Client notification ─────────────────────────────────────────
+	-- §SCALE/S3: scoped to players near the death (the only live consumer
+	-- is MobVisuals' death VFX — invisible from afar). Was FireAllClients
+	-- = O(kills·P) sends/s during horde chains. If a global kill-feed UI
+	-- is ever added, give it a BATCHED event (0.2 s windows, DamageNumber-
+	-- Batch pattern) instead of re-globalizing this one.
 	if mobPosition then
-		NetworkManager.FireAllClients("MobDeath", {
+		local DEATH_BROADCAST_RANGE = 150
+		local payload = {
 			mobId      = mobId,
 			mobTier    = mobTier,
 			killerName = player.Name,
 			position   = mobPosition,
-		})
+		}
+		for _, plr in ipairs(Players:GetPlayers()) do
+			local char = plr.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if not root or (root.Position - mobPosition).Magnitude <= DEATH_BROADCAST_RANGE then
+				NetworkManager.FireClient(plr, "MobDeath", payload)
+			end
+		end
 	end
 end
 

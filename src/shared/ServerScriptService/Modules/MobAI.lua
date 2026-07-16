@@ -367,9 +367,77 @@ local function frenzyMultFor(aliveSeconds)
 	return 1.0 + bonus
 end
 
+-- ═══════════════════════════════════════════════════════════
+-- §SCALE/S2: range-scoped client broadcast
+-- ═══════════════════════════════════════════════════════════
+-- Mob cast/VFX events only matter to players who can see the mob.
+-- Runs at event rate (per cast, not per frame) so a direct GetPlayers
+-- walk is fine — and unlike the AI snapshot it must include downed /
+-- spectating players, who still watch the fight.
+local CAST_BROADCAST_RANGE = 150
+
+--- alwaysInclude: player guaranteed to receive the event (e.g. the
+--- attack target — client-auth hit detection needs it) even if their
+--- character is missing or out of range.
+function MobAI.FireNearbyClients(origin, alwaysInclude, eventName, payload)
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr == alwaysInclude then
+			NetworkManager.FireClient(plr, eventName, payload)
+		else
+			local char = plr.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			-- Characterless players (mid-respawn) get it too — cheap & safe.
+			if not root or (root.Position - origin).Magnitude <= CAST_BROADCAST_RANGE then
+				NetworkManager.FireClient(plr, eventName, payload)
+			end
+		end
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- §PERF/F1 (task #17): per-frame player snapshot
+-- ═══════════════════════════════════════════════════════════
+-- FindTarget used to call Players:GetPlayers() and redo ~4 attribute /
+-- FindFirstChild lookups per player for EVERY mob AI tick (~360 calls/s
+-- at 72 mobs — the hottest redundant work on a busy combat server).
+-- All mobs ticking in the same Heartbeat frame now share one snapshot
+-- containing only VALID targets (character + root + humanoid alive +
+-- DeathState "Alive"), in GetPlayers() order.
+local snapshotList     = {}   -- array of entries
+local snapshotByPlayer = {}   -- [player] = entry
+local snapshotStamp    = -1   -- `now` of the frame this snapshot is for
+
+local function refreshSnapshot(now)
+	if now == snapshotStamp then return end
+	snapshotStamp = now
+	table.clear(snapshotList)
+	table.clear(snapshotByPlayer)
+	for _, player in ipairs(Players:GetPlayers()) do
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart")
+		local hum  = character and character:FindFirstChild("Humanoid")
+		if root and hum and hum.Health > 0
+			and player:GetAttribute("DeathState") == "Alive" then
+			local entry = {
+				player     = player,
+				root       = root,
+				position   = root.Position,
+				isTaunting = player:GetAttribute("IsTaunting") or false,
+			}
+			table.insert(snapshotList, entry)
+			snapshotByPlayer[player] = entry
+		end
+	end
+end
+
 function MobAI.Update(dt)
 	if paused then return end
 	local now = os.clock()
+
+	-- §PERF/F1: one snapshot per frame, shared by every mob below.
+	if next(activeMobs) ~= nil then
+		refreshSnapshot(now)
+	end
 
 	for mob, data in pairs(activeMobs) do
 		if data.state == STATES.DEAD then continue end
@@ -490,6 +558,13 @@ function MobAI.DoChase(data)
 	local target = data.target
 	if not target then return end
 
+	-- §PERF/F1: snapshot fast path, direct lookups as fallback.
+	local entry = snapshotByPlayer[target]
+	if entry then
+		data.humanoid:MoveTo(entry.position)
+		return
+	end
+
 	local targetChar = target.Character
 	if not targetChar then return end
 
@@ -539,7 +614,10 @@ function MobAI.ExecuteBasicAttack(data, target, now)
 	local animationId = config.animations and config.animations.attack
 	local damageDelay = config.damageDelay or 0.25
 	castIdCounter = castIdCounter + 1
-	local attackCastId = data.mob:GetFullName() .. "_basic_" .. tostring(now) .. "_" .. castIdCounter
+	-- §MEM/M7: cast ids are opaque match tokens (never parsed — grep
+	-- verified). GetFullName() walked the whole ancestry building a string
+	-- on every attack; the counter alone already guarantees uniqueness.
+	local attackCastId = "b_" .. castIdCounter
 
 	-- Store pending attack for client-auth resolution
 	pendingBasicAttacks[attackCastId] = {
@@ -550,8 +628,11 @@ function MobAI.ExecuteBasicAttack(data, target, now)
 		resolved = false,
 	}
 
-	-- Broadcast to all clients (animation + hit detection for target)
-	NetworkManager.FireAllClients("MobBasicAttackCast", {
+	-- §SCALE/S2: broadcast only to players near the mob (animation is
+	-- invisible from across the map; was FireAllClients = O(M·P) sends/s
+	-- under siege). The TARGET is always included — client-auth hit
+	-- detection depends on this event reaching them.
+	MobAI.FireNearbyClients(data.rootPart.Position, target, "MobBasicAttackCast", {
 		attackCastId = attackCastId,
 		mob = data.mob,
 		targetPlayer = target,
@@ -627,7 +708,11 @@ function MobAI.ExecuteSkill(data, skill, target, now)
 	data.humanoid:MoveTo(data.rootPart.Position)
 
 	local origin = data.rootPart.Position
-	local skillCastId = data.mob:GetFullName() .. "_" .. skill.id .. "_" .. tostring(now)
+	-- §MEM/M7: same as attackCastId — counter-based opaque token. Bonus:
+	-- the old timestamp-only id could collide for two same-skill casts in
+	-- one clock print; the counter cannot.
+	castIdCounter = castIdCounter + 1
+	local skillCastId = "s_" .. skill.id .. "_" .. castIdCounter
 
 	-- Find all players potentially in range
 	local playersInRange = MobAI.GetPlayersInSkillRange(origin, skill)
@@ -656,8 +741,10 @@ function MobAI.ExecuteSkill(data, skill, target, now)
 		damageApplied = false,
 	}
 
-	-- Broadcast skill cast to all clients
-	NetworkManager.FireAllClients("MobSkillCast", {
+	-- §SCALE/S2: scoped like MobBasicAttackCast. Players beyond broadcast
+	-- range are also beyond every skill's hit range, so in-range clients
+	-- can still self-report hits correctly.
+	MobAI.FireNearbyClients(origin, nil, "MobSkillCast", {
 		skillCastId = skillCastId,
 		mob = data.mob,
 		mobId = data.mobId,
@@ -934,19 +1021,20 @@ end
 -- TARGET FINDING
 -- ═══════════════════════════════════════════════════════════
 
+-- §PERF/F1: iterates the shared per-frame snapshot (built in Update)
+-- instead of GetPlayers() + per-player lookups. Filter semantics are
+-- identical — the snapshot already excludes characterless / dead /
+-- non-"Alive" players, in the same GetPlayers() order.
 function MobAI.FindTarget(data)
-	local rootPart = data.rootPart
+	local mobPos = data.rootPart.Position
 	local config = data.config
-	local mobX = rootPart.Position.X
+	local mobX = mobPos.X
 
 	if data.forcedTarget then
-		local forcedChar = data.forcedTarget.Character
-		if forcedChar then
-			local forcedHumanoid = forcedChar:FindFirstChild("Humanoid")
-			if forcedHumanoid and forcedHumanoid.Health > 0
-				and data.forcedTarget:GetAttribute("DeathState") == "Alive" then
-				return data.forcedTarget
-			end
+		-- Snapshot membership == exactly the old validity checks
+		-- (character + humanoid alive + DeathState "Alive").
+		if snapshotByPlayer[data.forcedTarget] then
+			return data.forcedTarget
 		end
 		data.forcedTarget = nil
 	end
@@ -954,37 +1042,24 @@ function MobAI.FindTarget(data)
 	local bestTarget = nil
 	local bestDistance = math.huge
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		local isTaunting = player:GetAttribute("IsTaunting")
+	for _, entry in ipairs(snapshotList) do
+		local playerPos = entry.position
 
-		local character = player.Character
-		if not character then continue end
-
-		local playerRoot = character:FindFirstChild("HumanoidRootPart")
-		if not playerRoot then continue end
-
-		local playerHumanoid = character:FindFirstChild("Humanoid")
-		if not playerHumanoid or playerHumanoid.Health <= 0 then continue end
-
-		-- Only target players who are alive and able to act
-		if player:GetAttribute("DeathState") ~= "Alive" then continue end
-
-		local playerX = playerRoot.Position.X
 		-- LaneDefense: only target players to the left (-X direction).
 		-- Skip this check in HordeMode where mobs chase any direction.
-		if not hordeModeTargeting and playerX >= mobX then continue end
+		if not hordeModeTargeting and playerPos.X >= mobX then continue end
 
-		local distance = (rootPart.Position - playerRoot.Position).Magnitude
+		local distance = (mobPos - playerPos).Magnitude
 		-- In HordeMode mobs track across unlimited distance; taunts always override.
-		if not hordeModeTargeting and distance > config.perceptionRange and not isTaunting then
+		if not hordeModeTargeting and distance > config.perceptionRange and not entry.isTaunting then
 			continue
 		end
 
-		if isTaunting then return player end
+		if entry.isTaunting then return entry.player end
 
 		if distance < bestDistance then
 			bestDistance = distance
-			bestTarget = player
+			bestTarget = entry.player
 		end
 	end
 
@@ -997,6 +1072,14 @@ end
 
 function MobAI.IsInAttackRange(data, player)
 	if not player then return false end
+	-- §PERF/F1: fast path via the frame snapshot (the target always came
+	-- from FindTarget in the same tick). Direct lookups kept as fallback
+	-- for out-of-band callers.
+	local entry = snapshotByPlayer[player]
+	if entry then
+		return (data.rootPart.Position - entry.position).Magnitude
+			<= data.config.attackRange
+	end
 	local character = player.Character
 	if not character then return false end
 	local playerRoot = character:FindFirstChild("HumanoidRootPart")
@@ -1083,7 +1166,8 @@ function MobAI.GetMobData(mob)
 end
 
 function MobAI.IsAnyMobAlive()
-	return MobAI.GetActiveMobCount() > 0
+	-- §MEM/M8: first-key test instead of counting all 70+ mobs.
+	return next(activeMobs) ~= nil
 end
 
 function MobAI.GetAllMobData()

@@ -331,6 +331,10 @@ end
 
 local ORBIT_OFFSETS = buildOrbitOffsets()
 
+-- §MEM/M5: hoisted — was rebuilt per marker per Heartbeat
+-- (8 markers × N players × 60 Hz of identical Vector3.new allocations).
+local SPAWN_Y_VEC = Vector3.new(0, CFG.SPAWN_Y_OFFSET, 0)
+
 local function createPlayerSpawner(player)
     if playerSpawners[player] then return end   -- guard
 
@@ -387,6 +391,11 @@ local function createPlayerSpawner(player)
             -- never see anything from behind, which feels exploit-
             -- able for circle-strafing).
             local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+            -- §SCALE/S1: markers follow the player on demand (spawn tick),
+            -- not per Heartbeat.
+            if hrp then
+                positionMarkers(spawnerData, hrp.Position)
+            end
             local vel = hrp and hrp.AssemblyLinearVelocity or Vector3.zero
             local flatVel = Vector3.new(vel.X, 0, vel.Z)
             local moving = flatVel.Magnitude > 4   -- stud/s threshold
@@ -505,9 +514,18 @@ local function createPlayerSpawner(player)
                     local viable = {}
                     for ally, allySpawnerData in pairs(playerSpawners) do
                         if ally ~= player and ally.Parent and allySpawnerData and allySpawnerData.markers then
-                            for _, marker in ipairs(allySpawnerData.markers) do
-                                if marker and marker.Parent and isSafeSpawnPosition(marker.Position) then
-                                    table.insert(viable, marker)  -- §T3/W9b: keep the part, not just its position
+                            -- §SCALE/S1: refresh the ally's markers on demand
+                            -- before testing them (they no longer follow via
+                            -- Heartbeat). Rare path — only when own orbit is
+                            -- fully blocked.
+                            local allyChar = ally.Character
+                            local allyHrp = allyChar and allyChar:FindFirstChild("HumanoidRootPart")
+                            if allyHrp then
+                                positionMarkers(allySpawnerData, allyHrp.Position)
+                                for _, marker in ipairs(allySpawnerData.markers) do
+                                    if marker and marker.Parent and isSafeSpawnPosition(marker.Position) then
+                                        table.insert(viable, marker)  -- §T3/W9b: keep the part, not just its position
+                                    end
                                 end
                             end
                         end
@@ -568,25 +586,20 @@ end
 -- HEARTBEAT: move all markers to follow their players
 -- ─────────────────────────────────────────────────────────────────────
 
-local function startMarkerMovement()
-    if heartbeatConn then return end
-
-    heartbeatConn = RunService.Heartbeat:Connect(function()
-        for player, spawnerData in pairs(playerSpawners) do
-            local char = player.Character
-            local hrp  = char and char:FindFirstChild("HumanoidRootPart")
-            if not hrp then continue end
-
-            local basePos = hrp.Position
-
-            for i, marker in ipairs(spawnerData.markers) do
-                if marker and marker.Parent then
-                    local offset = ORBIT_OFFSETS[i]
-                    marker.Position = basePos + offset + Vector3.new(0, CFG.SPAWN_Y_OFFSET, 0)
-                end
-            end
+-- §SCALE/S1: the old version moved every marker every Heartbeat —
+-- 8 markers × P players × 60 Hz = 480·P anchored-Part position writes/s,
+-- each REPLICATED to all clients (at P=30 that's ~240 invisible parts
+-- streaming CFrame updates: ~100 KB/s of pure waste, plus 8·P extra
+-- workspace-root children inflating every AttackShapes scan).
+-- Markers are only READ at spawn time (once per ~2.5 s tick), so we
+-- position them on demand instead. The Parts themselves stay — §T3/W9b:
+-- Pablo resizes them in Studio to widen the scatter area.
+local function positionMarkers(spawnerData, basePos)
+    for i, marker in ipairs(spawnerData.markers) do
+        if marker and marker.Parent then
+            marker.Position = basePos + ORBIT_OFFSETS[i] + SPAWN_Y_VEC
         end
-    end)
+    end
 end
 
 -- ─────────────────────────────────────────────────────────────────────
@@ -652,7 +665,8 @@ function HordeModeSpawner.Start()
     -- Kill any stale level-tick loop from a previous Start() before spawning a new one
     levelTickGeneration = levelTickGeneration + 1
 
-    startMarkerMovement()
+    -- §SCALE/S1: marker-follow Heartbeat removed — markers are positioned
+    -- on demand inside each spawn tick.
     startLevelTick()
 
     -- §FRENZY1: speed escalation is now PER MOB and lives in MobAI.Update.
@@ -714,7 +728,7 @@ function HordeModeSpawner.Stop()
         MobAI.SetHordeGlobalSpeedMult(1.0)
     end
 
-    if heartbeatConn then
+    if heartbeatConn then  -- §SCALE/S1: legacy guard, no longer connected
         heartbeatConn:Disconnect()
         heartbeatConn = nil
     end

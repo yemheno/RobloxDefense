@@ -69,10 +69,33 @@ function MonitoringSystem.Init()
 	end
 
 	-- Clean up when players leave
+	-- §MEM/M2: the old "keep stats for session review" retention pinned the
+	-- Player instance (plus its ever-growing pendingHits — §MEM/M1) for the
+	-- server's lifetime, once per join. Review intent preserved: flagged
+	-- players' reports are snapshotted into the capped eventLog instead.
 	Players.PlayerRemoving:Connect(function(player)
-		-- Keep stats for session review, but mark as left
-		if playerStats[player] then
-			playerStats[player].leftAt = os.time()
+		local stats = playerStats[player]
+		if stats then
+			stats.leftAt = os.time()
+			if flaggedPlayers[player] then
+				MonitoringSystem.LogEvent(player, "FlaggedPlayerLeft",
+					MonitoringSystem.GetPlayerReport(player))
+			end
+		end
+		playerStats[player] = nil
+		flaggedPlayers[player] = nil
+	end)
+
+	-- §SCALE/S4: amortized pending-hit sweep (replaces per-hit task.delay
+	-- closures). 1 s cadence — half the report window, ample resolution
+	-- for dodge accounting.
+	task.spawn(function()
+		while true do
+			task.wait(1)
+			local ok, err = pcall(MonitoringSystem._SweepPendingHits)
+			if not ok then
+				warn("[MonitoringSystem] Sweep errored:", err)
+			end
 		end
 	end)
 
@@ -122,10 +145,30 @@ end
     - player: Player who was in range
     - skillData: { skillId, mobId, origin, range, timestamp }
 ]]
+-- §SCALE/S4: monitoring cost is (mob casts/s) × (players in range) — at a
+-- world boss with 25 clustered players that used to mean hundreds of
+-- GenerateGUID strings + task.delay closures PER SECOND. Now: monotonic
+-- integer ids, no per-hit closure (one amortized sweep in Init resolves
+-- dodges), and a sampling dial for extreme scenarios.
+local hitIdCounter = 0
+
+-- 1 = record every potential hit (current behavior). Raise to N to record
+-- 1-in-N when a mode is expected to enroll 20+ players per cast — dodge
+-- RATES stay statistically valid since both numerator and denominator
+-- sample together (this is monitoring, not anti-cheat — §CONFIG note).
+local SAMPLE_RATE = 1
+
 function MonitoringSystem.RecordPotentialHit(player, skillData)
 	if not CONFIG.Enabled then return end
 
 	local stats = GetPlayerStats(player)
+
+	if SAMPLE_RATE > 1 then
+		hitIdCounter = hitIdCounter + 1
+		if hitIdCounter % SAMPLE_RATE ~= 0 then return end
+	end
+
+	-- Counted only for SAMPLED hits so dodge-rate math stays unbiased.
 	stats.totalSkillsTargeted = stats.totalSkillsTargeted + 1
 
 	-- Store pending hit for validation
@@ -133,7 +176,8 @@ function MonitoringSystem.RecordPotentialHit(player, skillData)
 		stats.pendingHits = {}
 	end
 
-	local hitId = HttpService:GenerateGUID(false)
+	hitIdCounter = hitIdCounter + 1
+	local hitId = hitIdCounter
 	stats.pendingHits[hitId] = {
 		skillId = skillData.skillId,
 		mobId = skillData.mobId,
@@ -143,17 +187,28 @@ function MonitoringSystem.RecordPotentialHit(player, skillData)
 		resolved = false,
 	}
 
-	-- Auto-resolve as dodge after time window
-	task.delay(CONFIG.Thresholds.MaxHitReportDelay + 0.5, function()
-		local pending = stats.pendingHits and stats.pendingHits[hitId]
-		if pending and not pending.resolved then
-			pending.resolved = true
-			stats.totalDodges = stats.totalDodges + 1
-			MonitoringSystem.CheckDodgeRate(player)
-		end
-	end)
-
 	return hitId
+end
+
+-- §SCALE/S4 + §MEM/M1: single amortized sweep replaces the per-hit
+-- task.delay. Entries past the report window resolve as dodges (if
+-- unreported) and are deleted either way.
+function MonitoringSystem._SweepPendingHits()
+	local cutoff = os.clock() - (CONFIG.Thresholds.MaxHitReportDelay + 0.5)
+	for player, stats in pairs(playerStats) do
+		local pendingTable = stats.pendingHits
+		if pendingTable then
+			for hitId, pending in pairs(pendingTable) do
+				if pending.timestamp <= cutoff then
+					if not pending.resolved then
+						stats.totalDodges = stats.totalDodges + 1
+						MonitoringSystem.CheckDodgeRate(player)
+					end
+					pendingTable[hitId] = nil
+				end
+			end
+		end
+	end
 end
 
 --[[

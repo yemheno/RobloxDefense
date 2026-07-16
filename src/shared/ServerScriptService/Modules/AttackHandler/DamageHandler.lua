@@ -47,6 +47,7 @@ end
 function DamageHandler.Init()
 	-- Pre-create damage number event
 	NetworkManager.GetEvent("DamageNumber")
+	NetworkManager.GetEvent("DamageNumberBatch")  -- §PERF/F5
 
 	-- Load KillRewardManager (centralised kill rewards)
 	local krmModule = Modules:FindFirstChild("KillRewardManager")
@@ -154,32 +155,121 @@ end
 -- DAMAGE NUMBERS
 -- ═══════════════════════════════════════════════════════════
 
+-- §PERF/F4 (task #17): spectator cache. SendDamageNumber fires for every
+-- landing hit (dozens/sec in combat) and used to call GetPlayers() plus a
+-- GetAttribute per player per hit. The set of players with ShowAllDamage
+-- changes rarely — maintain it on the attribute signal instead.
+local spectators = {}  -- [player] = true while ShowAllDamage == true
+local spectatorsWired = setmetatable({}, { __mode = "k" })
+
+local function wireSpectator(player)
+	if spectatorsWired[player] then return end
+	spectatorsWired[player] = true
+	if player:GetAttribute("ShowAllDamage") == true then
+		spectators[player] = true
+	end
+	-- Connection lives on the Player instance — auto-disconnected when
+	-- the player leaves (instance destroyed).
+	player:GetAttributeChangedSignal("ShowAllDamage"):Connect(function()
+		if player:GetAttribute("ShowAllDamage") == true then
+			spectators[player] = true
+		else
+			spectators[player] = nil
+		end
+	end)
+end
+
+Players.PlayerAdded:Connect(wireSpectator)
+for _, p in ipairs(Players:GetPlayers()) do
+	wireSpectator(p)
+end
+Players.PlayerRemoving:Connect(function(p)
+	spectators[p] = nil
+end)
+
+-- §PERF/F5 (Tibia window): hits are queued and flushed every
+-- DAMAGE_NUMBER_WINDOW seconds as ONE "DamageNumberBatch" event per
+-- recipient. Hits by the same attacker on the same mob inside a window
+-- MERGE into a single summed number (crit if any hit crit, `hits` count
+-- carried for the client's "x N" suffix). 0.1 s is below perception
+-- threshold but collapses rapid-fire attacks to 1 event per window.
+local DAMAGE_NUMBER_WINDOW = 0.1
+local pendingByAttacker = {}  -- [player] = { [mob] = damageData }
+local flushScheduled = false
+
+local function flushDamageNumbers()
+	flushScheduled = false
+
+	local all = (next(spectators) ~= nil) and {} or nil
+
+	for attacker, byMob in pairs(pendingByAttacker) do
+		local batch = {}
+		for _, dd in pairs(byMob) do
+			table.insert(batch, dd)
+			if all then table.insert(all, dd) end
+		end
+		if attacker.Parent and #batch > 0 then
+			NetworkManager.FireClient(attacker, "DamageNumberBatch", batch)
+		end
+	end
+	table.clear(pendingByAttacker)
+
+	-- §PERF/F4 semantics preserved: spectators see everyone ELSE's
+	-- numbers (their own arrived in their attacker batch above).
+	if all and #all > 0 then
+		for spec in pairs(spectators) do
+			if spec.Parent then
+				local others = {}
+				for _, dd in ipairs(all) do
+					if dd.attackerUserId ~= spec.UserId then
+						table.insert(others, dd)
+					end
+				end
+				if #others > 0 then
+					NetworkManager.FireClient(spec, "DamageNumberBatch", others)
+				end
+			end
+		end
+	end
+end
+
 function DamageHandler.SendDamageNumber(mob, player, damageResult)
 	local rootPart = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
 	local position = rootPart and rootPart.Position or mob:GetPivot().Position
 
-	local damageData = {
-		position     = position,
-		damage       = damageResult.damage,
-		wasCrit      = damageResult.wasCrit,
-		critProcs    = damageResult.critProcs,
-		attackerName = player.Name,
-		attackerUserId = player.UserId,
-		-- Elemental (used for damage number colour)
-		attackElement = damageResult.attackElement  or "None",
-		elementLabel  = damageResult.elementLabel   or "Neutral",
-		elementMult   = damageResult.elementMult    or 1.0,
-	}
+	local byMob = pendingByAttacker[player]
+	if not byMob then
+		byMob = {}
+		pendingByAttacker[player] = byMob
+	end
 
-	NetworkManager.FireClient(player, "DamageNumber", damageData)
+	local existing = byMob[mob]
+	if existing then
+		-- Merge into the window's running number for this mob.
+		existing.damage    = existing.damage + damageResult.damage
+		existing.hits      = existing.hits + 1
+		existing.wasCrit   = existing.wasCrit or damageResult.wasCrit
+		existing.critProcs = math.max(existing.critProcs or 0, damageResult.critProcs or 0)
+		existing.position  = position
+	else
+		byMob[mob] = {
+			position     = position,
+			damage       = damageResult.damage,
+			hits         = 1,
+			wasCrit      = damageResult.wasCrit,
+			critProcs    = damageResult.critProcs,
+			attackerName = player.Name,
+			attackerUserId = player.UserId,
+			-- Elemental (used for damage number colour)
+			attackElement = damageResult.attackElement  or "None",
+			elementLabel  = damageResult.elementLabel   or "Neutral",
+			elementMult   = damageResult.elementMult    or 1.0,
+		}
+	end
 
-	for _, otherPlayer in ipairs(Players:GetPlayers()) do
-		if otherPlayer ~= player then
-			local showAll = otherPlayer:GetAttribute("ShowAllDamage")
-			if showAll == true then
-				NetworkManager.FireClient(otherPlayer, "DamageNumber", damageData)
-			end
-		end
+	if not flushScheduled then
+		flushScheduled = true
+		task.delay(DAMAGE_NUMBER_WINDOW, flushDamageNumbers)
 	end
 end
 

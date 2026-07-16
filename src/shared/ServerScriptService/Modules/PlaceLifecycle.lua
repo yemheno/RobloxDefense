@@ -40,6 +40,9 @@ local PlaceLifecycle = {}
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- §PERF/BP: per-player readiness chain timing (data-ready → ServerReady).
+local BootProfiler = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("BootProfiler"))
+
 -- ═══════════════════════════════════════════════════════════
 -- ON PLAYER READY
 -- ═══════════════════════════════════════════════════════════
@@ -90,6 +93,8 @@ function PlaceLifecycle.WireOnPlayerReady(ctx, opts)
             return
         end
 
+        local doneReady = BootProfiler.Begin("OnPlayerReady " .. player.Name)
+
         -- 1. Talent tree
         local TalentManager = ctx.loaded["TalentManager"]
         if TalentManager then
@@ -126,7 +131,9 @@ function PlaceLifecycle.WireOnPlayerReady(ctx, opts)
             else
                 NetworkManager.FireClient(player, "ServerReady")
             end
+            BootProfiler.Mark("ServerReady queued → " .. player.Name)
         end
+        doneReady()
     end
 
     -- Idempotency latch so the "register + scan-existing" pair below can't

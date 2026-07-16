@@ -58,6 +58,9 @@ end
 
 local function getPotentialTargets(filterAttribute)
 	local targets = {}
+	-- NOTE (§MEM sweep): the workspace-root scan is LOAD-BEARING — player
+	-- characters are parented to workspace root, so it's what finds player
+	-- targets (heals, mob skills). Do not "optimize" it away to Mobs-only.
 	collectFrom(workspace, filterAttribute, targets)
 	local mobsFolder = workspace:FindFirstChild("Mobs")
 	if mobsFolder then
@@ -128,13 +131,15 @@ function AttackShapes.GetTargetsInCircle(origin, radius, filterAttribute)
 	local targets = getPotentialTargets(filterAttribute)
 	local hitTargets = {}
 
+	-- §MEM/M9: scalar 2D distance — the old form allocated two Vector3s
+	-- per target per query in the hottest AoE path (every circle skill,
+	-- stun/slow/knockback/pull).
+	local radiusSq = radius * radius
 	for _, target in ipairs(targets) do
 		local targetPos = getModelPosition(target)
 		if targetPos then
-			-- 2D distance (ignore Y)
-			local distance = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(origin.X, 0, origin.Z)).Magnitude
-
-			if distance <= radius then
+			local dx, dz = targetPos.X - origin.X, targetPos.Z - origin.Z
+			if dx * dx + dz * dz <= radiusSq then
 				table.insert(hitTargets, target)
 			end
 		end
@@ -160,14 +165,15 @@ function AttackShapes.GetTargetsInRing(origin, outerRadius, innerRadius, filterA
 	local targets = getPotentialTargets(filterAttribute)
 	local hitTargets = {}
 
+	-- §MEM/M9: scalar 2D distance (same as GetTargetsInCircle).
+	local outerSq, innerSq = outerRadius * outerRadius, innerRadius * innerRadius
 	for _, target in ipairs(targets) do
 		local targetPos = getModelPosition(target)
 		if targetPos then
-			-- 2D distance (ignore Y)
-			local distance = (Vector3.new(targetPos.X, 0, targetPos.Z) - Vector3.new(origin.X, 0, origin.Z)).Magnitude
-
+			local dx, dz = targetPos.X - origin.X, targetPos.Z - origin.Z
+			local dSq = dx * dx + dz * dz
 			-- Must be between inner and outer radius
-			if distance <= outerRadius and distance >= innerRadius then
+			if dSq <= outerSq and dSq >= innerSq then
 				table.insert(hitTargets, target)
 			end
 		end

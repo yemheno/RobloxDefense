@@ -18,6 +18,10 @@ local LOCAL_DATASTORE = DataStoreService:GetDataStore(DATA_STORE_KEY)
 local Modules = script.Parent
 local Config = require(Modules:WaitForChild("PlayerDataConfig"))
 
+-- §PERF/BP: DataStore load is the single biggest boot yield — timed.
+local BootProfiler = require(game:GetService("ReplicatedStorage")
+	:WaitForChild("Shared"):WaitForChild("BootProfiler"))
+
 -- §PDM-D6: hoisted from below for readability. Tracks in-progress saves
 -- so concurrent auto-save + terminal save don't double-write.
 local savingPlayers = {}
@@ -291,7 +295,9 @@ function PlayerDataManager.SetupPlayer(player)
 	wipedPlayers[tostring(player.UserId)] = nil
 
 	-- Try loading persisted data; fall back to fresh defaults only on genuine first visit.
+	local doneDataLoad = BootProfiler.Begin("DataLoad " .. player.Name)  -- §PERF/BP
 	local rawSaved = LoadRawData(player.UserId)
+	doneDataLoad()
 
 	-- §T0P2/X3: the player may have left while LoadRawData was yielding
 	-- (PlayerRemoving already ran — there was nothing to clean up yet).
@@ -326,6 +332,7 @@ function PlayerDataManager.SetupPlayer(player)
 
 	playerDataStore[player] = data
 	setupInProgress[player] = nil
+	BootProfiler.Mark("DataReady " .. player.Name)  -- §PERF/BP
 
 	-- ── Sanitize Allocated tables ────────────────────────────────────────
 	-- Remove any keys from classData.Allocated that are no longer in

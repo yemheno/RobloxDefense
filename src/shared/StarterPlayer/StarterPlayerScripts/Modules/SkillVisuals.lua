@@ -364,6 +364,13 @@ function SkillVisuals.OnBuffRemoved(data)
 end
 
 function SkillVisuals.CreateLocalBuffAura(buffId, buffData)
+	-- §MEM/M3: re-applying the same buffId used to overwrite the
+	-- activeEffects entry, orphaning the old aura + its Heartbeat
+	-- connection forever. Tear down any existing entry first.
+	if activeEffects[buffId] then
+		SkillVisuals.OnBuffRemoved({ buffId = buffId })
+	end
+
 	local character = player.Character
 	if not character then return end
 
@@ -393,10 +400,13 @@ function SkillVisuals.CreateLocalBuffAura(buffId, buffData)
 	aura.Parent = workspace
 
 	-- Follow player (CLIENT-SIDE = no lag!)
+	-- §MEM/M3: on despawn this used to Destroy the aura but leave the
+	-- Heartbeat connection firing forever (the sibling CreateBuffAura
+	-- got this right). Route through OnBuffRemoved: disconnect + destroy
+	-- + clear the registry entry in one place.
 	local connection = RunService.Heartbeat:Connect(function()
-		if not aura or not aura.Parent then return end
-		if not rootPart or not rootPart.Parent then
-			aura:Destroy()
+		if not rootPart or not rootPart.Parent or not aura.Parent then
+			SkillVisuals.OnBuffRemoved({ buffId = buffId })
 			return
 		end
 		aura.CFrame = rootPart.CFrame

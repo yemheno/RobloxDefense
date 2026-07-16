@@ -63,7 +63,10 @@ local initialized = false
 
 -- Active mob effects tracking
 -- { [mob] = { [effectKey] = { stacks, endTime, tickNext, ... } } }
-local activeMobEffects = {}
+-- §MEM/M11: weak keys — the 0.5s sweep already prunes dead mobs, but a
+-- weak key guarantees GC can reclaim an entry even if a sweep is missed
+-- (destroyed Instance keys otherwise pin the table entry).
+local activeMobEffects = setmetatable({}, { __mode = "k" })
 
 -- Active player effects tracking (HealOverTime, etc.)
 -- { [player] = { [effectKey] = { stacks, endTime, tickNext, ... } } }
@@ -72,7 +75,43 @@ local activePlayerEffects = {}
 -- Per-mob base speed tracking. Stores the mob's unmodified WalkSpeed
 -- (captured once on first speed-affecting effect). This prevents
 -- Slow → Stun → remove Stun from restoring a slow-modified speed.
-local mobBaseSpeeds = {}
+local mobBaseSpeeds = setmetatable({}, { __mode = "k" })  -- §MEM/M11
+
+-- §SCALE/S5: DoT/HoT/heal numbers used to fire one RemoteEvent per tick
+-- PER TARGET, bypassing the §PERF/F5 batch (one player DoT-ing 30 horde
+-- mobs = 30 events/s to that client). Queue + flush on a 0.25 s window —
+-- coarser than combat's 0.1 s is fine at 1-2 Hz tick rates.
+local NUMBER_FLUSH_WINDOW = 0.25
+local pendingDamageNumbers = {}  -- [player] = { entry, ... }
+local pendingHealNumbers   = {}  -- [player] = { entry, ... }
+local numberFlushScheduled = false
+
+local function queueNumber(map, plr, entry)
+	local list = map[plr]
+	if not list then
+		list = {}
+		map[plr] = list
+	end
+	table.insert(list, entry)
+
+	if not numberFlushScheduled then
+		numberFlushScheduled = true
+		task.delay(NUMBER_FLUSH_WINDOW, function()
+			numberFlushScheduled = false
+			local nm = SkillEffects.NetworkManager
+			if nm then
+				for p, entries in pairs(pendingDamageNumbers) do
+					if p.Parent then nm.FireClient(p, "DamageNumberBatch", entries) end
+				end
+				for p, entries in pairs(pendingHealNumbers) do
+					if p.Parent then nm.FireClient(p, "HealNumberBatch", entries) end
+				end
+			end
+			table.clear(pendingDamageNumbers)
+			table.clear(pendingHealNumbers)
+		end)
+	end
+end
 
 -- Skill "strength" is a game-design value; multiply by this scale
 -- to produce a physics impulse (N·s).  Heavy mobs resist knockback
@@ -388,11 +427,12 @@ function SkillEffects.TickDoT(mob, entry)
 	humanoid:TakeDamage(tickDamage)
 
 	-- Fire DoT damage number to the player (small, side-positioned)
+	-- §SCALE/S5: batched — was one RemoteEvent per DoT tick per mob.
 	if player and SkillEffects.NetworkManager then
 		local rootPart = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
 		local pos = rootPart and rootPart.Position or mob:GetPivot().Position
 
-		SkillEffects.NetworkManager.FireClient(player, "DamageNumber", {
+		queueNumber(pendingDamageNumbers, player, {
 			position      = pos,
 			damage        = tickDamage,
 			wasCrit       = false,
@@ -907,12 +947,11 @@ function SkillEffects.SendHealNumber(target, amount, healer, wasCrit, critProcs)
 		isHoT      = false,
 	}
 
-	-- Send to the healed player
-	SkillEffects.NetworkManager.FireClient(target, "HealNumber", healData)
-
-	-- Also send to the healer (if different) so they see their own heal output
+	-- §SCALE/S5: batched — an AoE heal over 6 allies used to cost 12
+	-- immediate RemoteEvents (target + healer echo each).
+	queueNumber(pendingHealNumbers, target, healData)
 	if healer and healer ~= target then
-		SkillEffects.NetworkManager.FireClient(healer, "HealNumber", healData)
+		queueNumber(pendingHealNumbers, healer, healData)
 	end
 end
 
@@ -1044,9 +1083,10 @@ function SkillEffects.TickHoT(target, entry)
 			healerUserId = healer and healer.UserId or 0,
 			isHoT        = true,
 		}
-		SkillEffects.NetworkManager.FireClient(target, "HealNumber", healData)
+		-- §SCALE/S5: batched HoT ticks.
+		queueNumber(pendingHealNumbers, target, healData)
 		if healer and healer ~= target then
-			SkillEffects.NetworkManager.FireClient(healer, "HealNumber", healData)
+			queueNumber(pendingHealNumbers, healer, healData)
 		end
 	end
 end

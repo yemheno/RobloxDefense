@@ -114,6 +114,19 @@ local function markReady(player)
     if ready[player] then return end
     ready[player] = true
 
+    -- §PERF/BP: handshake landmark — the timeline between DataReady,
+    -- this mark, and "ServerReady queued" is where boot races live.
+    do
+        local ok, bp = pcall(function()
+            return require(game:GetService("ReplicatedStorage")
+                :WaitForChild("Shared"):WaitForChild("BootProfiler"))
+        end)
+        if ok and bp then
+            local n = queues[player] and #queues[player] or 0
+            bp.Mark(string.format("ClientReady %s (draining %d queued)", player.Name, n))
+        end
+    end
+
     -- Drain queue in FIFO order
     -- §T0P2/X24: drain print removed (boot-time log noise); the overflow
     -- warn is the signal that matters.

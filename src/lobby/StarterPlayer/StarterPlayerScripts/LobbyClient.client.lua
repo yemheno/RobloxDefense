@@ -13,6 +13,11 @@ local PlayerScripts = LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules = PlayerScripts:WaitForChild("Modules")
 local LobbyModules  = PlayerScripts:WaitForChild("Lobby"):WaitForChild("Modules")
 
+-- §PERF/BP: client boot timeline (see BootProfiler for the dump contract)
+local BootProfiler = require(game:GetService("ReplicatedStorage")
+	:WaitForChild("Shared"):WaitForChild("BootProfiler"))
+BootProfiler.SetContext("LobbyClient")
+
 -- ───────────────────────────────────────────────────────────
 -- MODULE LOADER
 -- ───────────────────────────────────────────────────────────
@@ -24,14 +29,18 @@ local function Load(parent, name)
 		warn("[LobbyClient] Module not found:", name)
 		return nil
 	end
+	local doneRequire = BootProfiler.Begin("require " .. name)
 	local ok, result = pcall(require, mod)
+	doneRequire()
 	if not ok then
 		warn("[LobbyClient] Failed to load", name, ":", result)
 		return nil
 	end
 	loadedModules[name] = result
 	if type(result.Init) == "function" then
+		local doneInit = BootProfiler.Begin(name .. ".Init")
 		result.Init()
+		doneInit()
 	end
 	return result
 end
@@ -66,7 +75,9 @@ Load(LobbyModules, "NPCInteraction")
 local NetworkManager = loadedModules["NetworkManager"]
 if NetworkManager then
 	NetworkManager.OnServerEvent("ServerReady", function()
+		BootProfiler.Mark("ServerReady received")  -- §PERF/BP
 		local ls = loadedModules["LoadingScreen"]
 		if ls then ls.Dismiss() end
+		BootProfiler.Mark("LoadingScreen dismissed")
 	end)
 end

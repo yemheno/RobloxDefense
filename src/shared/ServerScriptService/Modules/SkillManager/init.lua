@@ -307,14 +307,19 @@ function SkillManager.UpdateCasting(dt)
 	-- §S2: collect first, then mutate. CompleteCasting nils
 	-- playerCasting[player], which is unsafe inside `pairs()` iteration
 	-- of the same table.
-	local toComplete = {}
+	-- §MEM/M4: collector is lazily allocated — this runs at 60 Hz and the
+	-- common frame completes nothing.
+	local toComplete
 	for player, castData in pairs(playerCasting) do
 		if castData and now >= castData.endTime then
+			toComplete = toComplete or {}
 			table.insert(toComplete, { player = player, castData = castData })
 		end
 	end
-	for _, entry in ipairs(toComplete) do
-		SkillManager.CompleteCasting(entry.player, entry.castData)
+	if toComplete then
+		for _, entry in ipairs(toComplete) do
+			SkillManager.CompleteCasting(entry.player, entry.castData)
+		end
 	end
 end
 
@@ -402,6 +407,16 @@ function SkillManager.TryUseSkill(player, skillId, inputData)
 	local currentResource = ResourceManager.GetResource(player)
 
 	if skill.usesAllResource then
+		-- §EASY/E1 (Pablo): ultimates unlock at base level 10. Replaces
+		-- the stale "ultimateLocked = false for testing" TODO. Level
+		-- attribute is reliable mid-session since §T0P2/X4.
+		local ULTIMATE_UNLOCK_LEVEL = 10
+		if (player:GetAttribute("Level") or 1) < ULTIMATE_UNLOCK_LEVEL then
+			SkillManager.SendFailure(player, skillId,
+				"Ultimate unlocks at level " .. ULTIMATE_UNLOCK_LEVEL)
+			return release(false)
+		end
+
 		-- Ultimate: need at least minimumResource
 		local minRequired = skill.minimumResource or 100
 		if currentResource < minRequired then
@@ -600,14 +615,18 @@ function SkillManager.UpdateBuffs(dt)
 
 	for player, buffs in pairs(activeBuffs) do
 		-- Collect expired buffs first to avoid mutating table during iteration
-		local expired = {}
+		-- §MEM/M4: lazily allocated — 60 Hz × N players, almost always empty.
+		local expired
 		for buffId, buffInfo in pairs(buffs) do
 			if now >= buffInfo.endTime then
+				expired = expired or {}
 				table.insert(expired, buffId)
 			end
 		end
-		for _, buffId in ipairs(expired) do
-			SkillManager.RemoveBuff(player, buffId)
+		if expired then
+			for _, buffId in ipairs(expired) do
+				SkillManager.RemoveBuff(player, buffId)
+			end
 		end
 	end
 end
