@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Talent Tree v3 — Edge Editor</title>
+<style>
+  :root {
+    --bg: #0C0C12; --panel: #16161F; --ink: #DCDCE6; --dim: #8C8CA0;
+    --line: #2D2D41; --gold: #C8AA32; --accent: #69BEFF;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; overflow: hidden; background: var(--bg);
+               font: 13px/1.45 "Segoe UI", system-ui, sans-serif; color: var(--ink); }
+  #toolbar {
+    position: fixed; top: 0; left: 0; right: 0; height: 44px; z-index: 10;
+    display: flex; align-items: center; gap: 8px; padding: 0 12px;
+    background: var(--panel); border-bottom: 1px solid var(--line);
+  }
+  #toolbar b { color: var(--gold); margin-right: 6px; white-space: nowrap; }
+  button {
+    background: #1E1E2C; color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 12px; cursor: pointer; font-size: 12.5px;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.danger:hover { border-color: #E05555; color: #E05555; }
+  #status {
+    position: fixed; bottom: 0; left: 0; right: 0; height: 30px; z-index: 10;
+    display: flex; align-items: center; gap: 18px; padding: 0 12px;
+    background: var(--panel); border-top: 1px solid var(--line);
+    color: var(--dim); font-size: 12px; white-space: nowrap; overflow: hidden;
+  }
+  #status .add { color: #7FDB9A; } #status .rem { color: #E08080; }
+  #svg { position: absolute; inset: 44px 0 30px 0; width: 100%;
+         height: calc(100% - 74px); cursor: grab; }
+  #svg.panning { cursor: grabbing; }
+  #help {
+    position: fixed; top: 56px; right: 12px; z-index: 9; width: 250px;
+    background: rgba(22,22,31,.94); border: 1px solid var(--line);
+    border-radius: 8px; padding: 10px 14px; font-size: 12px; color: var(--dim);
+  }
+  #help h3 { color: var(--ink); font-size: 12.5px; margin-bottom: 6px; }
+  #help li { margin: 3px 0 3px 16px; }
+  #help kbd { background: #23232F; border-radius: 3px; padding: 0 5px; color: var(--ink); }
+  #tooltip {
+    position: fixed; z-index: 11; pointer-events: none; display: none;
+    background: #1C1C28; border: 1px solid var(--line); border-radius: 6px;
+    padding: 6px 10px; font-size: 12px;
+  }
+  #tooltip .nm { color: var(--ink); font-weight: 600; }
+  #tooltip .meta { color: var(--dim); }
+  .edge { stroke: #3A3A54; stroke-width: .12; cursor: pointer; }
+  .edge.xbranch { stroke: #4A4A6E; stroke-width: .15; }
+  .edge:hover { stroke: #E05555; stroke-width: .22; }
+  .edge.new { stroke: #4FA76A; }
+  .node { cursor: pointer; stroke: #12121C; stroke-width: .07; }
+  .node:hover { stroke: var(--accent); stroke-width: .14; }
+  .node.selected { stroke: var(--gold); stroke-width: .18; }
+  .node.overdeg { stroke: #E05555; stroke-width: .16; }
+  .node.orphan { stroke: #E0A030; stroke-width: .16; stroke-dasharray: .15 .1; }
+  .nodelabel { fill: #7A7A94; font-size: .55px; pointer-events: none; }
+</style>
+</head>
+<body>
+  <div id="toolbar">
+    <b>Talent v3 editor</b>
+    <button id="undoBtn" title="Ctrl+Z">↶ Undo</button>
+    <button id="fitBtn">Fit view</button>
+    <button id="exportBtn">⬇ Export talent_edits.json</button>
+    <label><button id="importBtn">⬆ Import</button>
+      <input id="importFile" type="file" accept=".json" hidden></label>
+    <button id="resetBtn" class="danger">Reset to baseline</button>
+    <span id="autosave" style="color:var(--dim);font-size:11.5px;margin-left:auto"></span>
+  </div>
+  <svg id="svg"><g id="world">
+    <g id="edgeLayer"></g><g id="nodeLayer"></g><g id="labelLayer"></g>
+  </g></svg>
+  <div id="help">
+    <h3>Controls</h3>
+    <ul>
+      <li><kbd>wheel</kbd> zoom · <kbd>drag bg</kbd> pan</li>
+      <li><kbd>click</kbd> node → select (gold)</li>
+      <li><kbd>click</kbd> 2nd node → toggle edge (chains)</li>
+      <li><kbd>Esc</kbd> / click background → deselect</li>
+      <li><kbd>drag</kbd> node → move it</li>
+      <li><kbd>click</kbd> an edge → delete it</li>
+      <li><kbd>Ctrl+Z</kbd> undo</li>
+    </ul>
+    <p style="margin-top:6px">Red ring = degree &gt; 4 · orange dashed = disconnected. Green edges = added by you. Autosaves locally; Export when done and send me the file.</p>
+  </div>
+  <div id="tooltip"></div>
+  <div id="status">
+    <span id="stCounts"></span><span id="stDiff"></span>
+    <span id="stSel"></span><span id="stZoom"></span>
+  </div>
+  <script src="layout_b.js"></script>
+  <script src="editor.js"></script>
+</body>
+</html>
