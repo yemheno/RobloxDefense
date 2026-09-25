@@ -79,6 +79,10 @@ local FRAGMENT_CARD_ID     = "RespecFragment"
 -- STATE — SHARED VOTE (threat / tactical)
 -- ─────────────────────────────────────────────────────────────────────
 local voteActive       = false
+-- §AGX/X30b: set once _Resolve runs; voteActive stays true through the
+-- result grace window, and a late VoteCast used to re-run _Resolve and
+-- apply a SECOND card.
+local voteResolved     = false
 local voteOptions      = {}     -- { cardId, cardId, cardId }
 local voteCounts       = {}     -- { [1]=N, [2]=N, [3]=N }
 local playersVoted     = {}     -- { [Player]=true }
@@ -365,6 +369,7 @@ function VoteManager._StartVoteShared(cardType)
 
     -- Init state
     voteActive   = true
+    voteResolved = false
     voteOptions  = cards
     voteCounts   = {}
     playersVoted = {}
@@ -409,6 +414,7 @@ end
 --- Start a PERSONAL vote (supply). Each player sees their own trio.
 function VoteManager._StartVotePersonal()
     voteActive   = true
+    voteResolved = false
     personalVote = {}
 
     for _, player in ipairs(eligiblePlayers) do
@@ -478,7 +484,7 @@ end
 -- ─────────────────────────────────────────────────────────────────────
 
 function VoteManager._OnVoteCast(player, cardIndex)
-    if not voteActive then return end
+    if not voteActive or voteResolved then return end
     if playersVoted[player] then return end  -- one vote per player
 
     -- §AGX/X30: integer index only (1.5 / NaN used to slip past the bounds
@@ -643,7 +649,8 @@ end
 -- ─────────────────────────────────────────────────────────────────────
 
 function VoteManager._Resolve()
-    if not voteActive then return end
+    if not voteActive or voteResolved then return end
+    voteResolved = true
     -- §VG2: keep voteActive=true through the resolve + broadcast
     -- so the world stays paused while clients animate the result card.
     -- voteActive = false is deferred to the end of this function.

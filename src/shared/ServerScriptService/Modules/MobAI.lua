@@ -914,18 +914,39 @@ end
 -- the character's natural speed ("BaseWalkSpeed", stamped by DeathSystem).
 -- Knocked-down players and movement-locked casts own WalkSpeed; they read
 -- "MoveFxSpeed" / "BaseWalkSpeed" when they restore.
+-- Active slows per humanoid: { { mult, expires }, ... } (weak keys —
+-- entries vanish with the character). Each slow keeps its OWN expiry so a
+-- short strong slow doesn't inherit a long weak slow's duration.
+local playerSlows = setmetatable({}, { __mode = "k" })
+
 local function recomputePlayerMoveSpeed(player, humanoid)
 	if not humanoid.Parent then return end
 	local now     = os.clock()
 	local stunned = (humanoid:GetAttribute("StunUntil") or 0) > now
-	local slowed  = (humanoid:GetAttribute("SlowUntil") or 0) > now
 	local base    = humanoid:GetAttribute("BaseWalkSpeed") or 16
+
+	-- Strongest unexpired slow wins; prune the rest.
+	local slowMult, slowUntil = nil, 0
+	local list = playerSlows[humanoid]
+	if list then
+		for i = #list, 1, -1 do
+			local e = list[i]
+			if e.expires > now then
+				slowMult  = slowMult and math.min(slowMult, e.mult) or e.mult
+				slowUntil = math.max(slowUntil, e.expires)
+			else
+				table.remove(list, i)
+			end
+		end
+		if #list == 0 then playerSlows[humanoid] = nil end
+	end
+	local slowed = slowMult ~= nil
 
 	local target = base
 	if stunned then
 		target = 0
 	elseif slowed then
-		target = base * (humanoid:GetAttribute("SlowMult") or 1)
+		target = base * slowMult
 	end
 
 	player:SetAttribute("IsStunned", stunned or nil)
@@ -935,13 +956,37 @@ local function recomputePlayerMoveSpeed(player, humanoid)
 	else
 		humanoid:SetAttribute("MoveFxSpeed", nil)
 		humanoid:SetAttribute("StunUntil", nil)
-		humanoid:SetAttribute("SlowUntil", nil)
-		humanoid:SetAttribute("SlowMult", nil)
 	end
 
 	if player:GetAttribute("DeathState") ~= nil and player:GetAttribute("DeathState") ~= "Alive" then return end
 	if humanoid:GetAttribute("CastMoveLock") and not stunned then return end
 	humanoid.WalkSpeed = target
+end
+
+-- Re-check at `delay`; if an effect is still active (task.delay and
+-- os.clock can disagree by a frame, or a longer effect is pending),
+-- re-arm for the remainder instead of leaving the player pinned.
+local function scheduleMoveRecompute(player, humanoid, delay)
+	task.delay(delay, function()
+		if not (humanoid and humanoid.Parent and player.Parent) then return end
+		recomputePlayerMoveSpeed(player, humanoid)
+		local now = os.clock()
+		local nextAt = math.huge
+		local stunUntil = humanoid:GetAttribute("StunUntil") or 0
+		if stunUntil > now then nextAt = stunUntil end
+		for _, e in ipairs(playerSlows[humanoid] or {}) do
+			if e.expires > now then nextAt = math.min(nextAt, e.expires) end
+		end
+		if nextAt < math.huge then
+			scheduleMoveRecompute(player, humanoid, nextAt - now + 0.05)
+		end
+	end)
+end
+
+-- Knockdown/death clears mob movement effects (DeathSystem also clears
+-- the attributes); exposed so both sides agree on the state.
+function MobAI.ClearPlayerMoveEffects(humanoid)
+	playerSlows[humanoid] = nil
 end
 
 function MobAI.ApplyEffectToPlayer(player, effect, origin)
@@ -952,26 +997,22 @@ function MobAI.ApplyEffectToPlayer(player, effect, origin)
 	if not humanoid or humanoid.Health <= 0 then return end
 
 	if effect.type == "Stun" or effect.type == "Slow" then
-		local isStun   = effect.type == "Stun"
-		local duration = effect.duration or (isStun and 1 or 2)
-		local untilKey = isStun and "StunUntil" or "SlowUntil"
-		local now      = os.clock()
-		if not isStun then
-			-- Strongest active slow wins (lowest multiplier); checked
-			-- before extending SlowUntil so an expired slow can't win.
-			local mult   = 1 - (effect.amount or 50) / 100
-			local active = (humanoid:GetAttribute("SlowUntil") or 0) > now
-			local prev   = humanoid:GetAttribute("SlowMult")
-			humanoid:SetAttribute("SlowMult", (active and prev) and math.min(prev, mult) or mult)
-		end
-		humanoid:SetAttribute(untilKey, math.max(humanoid:GetAttribute(untilKey) or 0, now + duration))
-		recomputePlayerMoveSpeed(player, humanoid)
+		-- Downed/dead players are pinned at Health 1; a stun landing then
+		-- would outlive the revive (IsStunned blocking CanPlayerAct).
+		local deathState = player:GetAttribute("DeathState")
+		if deathState ~= nil and deathState ~= "Alive" then return end
 
-		task.delay(duration, function()
-			if humanoid and humanoid.Parent and player.Parent then
-				recomputePlayerMoveSpeed(player, humanoid)
-			end
-		end)
+		local now      = os.clock()
+		local duration = effect.duration or (effect.type == "Stun" and 1 or 2)
+		if effect.type == "Stun" then
+			humanoid:SetAttribute("StunUntil", math.max(humanoid:GetAttribute("StunUntil") or 0, now + duration))
+		else
+			local list = playerSlows[humanoid]
+			if not list then list = {}; playerSlows[humanoid] = list end
+			table.insert(list, { mult = 1 - (effect.amount or 50) / 100, expires = now + duration })
+		end
+		recomputePlayerMoveSpeed(player, humanoid)
+		scheduleMoveRecompute(player, humanoid, duration + 0.05)
 
 	elseif effect.type == "Knockback" then
 		local rootPart = char:FindFirstChild("HumanoidRootPart")

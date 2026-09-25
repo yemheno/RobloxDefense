@@ -317,9 +317,11 @@ function DeathSystem.EnterKnockdown(player)
 	-- otherwise revive restored the debuffed speed permanently.
 	data.originalSpeed = humanoid:GetAttribute("BaseWalkSpeed") or humanoid.WalkSpeed
 	humanoid:SetAttribute("StunUntil", nil)
-	humanoid:SetAttribute("SlowUntil", nil)
-	humanoid:SetAttribute("SlowMult", nil)
 	humanoid:SetAttribute("MoveFxSpeed", nil)
+	local mobAI = getMobAI()
+	if mobAI and mobAI.ClearPlayerMoveEffects then
+		mobAI.ClearPlayerMoveEffects(humanoid)
+	end
 	player:SetAttribute("IsStunned", nil)
 	player:SetAttribute("IsSlowed", nil)
 	humanoid.WalkSpeed = CONFIG.KnockdownSpeed

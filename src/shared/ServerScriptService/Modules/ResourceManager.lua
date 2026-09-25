@@ -531,18 +531,23 @@ function ResourceManager.NotifyClient(player, force)
 	local data = playerResources[player]
 	if not data then return end
 
+	-- §AGX/X20: a changed max (gear/talent ResourceMax) must reach the
+	-- client even when the clamped value equals the last one sent.
+	local effectiveMax = getEffectiveMax(player, data)
+
 	-- Only notify if change is significant (or forced)
 	local change = math.abs(data.current - data.lastNotifiedValue)
-	if not force and change < CONFIG.NotifyThreshold then
+	if not force and change < CONFIG.NotifyThreshold and effectiveMax == data.lastNotifiedMax then
 		return
 	end
 
 	data.lastNotifiedValue = data.current
+	data.lastNotifiedMax = effectiveMax
 
 	-- §T1.4/R3: single getEffectiveMax + locally computed percent.
 	-- Avoids the redundant second evaluation that GetResourcePercent's
 	-- internal getEffectiveMax call used to introduce on every push.
-	local effectiveMax = getEffectiveMax(player, data)
+	-- (§AGX/X20: now computed above, before the early-out.)
 	local percent = (effectiveMax > 0) and (data.current / effectiveMax) * 100 or 0
 
 	NetworkManager.FireClient(player, "ResourceUpdate", {

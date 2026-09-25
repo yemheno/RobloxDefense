@@ -420,3 +420,14 @@ nil-global errors are gone.
 | X33 | Spend rejects negative, NaN and infinite amounts. Zero is still a successful no-op. |
 | X36 | The SpawnLocation lookup is cached. |
 | X38 | Horde character waits are bounded (exit on leave or after 60 s). |
+
+### Review follow-ups (code-reviewer pass on the freebies)
+| ID | Change |
+|---|---|
+| X13 | Each slow keeps its own expiry, so a short strong slow no longer lasts as long as a long weak one. The recompute re-arms if a timer fires early. Mob effects are ignored while downed and cleared on knockdown (`MobAI.ClearPlayerMoveEffects`). |
+| X9 | A pity jump that the cap cuts short now lands on the cap and **keeps** the temper bar for the next chapter, instead of spending it for +1. *(Balance call.)* |
+| X20 | Also pushes when the effective max changes (a gear or talent change to the max resource). |
+| X29 | ShopUI and WeaponSmithUI auto-close on walk-away (`useNpcDistanceClose`), so they can't hang on "Refining…". |
+| X38 | The 60 s cutoff was removed; the wait loop exits only when the character appears or the player leaves. |
+| X30b | **Pre-existing bug found in review:** a late `VoteCast` during the result grace window could re-run `_Resolve` and apply a second card. Fixed with a `voteResolved` flag. |
+| X16 | No change. Note that boot now fails **hard** when a `RequireLoaded` module's `Init()` throws. Check that every place still boots in Studio. |

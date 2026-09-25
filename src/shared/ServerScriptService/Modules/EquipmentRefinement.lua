@@ -162,12 +162,17 @@ local function CreateRefinementSystem(Config, equipmentType)
             if instance.temper >= temperThreshold then
                 -- §AGX/X9: pity jump respects the chapter cap too (the
                 -- cap check above only guarded the normal +1 path, so pity
-                -- could land +9/+12/+15 past a +8/+11/+13 cap). If the cap
-                -- leaves no room, temper is kept for the next chapter.
+                -- could land +9/+12/+15 past a +8/+11/+13 cap). When the cap
+                -- cuts the jump short, the player lands ON the cap (no more
+                -- attempts possible there, so no drop-back) and keeps the
+                -- temper bar for the next chapter instead of burning it.
+                local capped = floor + 3 > chapterMax
                 local nextFloor = math.min(floor + 3, chapterMax)
                 if nextFloor <= Config.REFINEMENT_MAX and nextFloor > currentRefinement then
                     instance.refinement = nextFloor
-                    instance.temper = 0
+                    if not capped then
+                        instance.temper = 0
+                    end
                     pitied = true
 
                     NetworkManager.FireClient(player, eventName, {
@@ -175,7 +180,7 @@ local function CreateRefinementSystem(Config, equipmentType)
                         pitied        = true,
                         oldRefinement = currentRefinement,
                         newRefinement = instance.refinement,
-                        temper        = 0,
+                        temper        = instance.temper or 0,
                         stats         = System.Manager.GetCalculatedStats(player),
                     })
 

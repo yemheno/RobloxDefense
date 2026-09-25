@@ -11,6 +11,7 @@ local Players           = game:GetService("Players")
 local React             = require(ReplicatedStorage.Packages.React)
 
 local SharedModules  = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
+local useNpcDistanceClose = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useNpcDistanceClose"))  -- §AGX/X29
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 
 -- ── Palette ───────────────────────────────────────────────
@@ -153,6 +154,13 @@ local function ShopUI(props)
 			end
 		end
 	end, {})
+
+	-- §AGX/X29: the server now drops NPC responses from out of range, so
+	-- close the panel when the player walks away (same as NPCDialog).
+	useNpcDistanceClose(shopData and shopData.npcId, shopData ~= nil, function()
+		setShopData(nil)
+		onClose()
+	end)
 
 	if not shopData then
 		return nil

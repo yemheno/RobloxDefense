@@ -15,6 +15,7 @@ local Players           = game:GetService("Players")
 local React             = require(ReplicatedStorage.Packages.React)
 
 local SharedModules  = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
+local useNpcDistanceClose = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useNpcDistanceClose"))  -- §AGX/X29
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 
 -- ── Palette ───────────────────────────────────────────────
@@ -407,6 +408,14 @@ local function WeaponSmithUI(_props)
 			end
 		end
 	end, {})
+
+	-- §AGX/X29: auto-close when the player walks away (server drops
+	-- out-of-range responses, which left "Refining…" hanging).
+	useNpcDistanceClose(smithData and smithData.npcId, smithData ~= nil, function()
+		smithDataRef.current = nil
+		setSmithData(nil)
+		setStatusMsg(nil)
+	end)
 
 	if not smithData then
 		return nil

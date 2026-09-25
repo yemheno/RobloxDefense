@@ -688,10 +688,8 @@ function HordeModeSpawner.Start()
                 task.spawn(function()
                     -- §AGX/X38: bounded wait — a bare CharacterAdded:Wait()
                     -- never returned if the player left first (thread leak).
-                    if not player.Character then
-                        local timeout = os.clock() + 60
-                        repeat task.wait(0.25)
-                        until player.Character or not player.Parent or os.clock() > timeout
+                    while not player.Character and player.Parent do
+                        task.wait(0.25)
                     end
                     if not player.Character then return end
                     task.wait(1) -- brief settle time
@@ -720,9 +718,9 @@ function HordeModeSpawner.Start()
         else
             task.spawn(function()
                 -- §AGX/X38: bounded wait (see PlayerAdded path above).
-                local timeout = os.clock() + 60
-                repeat task.wait(0.25)
-                until player.Character or not player.Parent or os.clock() > timeout
+                while not player.Character and player.Parent do
+                    task.wait(0.25)
+                end
                 if not player.Character then return end
                 task.wait(1)
                 if running and player.Parent then
