@@ -335,6 +335,11 @@ local ORBIT_OFFSETS = buildOrbitOffsets()
 -- (8 markers × N players × 60 Hz of identical Vector3.new allocations).
 local SPAWN_Y_VEC = Vector3.new(0, CFG.SPAWN_Y_OFFSET, 0)
 
+-- §AGX/X1: forward-declared — createPlayerSpawner's spawn loop calls it,
+-- but the definition lives further down (§SCALE/S1). Without this the
+-- calls resolved to a nil global and every spawner thread died on tick 1.
+local positionMarkers
+
 local function createPlayerSpawner(player)
     if playerSpawners[player] then return end   -- guard
 
@@ -594,7 +599,7 @@ end
 -- Markers are only READ at spawn time (once per ~2.5 s tick), so we
 -- position them on demand instead. The Parts themselves stay — §T3/W9b:
 -- Pablo resizes them in Studio to widen the scatter area.
-local function positionMarkers(spawnerData, basePos)
+function positionMarkers(spawnerData, basePos)
     for i, marker in ipairs(spawnerData.markers) do
         if marker and marker.Parent then
             marker.Position = basePos + ORBIT_OFFSETS[i] + SPAWN_Y_VEC
@@ -681,7 +686,14 @@ function HordeModeSpawner.Start()
         playerAddedConn = Players.PlayerAdded:Connect(function(player)
             if running then
                 task.spawn(function()
-                    player.CharacterAdded:Wait()
+                    -- §AGX/X38: bounded wait — a bare CharacterAdded:Wait()
+                    -- never returned if the player left first (thread leak).
+                    if not player.Character then
+                        local timeout = os.clock() + 60
+                        repeat task.wait(0.25)
+                        until player.Character or not player.Parent or os.clock() > timeout
+                    end
+                    if not player.Character then return end
                     task.wait(1) -- brief settle time
                     -- §HMS4: re-check `running` after the settle wait.
                     -- Stop() may have fired during that 1s window; without
@@ -707,9 +719,13 @@ function HordeModeSpawner.Start()
             createPlayerSpawner(player)
         else
             task.spawn(function()
-                player.CharacterAdded:Wait()
+                -- §AGX/X38: bounded wait (see PlayerAdded path above).
+                local timeout = os.clock() + 60
+                repeat task.wait(0.25)
+                until player.Character or not player.Parent or os.clock() > timeout
+                if not player.Character then return end
                 task.wait(1)
-                if running then
+                if running and player.Parent then
                     createPlayerSpawner(player)
                 end
             end)

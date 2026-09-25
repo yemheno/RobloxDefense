@@ -289,8 +289,17 @@ function NPCManager.HandleInteraction(player, npcId)
 end
 
 function NPCManager.HandleResponse(player, data)
+	if type(data) ~= "table" then return end
 	local npcData = spawnedNPCs[data.npcId]
 	if not npcData then return end
+
+	-- §AGX/X29: responses skipped the range check that interacts have.
+	-- Doubled range so walking a few steps with the dialog open still works.
+	local character = player.Character
+	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+	local npcRoot = npcData.model and npcData.model:FindFirstChild("HumanoidRootPart")
+	if not rootPart or not npcRoot then return end
+	if not ((rootPart.Position - npcRoot.Position).Magnitude <= INTERACT_RANGE * 2) then return end
 
 	local npcType = npcData.definition.npcType
 

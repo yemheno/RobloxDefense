@@ -98,10 +98,16 @@ async function autoScrollAndScrape() {
                 <th style="text-align: left;">Asset ID</th>
             </tr>`;
 
+    // §AGX/X26: scraped names/ids are page-controlled text — escape before
+    // building HTML (the blob page runs with the extension tab's origin).
+    const esc = (v) => String(v).replace(/[&<>"']/g, c => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[c]);
+
     assets.forEach(asset => {
         htmlContent += `<tr>
-            <td style="font-weight: bold;">${asset.name}</td>
-            <td style="font-family: monospace; font-size: 16px;">${asset.id}</td>
+            <td style="font-weight: bold;">${esc(asset.name)}</td>
+            <td style="font-family: monospace; font-size: 16px;">${esc(asset.id)}</td>
         </tr>`;
     });
 

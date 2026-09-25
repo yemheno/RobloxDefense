@@ -55,6 +55,7 @@ function PlaceBootstrap.MakeContext(placeName)
         placeName     = placeName,
         SharedModules = SharedModules,
         loaded        = {},
+        initFailed    = {},  -- §AGX/X16: name → Init() error
         IsAdmin       = PlaceBootstrap.IsAdmin,
     }
 
@@ -92,6 +93,9 @@ function PlaceBootstrap.MakeContext(placeName)
             doneInit()
             if not initOk then
                 warn(string.format("[%sMain] %s.Init() errored: %s", placeName, tostring(name), tostring(initErr)))
+                -- §AGX/X16: remember it so RequireLoaded treats a
+                -- half-initialised critical module as a boot failure.
+                ctx.initFailed[name] = tostring(initErr)
             end
         end
         return result
@@ -105,6 +109,11 @@ function PlaceBootstrap.MakeContext(placeName)
                 "[%sMain] CRITICAL: required module '%s' failed to load — cannot run %s. " ..
                 "Check earlier warnings from Load() for the root cause.",
                 placeName, tostring(name), placeName), 0)
+        end
+        if ctx.initFailed[name] then
+            error(string.format(
+                "[%sMain] CRITICAL: required module '%s' loaded but its Init() failed: %s",
+                placeName, tostring(name), ctx.initFailed[name]), 0)
         end
         return ctx.loaded[name]
     end

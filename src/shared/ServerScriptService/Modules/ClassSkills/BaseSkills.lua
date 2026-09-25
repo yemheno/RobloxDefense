@@ -157,8 +157,14 @@ function BaseSkills.ExecuteDash(player, skill, inputData)
 	local direction
 	local moveDirection = inputData and inputData.moveDirection or Vector3.zero
 
-	if moveDirection and moveDirection.Magnitude > 0.1 then
-		direction = Vector3.new(moveDirection.X, 0, moveDirection.Z).Unit
+	-- §AGX/X17: flatten BEFORE the magnitude test and reject non-Vector3 /
+	-- NaN input. A vertical (0,1,0) used to pass the 3D check, flatten to
+	-- zero, and `.Unit` produced a NaN dash target (same class as §T2/Z3).
+	local flat = typeof(moveDirection) == "Vector3"
+		and Vector3.new(moveDirection.X, 0, moveDirection.Z) or Vector3.zero
+	local flatMag = flat.Magnitude
+	if flatMag > 0.1 and flatMag == flatMag and flatMag < math.huge then
+		direction = flat.Unit
 	else
 		-- Fallback when standing still
 		direction = skill.fallbackDirection or Vector3.new(-1, 0, 0)

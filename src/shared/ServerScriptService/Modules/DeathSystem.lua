@@ -223,6 +223,9 @@ function DeathSystem.OnCharacterAdded(player, character)
 
 	-- Store default speed
 	data.originalSpeed = humanoid.WalkSpeed
+	-- §AGX/X13: the character's natural speed, read by MobAI's player
+	-- Stun/Slow recompute and SkillManager's cast-lock restore.
+	humanoid:SetAttribute("BaseWalkSpeed", humanoid.WalkSpeed)
 
 	-- §LD-DS2: disable EVERY way Roblox can tear down the character on
 	-- death. Pablo's spec: the same Character must persist across
@@ -310,7 +313,15 @@ function DeathSystem.EnterKnockdown(player)
 	humanoid.Health = 1
 
 	-- Slow movement to crawl speed
-	data.originalSpeed = humanoid.WalkSpeed
+	-- §AGX/X13: capture the natural speed, not a mob-slowed/stunned one —
+	-- otherwise revive restored the debuffed speed permanently.
+	data.originalSpeed = humanoid:GetAttribute("BaseWalkSpeed") or humanoid.WalkSpeed
+	humanoid:SetAttribute("StunUntil", nil)
+	humanoid:SetAttribute("SlowUntil", nil)
+	humanoid:SetAttribute("SlowMult", nil)
+	humanoid:SetAttribute("MoveFxSpeed", nil)
+	player:SetAttribute("IsStunned", nil)
+	player:SetAttribute("IsSlowed", nil)
 	humanoid.WalkSpeed = CONFIG.KnockdownSpeed
 
 	-- Disable jumping
@@ -442,6 +453,11 @@ function DeathSystem.CheckPartyWipe()
 	end)
 end
 
+-- §AGX/X50: forward-declared — defined below (search `function performRevive`).
+-- Without this HandleWipeRevive hit a nil global AFTER spending Essence
+-- and invalidating the defeat timer, soft-locking the run.
+local performRevive
+
 -- §DISC/D3b: a dead player accepts the wipe-revive offer. First
 -- successful payment wins the run back; the buyer revives IN PLACE
 -- with brief invulnerability and combat resumes for everyone.
@@ -567,6 +583,7 @@ end
 -- The HealthChanged listener was disconnected during EnterKnockdown
 -- (§2.4a) and reattached on revive — for full death we re-attach it
 -- here too so the next damage burst can knock-down again.
+local cachedSpawnLocation = nil
 local function findSpawnLocation()
 	-- Prefer an explicit "PlayerSpawn" Part placed by the map; fall
 	-- back to any SpawnLocation; final fallback is origin (rare,
@@ -575,10 +592,19 @@ local function findSpawnLocation()
 	if explicit and explicit:IsA("BasePart") then
 		return explicit.CFrame + Vector3.new(0, 4, 0)
 	end
-	for _, inst in ipairs(workspace:GetDescendants()) do
-		if inst:IsA("SpawnLocation") then
-			return inst.CFrame + Vector3.new(0, 4, 0)
+	-- §AGX/X36: cache the SpawnLocation — the full GetDescendants() walk
+	-- used to run on every respawn (hitch when several respawn together).
+	if not (cachedSpawnLocation and cachedSpawnLocation:IsDescendantOf(workspace)) then
+		cachedSpawnLocation = nil
+		for _, inst in ipairs(workspace:GetDescendants()) do
+			if inst:IsA("SpawnLocation") then
+				cachedSpawnLocation = inst
+				break
+			end
 		end
+	end
+	if cachedSpawnLocation then
+		return cachedSpawnLocation.CFrame + Vector3.new(0, 4, 0)
 	end
 	return CFrame.new(0, 50, 0)
 end
@@ -586,7 +612,7 @@ end
 -- §DISC/D3b: revive core, shared by the normal respawn (teleports to
 -- spawn) and the wipe-revive (revives IN PLACE). Extracted verbatim
 -- from the old HandleRespawnRequest delayed body.
-local function performRevive(player, teleportToSpawn)
+function performRevive(player, teleportToSpawn)
 	if not player or not player.Parent then return end
 	local data = playerStates[player]
 	if not data then return end

@@ -5,7 +5,9 @@
 > code and confirmed or rejected every finding. Only findings that
 > survived verification appear below. They are ID'd `X1…X49` and sorted
 > 🚨 bug > 🟡 spaghetti > 🟢 minor > ❓ design question.
-> **Nothing here has been executed.** Everything is static reading;
+> **Status (2026-09-25):** the ⚡ freebies have LANDED; see "Landed fixes"
+> at the bottom. Everything else is still open.
+> **Originally nothing here was executed.** Everything is static reading;
 > there was no Studio or Rojo in the checking environment. Please answer
 > per item (`X1. Yes / No / discuss`) as in §3.4.
 >
@@ -154,6 +156,14 @@ respawn clears it. Ogre and Troll are guaranteed in waves 4, 7, 10 and
 12. The same race exists in `SkillManager:178/242`.
 **Fix shape:** a per-player base speed plus an active-effects map,
 recomputed when an effect expires.
+
+### X50. Paying for the wipe-revive takes the Essence, then soft-locks the run ⚡ (found by `luau-analyze` during the fix pass)
+`DeathSystem.HandleWipeRevive` (`:469`) calls `performRevive`, which is
+declared `local function` further down (`:589`), so the call looks up a
+nil global. By then Essence has been spent, `wipeGraceActive` is false
+and the defeat timer has been cancelled. Everyone stays dead, no Defeat
+ever fires, and the run hangs.
+**Fix shape:** a forward declaration, the same as X1.
 
 ## 🟡 Spaghetti / structural
 
@@ -387,3 +397,26 @@ entry is disabled. When they're wired:
   - The MobAI snapshot and cleanup, weak-keyed SkillEffects tables, the
     DamageHandler batching, and the cached projectile query params.
 - **Text:** no player-typed text reaches other players.
+
+## Landed fixes (⚡ freebies, tag `§AGX/X<n>`)
+All of these are pending a Studio live test. Syntax was checked with
+the official `luau-compile`, and `luau-analyze` confirms the X1 and X50
+nil-global errors are gone.
+
+| ID | Change |
+|---|---|
+| X1 | Forward-declared `positionMarkers` in HordeModeSpawner. |
+| X50 | Forward-declared `performRevive` in DeathSystem. |
+| X9 | Pity jump is clamped to `chapterMax`. If there's no room under the cap, temper carries over. |
+| X13 | Player Stun/Slow are recomputed from humanoid expiry attributes and a stamped `BaseWalkSpeed`. Knockdown captures the base speed and clears mob effects. Cast lock uses `CastMoveLock` and restores `MoveFxSpeed`. |
+| X16 | `ctx.initFailed` is recorded; `RequireLoaded` errors if a critical module's Init failed. |
+| X17 | Dash direction is flattened before the magnitude check, with NaN and wrong-type input rejected. The hit-report range check is now fail-closed. |
+| X19 | CentralBoss `available = false` in both MainMenu and GameModeConfig (matchmaking checks it on the server). |
+| X20 | Boundary force-notify only fires when the value changed. |
+| X26 | Extension HTML-escapes asset names and ids. |
+| X29 | NPC responses need to be within 2× `INTERACT_RANGE`. The smithType match was left out, because the UI may offer several actions. |
+| X30 | Vote index must be an integer, and the voter must be eligible. |
+| X31 | `lookDirection` must be a finite Vector3, and is normalised before the relay. |
+| X33 | Spend rejects negative, NaN and infinite amounts. Zero is still a successful no-op. |
+| X36 | The SpawnLocation lookup is cached. |
+| X38 | Horde character waits are bounded (exit on leave or after 60 s). |

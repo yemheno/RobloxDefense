@@ -907,6 +907,43 @@ end
 -- EFFECTS
 -- ═══════════════════════════════════════════════════════════
 
+-- §AGX/X13: player Stun/Slow used to capture WalkSpeed and restore it via
+-- task.delay. Overlaps (Roar slow → GroundSlam stun) restored the SLOWED
+-- speed last and left players at half speed until respawn. Now each effect
+-- stores an expiry on the humanoid and every expiry recomputes speed from
+-- the character's natural speed ("BaseWalkSpeed", stamped by DeathSystem).
+-- Knocked-down players and movement-locked casts own WalkSpeed; they read
+-- "MoveFxSpeed" / "BaseWalkSpeed" when they restore.
+local function recomputePlayerMoveSpeed(player, humanoid)
+	if not humanoid.Parent then return end
+	local now     = os.clock()
+	local stunned = (humanoid:GetAttribute("StunUntil") or 0) > now
+	local slowed  = (humanoid:GetAttribute("SlowUntil") or 0) > now
+	local base    = humanoid:GetAttribute("BaseWalkSpeed") or 16
+
+	local target = base
+	if stunned then
+		target = 0
+	elseif slowed then
+		target = base * (humanoid:GetAttribute("SlowMult") or 1)
+	end
+
+	player:SetAttribute("IsStunned", stunned or nil)
+	player:SetAttribute("IsSlowed", slowed or nil)
+	if stunned or slowed then
+		humanoid:SetAttribute("MoveFxSpeed", target)
+	else
+		humanoid:SetAttribute("MoveFxSpeed", nil)
+		humanoid:SetAttribute("StunUntil", nil)
+		humanoid:SetAttribute("SlowUntil", nil)
+		humanoid:SetAttribute("SlowMult", nil)
+	end
+
+	if player:GetAttribute("DeathState") ~= nil and player:GetAttribute("DeathState") ~= "Alive" then return end
+	if humanoid:GetAttribute("CastMoveLock") and not stunned then return end
+	humanoid.WalkSpeed = target
+end
+
 function MobAI.ApplyEffectToPlayer(player, effect, origin)
 	local char = player.Character
 	if not char then return end
@@ -914,28 +951,25 @@ function MobAI.ApplyEffectToPlayer(player, effect, origin)
 	local humanoid = char:FindFirstChild("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
 
-	if effect.type == "Stun" then
-		local originalSpeed = humanoid.WalkSpeed
-		humanoid.WalkSpeed = 0
-		player:SetAttribute("IsStunned", true)
+	if effect.type == "Stun" or effect.type == "Slow" then
+		local isStun   = effect.type == "Stun"
+		local duration = effect.duration or (isStun and 1 or 2)
+		local untilKey = isStun and "StunUntil" or "SlowUntil"
+		local now      = os.clock()
+		if not isStun then
+			-- Strongest active slow wins (lowest multiplier); checked
+			-- before extending SlowUntil so an expired slow can't win.
+			local mult   = 1 - (effect.amount or 50) / 100
+			local active = (humanoid:GetAttribute("SlowUntil") or 0) > now
+			local prev   = humanoid:GetAttribute("SlowMult")
+			humanoid:SetAttribute("SlowMult", (active and prev) and math.min(prev, mult) or mult)
+		end
+		humanoid:SetAttribute(untilKey, math.max(humanoid:GetAttribute(untilKey) or 0, now + duration))
+		recomputePlayerMoveSpeed(player, humanoid)
 
-		task.delay(effect.duration or 1, function()
-			if humanoid and humanoid.Parent then
-				humanoid.WalkSpeed = originalSpeed
-				player:SetAttribute("IsStunned", nil)
-			end
-		end)
-
-	elseif effect.type == "Slow" then
-		local originalSpeed = humanoid.WalkSpeed
-		local slowAmount = (effect.amount or 50) / 100
-		humanoid.WalkSpeed = originalSpeed * (1 - slowAmount)
-		player:SetAttribute("IsSlowed", true)
-
-		task.delay(effect.duration or 2, function()
-			if humanoid and humanoid.Parent then
-				humanoid.WalkSpeed = originalSpeed
-				player:SetAttribute("IsSlowed", nil)
+		task.delay(duration, function()
+			if humanoid and humanoid.Parent and player.Parent then
+				recomputePlayerMoveSpeed(player, humanoid)
 			end
 		end)
 

@@ -46,7 +46,9 @@ GameModeConfig.Modes = {
 		name         = "Central Boss",
 		description  = "Fight a powerful boss with your party.",
 		icon         = "rbxassetid://0",          -- placeholder
-		available    = true,
+		-- §AGX/X19: off until the arena has content (TODO §17 / §CB1).
+		-- Matchmaking checks this server-side, so crafted queues fail too.
+		available    = false,
 		sortOrder    = 2,
 
 		minPlayers   = 1,

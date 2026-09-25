@@ -45,7 +45,9 @@ local DIFFICULTY_TIERS = {
 -- ── Mode card definitions ─────────────────────────────────
 local MODES = {
 	{ id = "Defense",     name = "Defense",     desc = "Defend the line against waves.",              available = true,  order = 1 },
-	{ id = "CentralBoss", name = "Central Boss", desc = "Collaborate to take down a central boss.",   available = true,  order = 2 },
+	-- §AGX/X19: hidden until the boss arena has content (TODO §17 / §CB1) —
+	-- players could queue into an empty arena with no way back.
+	{ id = "CentralBoss", name = "Central Boss", desc = "Collaborate to take down a central boss.",   available = false, order = 2 },
 	{ id = "HordeMode",   name = "Horde Mode",   desc = "Survive endless waves of enemies.",          available = true,  order = 3 },
 	{ id = "Arena",       name = "Arena",        desc = "PvP Arena — Coming soon.",                   available = false, order = 4 },
 	{ id = "Raid",        name = "Raid",         desc = "Cooperative boss raids — Coming soon.",      available = false, order = 5 },

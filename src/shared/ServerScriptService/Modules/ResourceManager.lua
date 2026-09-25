@@ -309,8 +309,11 @@ function ResourceManager.SetResource(player, value)
 
 	-- Force-notify at boundaries so the client always sees exactly 100 % / 0 %
 	-- even when fractional regen means the delta is smaller than NotifyThreshold.
+	-- §AGX/X20: only when the value actually moved — regen clamping at max
+	-- (and knockdown drain at 0) used to force a push on EVERY tick
+	-- (~10/s per full player, ~60/s while downed), each re-rendering the HUD.
 	local atBoundary = (data.current >= effectiveMax) or (data.current <= 0)
-	ResourceManager.NotifyClient(player, atBoundary)
+	ResourceManager.NotifyClient(player, atBoundary and data.current ~= data.lastNotifiedValue)
 	return true
 end
 

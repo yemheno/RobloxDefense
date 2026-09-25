@@ -175,11 +175,14 @@ function SkillManager.StartCasting(player, skill, inputData)
 	if not humanoid then return false end
 
 	-- Store original walk speed
-	local originalWalkSpeed = humanoid.WalkSpeed
+	-- §AGX/X13: prefer the natural speed so a mob slow active at cast
+	-- start isn't restored after it has expired.
+	local originalWalkSpeed = humanoid:GetAttribute("BaseWalkSpeed") or humanoid.WalkSpeed
 
 	-- Lock movement if needed
 	if skill.lockMovement then
 		humanoid.WalkSpeed = 0
+		humanoid:SetAttribute("CastMoveLock", true)
 	end
 
 	-- Set casting state
@@ -239,7 +242,9 @@ function SkillManager.CompleteCasting(player, castData)
 
 	-- Restore walk speed
 	if humanoid and skill.lockMovement then
-		humanoid.WalkSpeed = castData.originalWalkSpeed
+		-- §AGX/X13: honour a mob Stun/Slow still active on the player.
+		humanoid:SetAttribute("CastMoveLock", nil)
+		humanoid.WalkSpeed = humanoid:GetAttribute("MoveFxSpeed") or castData.originalWalkSpeed
 	end
 
 	-- Clear casting state
@@ -273,7 +278,9 @@ function SkillManager.InterruptCasting(player, reason)
 
 	-- Restore walk speed
 	if humanoid and skill.lockMovement then
-		humanoid.WalkSpeed = castData.originalWalkSpeed
+		-- §AGX/X13: honour a mob Stun/Slow still active on the player.
+		humanoid:SetAttribute("CastMoveLock", nil)
+		humanoid.WalkSpeed = humanoid:GetAttribute("MoveFxSpeed") or castData.originalWalkSpeed
 	end
 
 	-- Refund resource

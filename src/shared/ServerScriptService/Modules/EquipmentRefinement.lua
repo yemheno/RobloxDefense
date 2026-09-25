@@ -160,8 +160,12 @@ local function CreateRefinementSystem(Config, equipmentType)
 
             local pitied = false
             if instance.temper >= temperThreshold then
-                local nextFloor = floor + 3
-                if nextFloor <= Config.REFINEMENT_MAX then
+                -- §AGX/X9: pity jump respects the chapter cap too (the
+                -- cap check above only guarded the normal +1 path, so pity
+                -- could land +9/+12/+15 past a +8/+11/+13 cap). If the cap
+                -- leaves no room, temper is kept for the next chapter.
+                local nextFloor = math.min(floor + 3, chapterMax)
+                if nextFloor <= Config.REFINEMENT_MAX and nextFloor > currentRefinement then
                     instance.refinement = nextFloor
                     instance.temper = 0
                     pitied = true

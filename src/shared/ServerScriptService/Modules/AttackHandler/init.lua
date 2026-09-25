@@ -258,7 +258,19 @@ function AttackHandler.HandleAttack(player, data)
 		}
 	end
 
-	local lookDirection = data and data.lookDirection
+	-- §AGX/X31: relayed verbatim to every other client — accept only a
+	-- finite Vector3 and normalise it (drops type-confused / huge payloads).
+	local lookDirection = type(data) == "table" and data.lookDirection or nil
+	if typeof(lookDirection) ~= "Vector3" then
+		lookDirection = nil
+	else
+		local mag = lookDirection.Magnitude
+		if mag > 1e-3 and mag < math.huge then
+			lookDirection = lookDirection / mag
+		else
+			lookDirection = nil
+		end
+	end
 	local isRanged = ClassManager.IsRanged(player)
 
 	-- Broadcast to other clients for visual replication
@@ -338,7 +350,9 @@ function AttackHandler.HandleHitReport(player, data)
 
 	local distance = (rootPart.Position - mobRoot.Position).Magnitude
 	local maxRange = AttackHandler.GetMaxBasicAttackRange(player)
-	if distance > maxRange then return end
+	-- §AGX/X17: written fail-closed — a NaN distance (NaN position) made
+	-- `distance > maxRange` false and accepted the hit from any range.
+	if not (distance <= maxRange) then return end
 
 	-- Hit accepted — consume the slot and mark the target.
 	ticket.targetsHit[target] = true

@@ -481,8 +481,12 @@ function VoteManager._OnVoteCast(player, cardIndex)
     if not voteActive then return end
     if playersVoted[player] then return end  -- one vote per player
 
+    -- §AGX/X30: integer index only (1.5 / NaN used to slip past the bounds
+    -- check and burn the player's vote), and only eligible voters count.
     cardIndex = tonumber(cardIndex)
-    if not cardIndex or cardIndex < 1 or cardIndex > #voteOptions then return end
+    if not cardIndex or cardIndex ~= math.floor(cardIndex)
+        or cardIndex < 1 or cardIndex > #voteOptions then return end
+    if not table.find(eligiblePlayers, player) then return end
 
     playersVoted[player] = true
     voteCounts[cardIndex] = (voteCounts[cardIndex] or 0) + 1

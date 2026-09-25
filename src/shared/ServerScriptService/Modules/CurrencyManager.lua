@@ -134,6 +134,13 @@ end
 
 -- SPEND CURRENCIES
 function CurrencyManager.SpendMerits(player, amount)
+	-- §AGX/X33: mirror the Add-side guard — a negative/NaN amount used to
+	-- pass the `>=` check and MINT currency. Latent (no caller does it today).
+	if type(amount) ~= "number" or amount ~= amount or amount < 0 or amount == math.huge then
+		warn("[CurrencyManager] SpendMerits rejected invalid amount:", tostring(amount))
+		return false
+	end
+	if amount == 0 then return true end  -- free = no-op success (callers rely on it)
 	local data = DataManager.GetData(player)
 	if not data then return false end
 
@@ -155,6 +162,13 @@ function CurrencyManager.SpendMerits(player, amount)
 end
 
 function CurrencyManager.SpendEssence(player, amount)
+	-- §AGX/X33: mirror the Add-side guard — a negative/NaN amount used to
+	-- pass the `>=` check and MINT currency. Latent (no caller does it today).
+	if type(amount) ~= "number" or amount ~= amount or amount < 0 or amount == math.huge then
+		warn("[CurrencyManager] SpendEssence rejected invalid amount:", tostring(amount))
+		return false
+	end
+	if amount == 0 then return true end  -- free = no-op success (callers rely on it)
 	local data = DataManager.GetData(player)
 	if not data then return false end
 
