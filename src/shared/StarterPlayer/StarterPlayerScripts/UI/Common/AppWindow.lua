@@ -27,11 +27,14 @@
             onClose = onClose,
             headerContent = element?,      -- optional right-side slot
             size    = UDim2.fromScale(0.88, 0.82),  -- windowed only
+            minSize = Vector2.new(360, 260),         -- windowed only, px (§AGX/UI-P1)
             zIndex  = 10,
         }, bodyChildrenTable)
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local GuiService        = game:GetService("GuiService")
+local Workspace         = game:GetService("Workspace")
 local React = require(ReplicatedStorage.Packages.React)
 local Theme = require(script.Parent:WaitForChild("Theme"))
 
@@ -41,10 +44,69 @@ local S = Theme.Speed
 
 local HEADER_H = 0.085  -- header fraction of the window height
 
+-- §AGX/UI-P1: T5-T10: the header was pure 8.5 % of the window, i.e. 21 px on
+-- a phone, and the close button 0.78 of that. Header now has a pixel floor
+-- and the close button a 44x44 floor. At 1080p the scale value is larger
+-- (75 px windowed / 92 px fullscreen), so desktop is unchanged.
+-- TODO(FormFactor): take these from Theme.Layout[formFactor] once it lands.
+local MIN_HEADER_PX = 48
+local MIN_CLOSE_PX  = 44
+local TOPBAR_GAP_PX = 4   -- breathing room below Roblox's topbar
+
+-- §AGX/UI-P1: fallback before the first AbsoluteSize measurement.
+local function viewportSize()
+	local cam = Workspace.CurrentCamera
+	return cam and cam.ViewportSize or Vector2.new(1920, 1080)
+end
+
 local function AppWindow(props)
 	local variant = props.variant or "windowed"
 	local zBase   = props.zIndex or 10
 	local iconId  = props.icon and Theme.GetIcon(props.icon) or nil
+
+	-- §AGX/UI-P1: measure the window root (fills its parent, normally the
+	-- whole AppGui) so the header can get a pixel floor without the body
+	-- overlapping it. Hook is unconditional.
+	local rootSize, setRootSize = React.useState(viewportSize)
+	local onRootSize = React.useCallback(function(rbx)
+		local sz = rbx.AbsoluteSize
+		if sz.X > 0 and sz.Y > 0 then setRootSize(sz) end
+	end, {})
+	local topInset = GuiService:GetGuiInset().Y  -- Roblox topbar height
+
+	-- §AGX/UI-P1: windowed panel geometry in pixels. Only deviates from the
+	-- caller's scale size when (a) props.minSize grows it, or (b) its top
+	-- would sit under the topbar (phones: 0.09 x 390 = 35 px < 58 px, V3).
+	-- At 1080p neither applies, so the panel keeps its exact scale size.
+	local panelSize = props.size or UDim2.fromScale(0.88, 0.82)
+	local panelPos  = UDim2.fromScale(0.5, 0.5)
+	local panelHpx  = panelSize.Y.Scale * rootSize.Y + panelSize.Y.Offset
+	if variant ~= "fullscreen" then
+		local panelWpx = panelSize.X.Scale * rootSize.X + panelSize.X.Offset
+		local minSize  = props.minSize
+		local wantW, wantH = panelWpx, panelHpx
+		if minSize then
+			wantW = math.max(wantW, minSize.X)
+			wantH = math.max(wantH, minSize.Y)
+		end
+		local safeTopPx = topInset + TOPBAR_GAP_PX
+		local maxH = math.max(0, rootSize.Y - safeTopPx - TOPBAR_GAP_PX)
+		wantW = math.min(wantW, rootSize.X)
+		wantH = math.min(wantH, maxH)
+		local topPx = (rootSize.Y - wantH) / 2
+		if wantW ~= panelWpx or wantH ~= panelHpx or topPx < safeTopPx then
+			panelSize = UDim2.fromOffset(wantW, wantH)
+			panelPos  = UDim2.fromOffset(rootSize.X / 2,
+				math.max(rootSize.Y / 2, safeTopPx + wantH / 2))
+			panelHpx  = wantH
+		end
+	end
+	-- Fullscreen: the header starts below the topbar so its title ribbon is
+	-- not under Roblox's menu/chat buttons (V3); the backdrop stays full-bleed.
+	-- Header height = the same HEADER_H share of the window as before, floored.
+	local headerTop = (variant == "fullscreen") and topInset or 0
+	local windowHpx = (variant == "fullscreen") and rootSize.Y or panelHpx
+	local headerPx  = math.max(MIN_HEADER_PX, HEADER_H * windowHpx)
 
 	-- ── Header (shared chrome) ────────────────────────────────────────────────
 	local motionLines = {}
@@ -65,7 +127,9 @@ local function AppWindow(props)
 
 	local header = React.createElement("Frame", {
 		Name                   = "Header",
-		Size                   = UDim2.fromScale(1, HEADER_H),
+		-- §AGX/UI-P1: pixel height with a 48 px floor (was fromScale(1, HEADER_H)).
+		Position               = UDim2.fromOffset(0, headerTop),
+		Size                   = UDim2.new(1, 0, 0, headerPx),
 		BackgroundColor3       = C.panelAlt,
 		BorderSizePixel        = 0,
 		ZIndex                 = zBase + 2,
@@ -145,6 +209,10 @@ local function AppWindow(props)
 			ZIndex           = zBase + 4,
 			[React.Event.Activated] = props.onClose,
 		}, {
+			-- §AGX/UI-P1: T5-T10: 44x44 minimum hit area (was 21 px on phones).
+			minSize = React.createElement("UISizeConstraint", {
+				MinSize = Vector2.new(MIN_CLOSE_PX, MIN_CLOSE_PX),
+			}),
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
 			stroke = React.createElement("UIStroke", {
 				Color = Color3.fromRGB(255, 120, 120), Thickness = 1, Transparency = 0.4,
@@ -155,8 +223,9 @@ local function AppWindow(props)
 	-- ── Body (caller's children) ──────────────────────────────────────────────
 	local body = React.createElement("Frame", {
 		Name                   = "Body",
-		Position               = UDim2.fromScale(0, HEADER_H),
-		Size                   = UDim2.fromScale(1, 1 - HEADER_H),
+		-- §AGX/UI-P1: follows the pixel header (was scale HEADER_H).
+		Position               = UDim2.fromOffset(0, headerTop + headerPx),
+		Size                   = UDim2.new(1, 0, 1, -(headerTop + headerPx)),
 		BackgroundTransparency = 1,
 		ClipsDescendants       = true,
 		ZIndex                 = zBase + 1,
@@ -171,6 +240,7 @@ local function AppWindow(props)
 			BackgroundTransparency = 0.05,
 			BorderSizePixel        = 0,
 			ZIndex                 = zBase,
+			[React.Change.AbsoluteSize] = onRootSize,  -- §AGX/UI-P1
 		}, {
 			header = header,
 			body   = body,
@@ -185,12 +255,14 @@ local function AppWindow(props)
 		BackgroundTransparency = 0.42,
 		BorderSizePixel        = 0,
 		ZIndex                 = zBase,
+		[React.Change.AbsoluteSize] = onRootSize,  -- §AGX/UI-P1
 	}, {
 		panel = React.createElement("Frame", {
 			Name             = "Panel",
 			AnchorPoint      = Vector2.new(0.5, 0.5),
-			Position         = UDim2.fromScale(0.5, 0.5),
-			Size             = props.size or UDim2.fromScale(0.88, 0.82),
+			-- §AGX/UI-P1: pixel size/position only when clamped (see above).
+			Position         = panelPos,
+			Size             = panelSize,
 			BackgroundColor3 = C.panel,
 			BorderSizePixel  = 0,
 			ClipsDescendants = true,

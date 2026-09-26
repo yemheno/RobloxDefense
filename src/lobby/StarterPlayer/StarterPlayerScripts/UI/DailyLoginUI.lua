@@ -76,6 +76,11 @@ local function DailyLoginUI(props)
 		icon    = "dailyLogin",
 		onClose = onClose,
 		size    = UDim2.fromScale(0.38, 0.46),
+		-- §AGX/UI-P1: T7: 0.38x0.46 is 320x179 on an iPhone; with the 48 px
+		-- header floor the body would be ~130 px. Pixel floor for phones;
+		-- 1080p (730x497) is above it, so desktop is unchanged. The 12x12
+		-- close is fixed centrally in AppWindow (44x44 floor).
+		minSize = Vector2.new(360, 260),
 		zIndex  = 10,
 	}, {
 			streakLbl = React.createElement("TextLabel", {
@@ -88,6 +93,8 @@ local function DailyLoginUI(props)
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
 				ZIndex                 = 12,
+			}, {
+				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1: 12 px text floor
 			}),
 
 			rewardCaption = React.createElement("TextLabel", {
@@ -100,6 +107,8 @@ local function DailyLoginUI(props)
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
 				ZIndex                 = 12,
+			}, {
+				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1: 12 px text floor
 			}),
 
 			rewardValue = React.createElement("TextLabel", {
@@ -112,6 +121,8 @@ local function DailyLoginUI(props)
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
 				ZIndex                 = 12,
+			}, {
+				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1: 12 px text floor
 			}),
 
 			feedback = resultMsg and React.createElement("TextLabel", {
@@ -124,6 +135,8 @@ local function DailyLoginUI(props)
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Center,
 				ZIndex                 = 12,
+			}, {
+				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1: 12 px text floor
 			}) or nil,
 
 			claimBtn = React.createElement("TextButton", {
@@ -144,6 +157,9 @@ local function DailyLoginUI(props)
 					end
 				end,
 			}, {
+				-- §AGX/UI-P1: 44 px tap floor (0.14 of a phone body was ~30 px).
+				minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, 44) }),
+				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),
 				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
 			}),
 	})

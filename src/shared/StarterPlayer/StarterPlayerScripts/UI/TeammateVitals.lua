@@ -14,6 +14,47 @@ local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
+-- §AGX/UI-P1: M9 layout. Rows are fixed pixels, so the container height is
+-- computed from the row count (it was a share of a 1080 px screen). The
+-- HUD publishes where its regions end as client-local ReplicatedStorage
+-- attributes (see HUD.lua §AGX/UI-P1):
+--   UI_TopLeftBottomPx / UI_TopLeftXPx: touch vitals stack (top-left) -> we
+--       stack under it (off the right-side skill arc and the ⋮ toggle).
+--   UI_TopRightBottomPx: bottom of the ☰/currency/killfeed block (desktop).
+--   UI_NavToggleTopPx: top of the ⋮ toggle; the right column stops above it
+--       and scrolls instead of running into it.
+-- TODO(FormFactor): replace the attributes with the P5 HUD-regions layout.
+local ROW_H         = 38
+local ROW_GAP       = 4
+local EDGE_GAP_PX   = 8
+local FALLBACK_TOP  = 120   -- the old fixed top, used before the HUD publishes
+local ATTRS = { "UI_TopLeftBottomPx", "UI_TopLeftXPx", "UI_TopRightBottomPx", "UI_NavToggleTopPx" }
+
+local function readLayout()
+	local t = {}
+	for _, name in ipairs(ATTRS) do
+		t[name] = tonumber(ReplicatedStorage:GetAttribute(name))
+	end
+	return t
+end
+
+local function useHudLayout()
+	local layout, setLayout = React.useState(readLayout)
+	React.useEffect(function()
+		local conns = {}
+		for _, name in ipairs(ATTRS) do
+			table.insert(conns, ReplicatedStorage:GetAttributeChangedSignal(name):Connect(function()
+				setLayout(readLayout())
+			end))
+		end
+		setLayout(readLayout())
+		return function()
+			for _, c in ipairs(conns) do c:Disconnect() end
+		end
+	end, {})
+	return layout
+end
+
 local LocalPlayer   = Players.LocalPlayer
 local SharedModules = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
 
@@ -38,7 +79,8 @@ local function TeammateMember(props)
 	local isLow    = hpFrac < 0.30
 
 	return React.createElement("Frame", {
-		Size             = UDim2.new(1, 0, 0, 38),
+		Size             = UDim2.new(1, 0, 0, ROW_H),  -- §AGX/UI-P1: shared constant
+		LayoutOrder      = props.order or 0,
 		BackgroundColor3 = C.panel_bg,
 		BackgroundTransparency = 0.25,
 		BorderSizePixel  = 0,
@@ -55,6 +97,8 @@ local function TeammateMember(props)
 			TextXAlignment         = Enum.TextXAlignment.Left,
 			Font                   = Enum.Font.GothamBold,
 			TextScaled             = true,
+		}, {
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
 		}),
 		PowerBadge = (teammate.powerLevel and teammate.powerLevel > 0) and React.createElement("TextLabel", {
 			AnchorPoint            = Vector2.new(1, 0),
@@ -66,6 +110,8 @@ local function TeammateMember(props)
 			TextXAlignment         = Enum.TextXAlignment.Right,
 			Font                   = Enum.Font.GothamBold,
 			TextScaled             = true,
+		}, {
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
 		}) or nil,
 
 		-- HP bar track
@@ -93,6 +139,7 @@ end
 -- ═══════════════════════════════════════════════════════════
 local function TeammateVitals()
 	local teammates, setTeammates = React.useState({})
+	local hudLayout = useHudLayout()  -- §AGX/UI-P1 (unconditional hook)
 
 	-- Listen for VitalsUpdate from server
 	React.useEffect(function()
@@ -135,6 +182,8 @@ local function TeammateVitals()
 				TextColor3             = C.stub_text,
 				TextScaled             = true,
 				Font                   = Enum.Font.Gotham,
+			}, {
+				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
 			})
 		end
 		return nil
@@ -145,20 +194,53 @@ local function TeammateVitals()
 	for i, teammate in ipairs(teammates) do
 		rows["member_" .. i] = React.createElement(TeammateMember, {
 			teammate = teammate,
+			order    = i,  -- §AGX/UI-P1: keep the alphabetical order in the list
 		})
 	end
 	rows.layout = React.createElement("UIListLayout", {
 		SortOrder     = Enum.SortOrder.LayoutOrder,
-		Padding       = UDim.new(0, 4),
+		Padding       = UDim.new(0, ROW_GAP),  -- §AGX/UI-P1
 		FillDirection = Enum.FillDirection.Vertical,
 	})
 
-	return React.createElement("Frame", {
-		AnchorPoint      = Vector2.new(1, 0),
-		Position         = UDim2.new(1, -8, 0, 120),
-		Size             = UDim2.fromScale(0.099, math.clamp((#teammates * 42 + 8) / 1080, 0.05, 0.5)),  -- scale based on content
+	-- §AGX/UI-P1: content height from the row count (n*38 + (n-1)*4).
+	local contentH = #teammates * ROW_H + math.max(0, #teammates - 1) * ROW_GAP
+	local tlBottom = hudLayout.UI_TopLeftBottomPx
+	local useLeft  = tlBottom ~= nil   -- HUD is in touch layout
+
+	local anchor, pos, width, height
+	if useLeft then
+		-- Touch: top-left, under the vitals stack.
+		anchor = Vector2.new(0, 0)
+		pos    = UDim2.fromOffset(hudLayout.UI_TopLeftXPx or EDGE_GAP_PX, tlBottom)
+		width  = UDim2.new(0.20, 0, 0, 0)
+		height = contentH
+	else
+		-- Desktop: right column, under the top-right block, above the ⋮ toggle.
+		local top = math.max(FALLBACK_TOP, hudLayout.UI_TopRightBottomPx or 0)
+		local limit = hudLayout.UI_NavToggleTopPx
+		height = contentH
+		if limit then
+			height = math.max(ROW_H, math.min(contentH, limit - EDGE_GAP_PX - top))
+		end
+		anchor = Vector2.new(1, 0)
+		pos    = UDim2.new(1, -EDGE_GAP_PX, 0, top)
+		width  = UDim2.new(0.099, 0, 0, 0)
+	end
+
+	-- ScrollingFrame so a clipped list (tiny window, big party) still reaches
+	-- every teammate; with room to spare it looks like the old Frame.
+	return React.createElement("ScrollingFrame", {
+		AnchorPoint      = anchor,
+		Position         = pos,
+		Size             = UDim2.new(width.X.Scale, 0, 0, height),
 		BackgroundTransparency = 1,
 		BorderSizePixel  = 0,
+		CanvasSize       = UDim2.new(0, 0, 0, contentH),
+		ScrollingDirection = Enum.ScrollingDirection.Y,
+		ScrollBarThickness = (height < contentH) and 4 or 0,
+		ScrollingEnabled = height < contentH,
+		Active           = height < contentH,  -- don't sink world clicks unless it scrolls
 	}, rows)
 end
 

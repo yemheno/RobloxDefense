@@ -106,6 +106,10 @@ local function PartyInviteToast()
 		BorderSizePixel  = 2,
 		ZIndex           = 20,
 	}, {
+		-- §AGX/UI-P1: T19: 0.34x0.10 is 287x39 on an iPhone, so the buttons
+		-- were 12 px tall. Pixel floor so the rows below fit 44 px buttons
+		-- (1080p: 653x108 -> 653x120, a 12 px taller toast).
+		minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(360, 120) }),
 		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.12, 0) }),
 
 		-- Accent border stroke
@@ -116,7 +120,8 @@ local function PartyInviteToast()
 
 		-- Invite message
 		msg = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.04, 0.06),
+			-- §AGX/UI-P1: rows re-split so the 44 px buttons don't overlap the text.
+			Position               = UDim2.fromScale(0.04, 0.04),
 			Size                   = UDim2.fromScale(0.82, 0.38),
 			BackgroundTransparency = 1,
 			Text                   = inviterName .. " invited you to their party!",
@@ -125,18 +130,23 @@ local function PartyInviteToast()
 			TextScaled             = true,
 			TextXAlignment         = Enum.TextXAlignment.Left,
 			TextWrapped            = true,
+		}, {
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
 		}),
 
 		-- Timer label
 		timerLabel = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.04, 0.46),
-			Size                   = UDim2.fromScale(0.50, 0.26),
+			-- §AGX/UI-P1: was 0.46..0.72, which already overlapped the buttons (0.66..0.96).
+			Position               = UDim2.fromScale(0.04, 0.44),
+			Size                   = UDim2.fromScale(0.50, 0.14),
 			BackgroundTransparency = 1,
 			Text                   = string.format("Expires in %ds", timeLeft),
 			TextColor3             = (timeLeft <= 10) and Color3.fromRGB(255, 120, 80) or C.text_dim,
 			Font                   = Enum.Font.Gotham,
 			TextScaled             = true,
 			TextXAlignment         = Enum.TextXAlignment.Left,
+		}, {
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
 		}),
 
 		-- Accept button
@@ -155,6 +165,9 @@ local function PartyInviteToast()
 				hideToast()
 			end,
 		}, {
+			-- §AGX/UI-P1: T19: 44 px tall tap floor (grows upward from the bottom anchor).
+			minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, 44) }),
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),
 			React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
 		}),
 
@@ -174,6 +187,9 @@ local function PartyInviteToast()
 				hideToast()
 			end,
 		}, {
+			-- §AGX/UI-P1: T19: 44 px tall tap floor (grows upward from the bottom anchor).
+			minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, 44) }),
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),
 			React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
 		}),
 
@@ -190,6 +206,8 @@ local function PartyInviteToast()
 			TextScaled       = true,
 			[React.Event.Activated] = hideToast,
 		}, {
+			-- §AGX/UI-P1: 44x44 tap floor for the dismiss ✕.
+			minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(44, 44) }),
 			React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
 		}),
 	})

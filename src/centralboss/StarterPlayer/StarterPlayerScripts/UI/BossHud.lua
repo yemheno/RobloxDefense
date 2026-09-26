@@ -12,12 +12,22 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GuiService        = game:GetService("GuiService")
+local Workspace         = game:GetService("Workspace")
 local React             = require(ReplicatedStorage.Packages.React)
 
 local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local NetworkManager = require(PlayerScripts:WaitForChild("Modules"):WaitForChild("NetworkManager"))
 
 local BANNER_SECONDS = 3.5
+
+-- §AGX/UI-P1: M9: BossHud owns its own top-centre slot directly under the
+-- topbar (safeTop). It publishes how many px below safeTop it uses as a
+-- client-local ReplicatedStorage attribute; HUD.lua pushes Start / Next Wave
+-- / Return and its wave banner below that (they collided at safeTop+30..88).
+-- TODO(FormFactor): becomes the "top-centre banner" region in P5.
+local ATTR_TOP_CENTRE = "UI_TopCentreReservedPx"
+local BAR_H      = 46
+local SLOT_GAP   = 8
 
 -- Bar colour per phase (index clamps to the last entry).
 local PHASE_COLORS = {
@@ -59,10 +69,31 @@ local function BossHud()
 		end
 	end, {})
 
+	-- §AGX/UI-P1: roots use ScreenInsets = DeviceSafeInsets now; in landscape
+	-- its top inset is 0, so GetGuiInset().Y (topbar) is not double-counted.
 	local topInset = select(1, GuiService:GetGuiInset())
 	local safeTop  = topInset.Y + 10
 
 	local showBar = state ~= nil and state.active == true and (state.maxHp or 0) > 0
+
+	-- §AGX/UI-P1: slot geometry (px below safeTop). Banner keeps its old
+	-- 0.055-of-screen height on desktop, with a 28 px floor for phones.
+	local cam = Workspace.CurrentCamera
+	local vpH = cam and cam.ViewportSize.Y or 1080
+	local bannerH = math.max(28, 0.055 * vpH)
+	local bannerY = showBar and (BAR_H + SLOT_GAP) or 0
+	local reserved = 0
+	if showBar then reserved = BAR_H + SLOT_GAP end
+	if banner ~= nil then reserved = bannerY + bannerH + SLOT_GAP end
+
+	React.useEffect(function()
+		ReplicatedStorage:SetAttribute(ATTR_TOP_CENTRE, reserved > 0 and reserved or nil)
+	end, { reserved })
+	React.useEffect(function()
+		return function()
+			ReplicatedStorage:SetAttribute(ATTR_TOP_CENTRE, nil)
+		end
+	end, {})
 	local fraction = showBar and math.clamp(state.hp / state.maxHp, 0, 1) or 0
 	local phase = showBar and (state.phase or 1) or 1
 	local barColor = PHASE_COLORS[math.clamp(phase, 1, #PHASE_COLORS)]
@@ -86,8 +117,11 @@ local function BossHud()
 	}, {
 		bar = showBar and React.createElement("Frame", {
 			AnchorPoint            = Vector2.new(0.5, 0),
-			Position               = UDim2.new(0.5, 0, 0, safeTop + 30),
-			Size                   = UDim2.new(0.42, 0, 0, 46),
+			-- §AGX/UI-P1: own slot at safeTop (was safeTop+30, on top of the
+			-- HUD's Start/Next Wave at safeTop+34). 0.36 wide (was 0.42) so it
+			-- stays clear of the HUD's top-right currency strip (from 0.695 W).
+			Position               = UDim2.new(0.5, 0, 0, safeTop),
+			Size                   = UDim2.new(0.36, 0, 0, BAR_H),
 			BackgroundTransparency = 1,
 			ZIndex                 = 4,
 		}, {
@@ -100,6 +134,8 @@ local function BossHud()
 				Font                   = Enum.Font.GothamBold,
 				TextScaled             = true,
 				ZIndex                 = 4,
+			}, {
+				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
 			}),
 			track = React.createElement("Frame", {
 				Position         = UDim2.new(0, 0, 0, 22),
@@ -130,6 +166,7 @@ local function BossHud()
 					TextScaled             = true,
 					ZIndex                 = 6,
 				}, {
+					minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
 					pad = React.createElement("UIPadding", {
 						PaddingTop = UDim.new(0.15, 0), PaddingBottom = UDim.new(0.15, 0),
 					}),
@@ -139,8 +176,10 @@ local function BossHud()
 
 		banner = (banner ~= nil) and React.createElement("TextLabel", {
 			AnchorPoint            = Vector2.new(0.5, 0),
-			Position               = UDim2.new(0.5, 0, 0, safeTop + 84),
-			Size                   = UDim2.fromScale(0.34, 0.055),
+			-- §AGX/UI-P1: directly under the bar, inside BossHud's slot (was
+			-- safeTop+84, colliding with the HUD wave banner at safeTop+88).
+			Position               = UDim2.new(0.5, 0, 0, safeTop + bannerY),
+			Size                   = UDim2.new(0.34, 0, 0, bannerH),
 			BackgroundColor3       = Color3.fromRGB(30, 15, 20),
 			BackgroundTransparency = 0.2,
 			BorderSizePixel        = 0,
@@ -151,6 +190,7 @@ local function BossHud()
 			TextScaled             = true,
 			ZIndex                 = 4,
 		}, {
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
 		}) or nil,
 	})
