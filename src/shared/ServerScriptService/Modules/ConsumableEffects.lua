@@ -10,14 +10,19 @@
     ────
       Client (InventoryUI "Use") ── FireServer("UseConsumable", { itemId })
         → ConsumableEffects.Use(player, itemId)
+            0. player still in the server; a combat place (§AGX/STATS:
+               Lobby / SocialPlaza reply "Use this in a run.")
             1. item is a ConsumableConfig.IsDirectUse item
             2. player is alive (not knocked down / dead), run not paused
             3. per-item cooldown (ConsumableConfig.cooldown, per player)
             4. owns ≥ 1 (InventoryManager.HasItem)
             5. effect precheck (full HP / full resource / no armor → the
-               item is NOT spent)
-            6. InventoryManager.ConsumeItem (same path respec_scroll uses)
-            7. apply the effect; on an error the item is given back
+               item is NOT spent); reply text built here, before anything
+               is spent or applied (§AGX/STATS S3)
+            6. InventoryManager.ConsumeItem (same path respec_scroll uses),
+               then the cooldown is armed
+            7. apply the effect; the item is given back ONLY when the
+               handler reports that nothing was applied
         → NotifyService.Inline(player, "UseConsumable", ok, text)
           (the client's useRequest("UseConsumable") settles on it)
 
@@ -135,6 +140,23 @@ local function getResourceManager()
 	return _rm
 end
 
+-- §AGX/STATS (review item 3): consumables are run items. Only combat
+-- places (LaneDefense, HordeMode, CentralBoss) load + Init DeathSystem, so
+-- DeathSystem.IsActive() is the place gate. Works in Studio, where
+-- game.PlaceId doesn't match Shared.PlaceIds. Resolved once (§5.3).
+local _dsResolved, _ds = false, nil
+local function isCombatPlace()
+	if not _dsResolved then
+		_dsResolved = true
+		local mod = Modules:FindFirstChild("DeathSystem")
+		if mod then
+			local ok, ds = pcall(require, mod)
+			if ok then _ds = ds end
+		end
+	end
+	return _ds ~= nil and _ds.IsActive ~= nil and _ds.IsActive() == true
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- PER-PLAYER STATE
 -- ═══════════════════════════════════════════════════════════
@@ -235,13 +257,22 @@ local function healCheck(player)
 	return true
 end
 
-local function applyHeal(player, def, amount, duration)
+-- §AGX/STATS (S3): apply(player, def, ctx) returns nothing; it sets
+-- ctx.applied = true the moment it has changed game state. Use() refunds
+-- the item only while ctx.applied is still false. The reply text comes
+-- from message(def), built before anything is spent.
+local function usedMessage(def)
+	return tostring(def.name) .. " used."
+end
+
+local function applyHeal(player, def, amount, duration, ctx)
 	local hum = getHumanoid(player)
 	if not hum then error("no humanoid") end
 
 	if not duration or duration <= 0 then
 		hum.Health = math.min(hum.Health + amount, hum.MaxHealth)
-		return def.name .. " used."
+		ctx.applied = true
+		return
 	end
 
 	-- Heal over time: evenly split, keyed per item so a second, different
@@ -250,33 +281,41 @@ local function applyHeal(player, def, amount, duration)
 	local perTick = amount / ticks
 	local st      = getState(player)
 	st.jan:Add(task.spawn(function()
-		for _ = 1, ticks do
+		local left = ticks
+		while left > 0 do
 			task.wait(HOT_TICK)
 			if not player.Parent or not isAlive(player) then return end
 			local h = getHumanoid(player)
 			if h ~= hum then return end   -- character replaced mid-heal
-			h.Health = math.min(h.Health + perTick, h.MaxHealth)
+			-- §AGX/STATS (N4): no ticks during the Horde vote pause (same
+			-- gate as the Use check); the remaining ticks resume after it.
+			if not isPaused(player) then
+				h.Health = math.min(h.Health + perTick, h.MaxHealth)
+				left -= 1
+			end
 		end
 	end), "hot_" .. def.id)
-	return def.name .. " used."
+	ctx.applied = true
 end
 
 local HANDLERS = {}
 
 HANDLERS.HealHP = {
 	check = healCheck,
-	apply = function(player, def)
-		return applyHeal(player, def, def.effect.amount or 0, def.effect.duration)
+	message = usedMessage,
+	apply = function(player, def, ctx)
+		applyHeal(player, def, def.effect.amount or 0, def.effect.duration, ctx)
 	end,
 }
 
 HANDLERS.HealPercent = {
 	check = healCheck,
-	apply = function(player, def)
+	message = usedMessage,
+	apply = function(player, def, ctx)
 		local hum = getHumanoid(player)
 		if not hum then error("no humanoid") end
 		local amount = hum.MaxHealth * (def.effect.percent or 0)
-		return applyHeal(player, def, amount, def.effect.duration)
+		applyHeal(player, def, amount, def.effect.duration, ctx)
 	end,
 }
 
@@ -289,12 +328,13 @@ HANDLERS.RestoreRes = {
 		end
 		return true
 	end,
-	apply = function(player, def)
+	message = usedMessage,
+	apply = function(player, def, ctx)
 		local rm = getResourceManager()
 		if not rm or not rm.ModifyResource(player, def.effect.amount or 0) then
 			error("ResourceManager has no state for player")
 		end
-		return def.name .. " used."
+		ctx.applied = true
 	end,
 }
 
@@ -304,7 +344,12 @@ HANDLERS.BuffStat = {
 		if not stat then return false, reason end
 		return true
 	end,
-	apply = function(player, def)
+	message = function(def)
+		-- tostring, not %d: a fractional duration made string.format throw
+		-- AFTER the buff landed, which refunded the item (S3).
+		return tostring(def.name) .. " active for " .. tostring(def.effect.duration) .. "s."
+	end,
+	apply = function(player, def, ctx)
 		local eff = def.effect
 		local stat, value = resolveBuff(player, def)
 		if not stat then error("buff stat no longer resolvable") end
@@ -322,6 +367,7 @@ HANDLERS.BuffStat = {
 		if bm.GetTimedBonus(player, tag, stat) == 0 then
 			error("BonusManager rejected stat " .. tostring(stat))
 		end
+		ctx.applied = true
 
 		-- Expiry notice, keyed by tag: a refresh replaces (cancels) the old
 		-- notice so "wore off" matches the refreshed duration.
@@ -330,8 +376,6 @@ HANDLERS.BuffStat = {
 				getNotify().Feed(player, def.name .. " wore off.", { key = "consumable_" .. def.id })
 			end
 		end), "buff_" .. tag)
-
-		return string.format("%s active for %ds.", def.name, eff.duration)
 	end,
 }
 
@@ -347,7 +391,12 @@ function ConsumableEffects.GetCooldownRemaining(player, itemId)
 end
 
 function ConsumableEffects.Use(player, itemId)
+	-- §AGX/STATS (N4): a request that lands after PlayerRemoving must not
+	-- recreate per-player state or BonusManager sources.
+	if not player.Parent then return false end
 	if type(itemId) ~= "string" then return false, "Invalid item." end
+	-- §AGX/STATS (review item 3): run items only.
+	if not isCombatPlace() then return false, "Use this in a run." end
 
 	local cc  = getConsumableConfig()
 	local def = cc.GetById(itemId)
@@ -373,23 +422,42 @@ function ConsumableEffects.Use(player, itemId)
 	local okCheck, reason = handler.check(player, def)
 	if not okCheck then return false, reason or "You can't use that right now." end
 
+	-- §AGX/STATS (S3): the reply is built BEFORE anything is spent, so a
+	-- formatting error can no longer throw after the effect landed.
+	local okMsg, message = pcall(handler.message or usedMessage, def)
+	if not okMsg or type(message) ~= "string" then
+		warn("[ConsumableEffects] " .. itemId .. " message failed: " .. tostring(message))
+		return false, "That item can't be used yet."
+	end
+
 	-- Spend first (ConsumeItem is the atomic decrement), then apply.
 	if not inv.ConsumeItem(player, itemId, 1) then
 		return false, "You don't have any " .. def.name .. "."
 	end
 
-	local okApply, result = pcall(handler.apply, player, def)
+	-- §AGX/STATS (S3): arm the cooldown before applying, so no failure
+	-- path can hand back the item AND skip the cooldown.
+	if (def.cooldown or 0) > 0 then
+		getState(player).readyAt[itemId] = os.clock() + def.cooldown
+	end
+
+	local ctx = { applied = false }
+	local okApply, err = pcall(handler.apply, player, def, ctx)
 	if not okApply then
+		if ctx.applied then
+			-- The effect landed; only a follow-up (e.g. the expiry notice)
+			-- failed. Keep the item spent.
+			warn("[ConsumableEffects] " .. itemId .. " post-apply step failed for " ..
+				player.Name .. ": " .. tostring(err))
+			return true, message
+		end
 		warn("[ConsumableEffects] " .. itemId .. " apply failed for " .. player.Name ..
-			": " .. tostring(result) .. " — item returned")
+			": " .. tostring(err) .. " — item returned")
 		inv.AddItem(player, itemId, 1)
 		return false, "Something went wrong. The item was returned."
 	end
 
-	if (def.cooldown or 0) > 0 then
-		getState(player).readyAt[itemId] = os.clock() + def.cooldown
-	end
-	return true, result
+	return true, message
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -424,6 +492,7 @@ function ConsumableEffects.Init()
 		local itemId = payload
 		if type(payload) == "table" then itemId = payload.itemId end
 		local ok, msg = ConsumableEffects.Use(player, itemId)
+		if not player.Parent then return end  -- §AGX/STATS (N4)
 		getNotify().Inline(player, REQUEST_EVENT, ok, msg)
 	end)
 end

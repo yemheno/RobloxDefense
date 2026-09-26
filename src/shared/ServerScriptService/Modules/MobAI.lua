@@ -1044,6 +1044,32 @@ function MobAI.ClearPlayerMoveEffects(humanoid)
 	playerSlows[humanoid] = nil
 end
 
+-- §AGX/STATS: DeathSystem.RefreshMoveSpeed calls this after BaseWalkSpeed
+-- changes (MovementSpeed bonus), so an active Stun/Slow/cast lock keeps
+-- winning and the new base lands on top of them.
+MobAI.RecomputePlayerMoveSpeed = recomputePlayerMoveSpeed
+
+-- §AGX/STATS: StatusResistance shortens mob-applied Stun/Slow durations.
+-- Hot-ish path (every mob skill hit on a player): the GetTotalStat and
+-- CapStat function refs are resolved ONCE (Audit_4.7 §5.4).
+local _srResolved = false
+local _getTotalStat = nil
+local _capStat = nil
+local function getStatusResistance(player)
+	if not _srResolved then
+		_srResolved = true
+		local pdm = Modules:FindFirstChild("PlayerDataManager")
+		local ok, mod = pdm and pcall(require, pdm)
+		if ok and mod then _getTotalStat = mod.GetTotalStat end
+		local cfgMod = Modules:FindFirstChild("PlayerDataConfig")
+		local okC, cfg = cfgMod and pcall(require, cfgMod)
+		if okC and cfg then _capStat = cfg.CapStat end
+	end
+	if not _getTotalStat then return 0 end
+	local sr = _getTotalStat(player, "StatusResistance") or 0
+	return _capStat and _capStat("StatusResistance", sr) or sr
+end
+
 function MobAI.ApplyEffectToPlayer(player, effect, origin)
 	local char = player.Character
 	if not char then return end
@@ -1059,6 +1085,10 @@ function MobAI.ApplyEffectToPlayer(player, effect, origin)
 
 		local now      = os.clock()
 		local duration = effect.duration or (effect.type == "Stun" and 1 or 2)
+		-- §AGX/STATS: StatusResistance % (capped 60) shortens the effect.
+		local resist = getStatusResistance(player)
+		if resist > 0 then duration = duration * (1 - resist / 100) end
+		if duration <= 0 then return end
 		if effect.type == "Stun" then
 			humanoid:SetAttribute("StunUntil", math.max(humanoid:GetAttribute("StunUntil") or 0, now + duration))
 		else

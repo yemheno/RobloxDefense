@@ -38,6 +38,10 @@
         "timed_consumable_<itemId>" — §AGX/X10b: consumable buffs
                         (Power Scroll, Fortune Incense, …) — ConsumableEffects.
                         Same AddTimedBonus path: re-use refreshes, leave clears.
+        "aura_<UserId>" — §AGX/X11: Patron Saint / Fortune Favors party
+                        auras on a MEMBER, keyed by the keystone OWNER's
+                        UserId — StatsManager/PartyAura. Created on first
+                        write like timed_<tag>; ClearSource on range/death/leave.
 
     Write-time validation  (§T1.3/B1)
     ─────────────────────────────────
@@ -73,6 +77,13 @@
       -- Reads
       BonusManager.GetAggregatedBonus(player, stat) → number
       BonusManager.Recalculate(player)
+
+      -- §AGX/STATS: change hook
+      BonusManager.OnChanged(fn) → disconnect()
+          fn(player, changed) after a Recalculate that changed at least
+          one data.Bonus value. `changed` = { [stat] = previousValue }.
+          Readers that cache a derived value (WalkSpeed, the client's
+          attack pacing) subscribe here instead of polling.
 ]]
 
 local BonusManager = {}
@@ -118,6 +129,14 @@ local timedThreads = setmetatable({}, { __mode = "k" })
 -- §T1.3/B1: warn-once memoization for unknown stat names. Without this a
 -- typo'd write inside a tight combat loop would spam the console.
 local _warnedUnknownStats = {}
+
+-- §AGX/STATS: OnChanged listeners (see header). Array, not a signal
+-- object: the listener set is fixed at boot (DeathSystem, AttackHandler).
+local changeListeners = {}
+-- §AGX/STATS: data.Bonus is saved and re-loaded, so a first Recalculate
+-- can "change" nothing while listeners have never seen the values. The
+-- first Recalculate per player reports every stat as changed.
+local notifiedOnce = setmetatable({}, { __mode = "k" })
 
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
@@ -347,13 +366,42 @@ function BonusManager.Recalculate(player)
     -- which used to have a value but has been cleared from every source
     -- gets reset to its default — fixes the previous stale-after-clear
     -- bug where data.Bonus held the last non-zero total forever.
+    -- §AGX/STATS: remember which values moved; `changed` is allocated
+    -- only when something actually changed and someone listens.
+    local bonus = data.Bonus
+    local listening = #changeListeners > 0
+    local firstPass = listening and not notifiedOnce[player]
+    if firstPass then notifiedOnce[player] = true end
+    local changed = nil
     for statName, defaultValue in pairs(cfg.BonusStats) do
         local agg = aggregate[statName]
-        if agg ~= nil then
-            data.Bonus[statName] = defaultValue + agg
-        else
-            data.Bonus[statName] = defaultValue
+        local newValue = (agg ~= nil) and (defaultValue + agg) or defaultValue
+        if listening then
+            local old = bonus[statName]
+            if firstPass or old ~= newValue then
+                changed = changed or {}
+                changed[statName] = old or defaultValue
+            end
         end
+        bonus[statName] = newValue
+    end
+
+    if changed then
+        for _, fn in ipairs(changeListeners) do
+            local ok, err = pcall(fn, player, changed)
+            if not ok then
+                warn("[BonusManager] OnChanged listener failed: " .. tostring(err))
+            end
+        end
+    end
+end
+
+--- §AGX/STATS: subscribe to data.Bonus changes. Returns a disconnect fn.
+function BonusManager.OnChanged(fn)
+    table.insert(changeListeners, fn)
+    return function()
+        local i = table.find(changeListeners, fn)
+        if i then table.remove(changeListeners, i) end
     end
 end
 

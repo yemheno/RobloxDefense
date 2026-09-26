@@ -214,10 +214,35 @@ function ClassManager.GetShapeParams(player)
     return params
 end
 
-function ClassManager.GetAttackSpeed(player)
+-- §AGX/STATS: AttackSpeed bonus (percent points; gear rolls, Frenzy card,
+-- Eagle Eye's -X%, talents) scales the weapon's attacks/sec, clamped by
+-- StatCaps.AttackSpeed. Per-attack path: one table read + one clamp, and
+-- the clamp function is resolved once (Audit_4.7 §5.4).
+local _capStat = nil
+local function capAttackSpeed(pct)
+    if not _capStat then
+        local cfg = require(Modules:WaitForChild("PlayerDataConfig"))
+        _capStat = cfg.CapStat or function(_, v) return v end
+    end
+    return _capStat("AttackSpeed", pct)
+end
+
+--- Attacks per second. `bonusOverride` (optional) evaluates the same
+--- formula with a different AttackSpeed % — AttackHandler uses it to price
+--- the pre-change cadence for its transition grace.
+function ClassManager.GetAttackSpeed(player, bonusOverride)
     local wm = getWeaponManager()
-    if not wm then return 1.0 end
-    return wm.GetAttackSpeed(player) or 1.0
+    local speed = (wm and wm.GetAttackSpeed(player)) or 1.0
+    local pct = bonusOverride
+    if pct == nil then
+        local data = PlayerDataManager.GetData(player)
+        local bonus = data and data.Bonus
+        pct = bonus and bonus.AttackSpeed or 0
+    end
+    if pct ~= 0 then
+        speed = speed * (1 + capAttackSpeed(pct) / 100)
+    end
+    return speed
 end
 
 function ClassManager.GetAttackCooldown(player)
@@ -370,7 +395,15 @@ function ClassManager.ApplyTeleportClass(player)
         return false
     end
 
+    -- §AGX/STATS (N1): SetClass stamps LastClassSwitch = os.time(), which
+    -- started the 30 s manual-switch cooldown on arrival. Restoring the
+    -- lobby pick isn't a new switch, so put the previous stamp back.
+    local data = PlayerDataManager.GetData(player)
+    local prevSwitch = data and data.LastClassSwitch
     local ok, err = ClassManager.SetClass(player, requested)
+    if ok and data and prevSwitch ~= nil then
+        data.LastClassSwitch = prevSwitch
+    end
     if not ok then
         warn("[ClassManager] TeleportClass switch to", requested, "failed for", player.Name, ":", tostring(err))
         return false

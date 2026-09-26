@@ -949,6 +949,9 @@ AchievementUnlocked         — server push (T0 migrated); also the
                               class-unlock toast (PlayerClassSystem,
                               §AGX/T11-JAN)
 TalentStateUpdate           — TalentManager.SendState (T0 migrated)
+SkillCooldownUpdate         — SkillManager.SetupPlayer initial skills/costs
+                              push on PlayerAdded (§AGX/STATS migrated;
+                              later per-cast updates stay plain FireClient)
 ```
 
 Pending migration (TODO §11):

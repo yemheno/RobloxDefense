@@ -101,6 +101,39 @@ local function getMobAI()
 	return _MobAI or nil
 end
 
+-- §AGX/STATS: MovementSpeed bonus → BaseWalkSpeed. Lazy (§5.3); only
+-- touched on spawn and on a MovementSpeed change, never per frame.
+local _BonusManager
+local function getBonusManager()
+	if _BonusManager ~= nil then return _BonusManager or nil end
+	local mod = Modules:FindFirstChild("BonusManager")
+	local ok, result = mod and pcall(require, mod)
+	_BonusManager = (ok and result) or false
+	return _BonusManager or nil
+end
+
+local _DataConfig
+local function getDataConfig()
+	if _DataConfig ~= nil then return _DataConfig or nil end
+	local mod = Modules:FindFirstChild("PlayerDataConfig")
+	local ok, result = mod and pcall(require, mod)
+	_DataConfig = (ok and result) or false
+	return _DataConfig or nil
+end
+
+-- §AGX/STATS: natural speed (stamped once per character as
+-- "NaturalWalkSpeed") × (1 + capped MovementSpeed %). This is the X13
+-- "BaseWalkSpeed": MobAI slows/stuns, cast locks and knockdown all work
+-- from it, so they stack on top of the bonus instead of replacing it.
+local function computeBaseWalkSpeed(player, humanoid)
+	local natural = humanoid:GetAttribute("NaturalWalkSpeed") or 16
+	local bm  = getBonusManager()
+	local cfg = getDataConfig()
+	local pct = bm and bm.GetAggregatedBonus(player, "MovementSpeed") or 0
+	if cfg and cfg.CapStat then pct = cfg.CapStat("MovementSpeed", pct) end
+	return natural * (1 + pct / 100)
+end
+
 -- §AGX/X40 helpers (after the lazy getters they use).
 local function getRunDifficulty()
 	local mod = Modules:FindFirstChild("TeleportDataReader")
@@ -220,6 +253,41 @@ function DeathSystem.Init()
 		DeathSystem.Update(dt)
 	end)
 
+	-- §AGX/STATS: re-derive BaseWalkSpeed when MovementSpeed changes
+	-- (gear, talents, innate, cards, Swiftness Elixir, keystones).
+	local bm = getBonusManager()
+	if bm and bm.OnChanged then
+		bm.OnChanged(function(player, changed)
+			if changed.MovementSpeed ~= nil then
+				DeathSystem.RefreshMoveSpeed(player)
+			end
+		end)
+	end
+
+end
+
+--- §AGX/STATS: recompute BaseWalkSpeed and apply it without fighting the
+--- other WalkSpeed owners. Downed/dead: only the attribute moves (revive
+--- and respawn read it). Alive: MobAI's recompute applies it, honouring an
+--- active Stun/Slow and a CastMoveLock.
+function DeathSystem.RefreshMoveSpeed(player)
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid:GetAttribute("NaturalWalkSpeed") == nil then return end
+
+	local base = computeBaseWalkSpeed(player, humanoid)
+	if humanoid:GetAttribute("BaseWalkSpeed") == base then return end
+	humanoid:SetAttribute("BaseWalkSpeed", base)
+
+	local data = playerStates[player]
+	if data and data.state ~= "Alive" then return end
+
+	local mobAI = getMobAI()
+	if mobAI and mobAI.RecomputePlayerMoveSpeed then
+		mobAI.RecomputePlayerMoveSpeed(player, humanoid)
+	elseif not humanoid:GetAttribute("CastMoveLock") and humanoid:GetAttribute("MoveFxSpeed") == nil then
+		humanoid.WalkSpeed = base
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -283,10 +351,15 @@ function DeathSystem.OnCharacterAdded(player, character)
 	if not humanoid then return end
 
 	-- Store default speed
-	data.originalSpeed = humanoid.WalkSpeed
 	-- §AGX/X13: the character's natural speed, read by MobAI's player
 	-- Stun/Slow recompute and SkillManager's cast-lock restore.
-	humanoid:SetAttribute("BaseWalkSpeed", humanoid.WalkSpeed)
+	-- §AGX/STATS: stamp the untouched speed as NaturalWalkSpeed and fold
+	-- the MovementSpeed bonus into BaseWalkSpeed.
+	humanoid:SetAttribute("NaturalWalkSpeed", humanoid.WalkSpeed)
+	local baseSpeed = computeBaseWalkSpeed(player, humanoid)
+	humanoid:SetAttribute("BaseWalkSpeed", baseSpeed)
+	humanoid.WalkSpeed = baseSpeed
+	data.originalSpeed = baseSpeed
 
 	-- §LD-DS2: disable EVERY way Roblox can tear down the character on
 	-- death. Pablo's spec: the same Character must persist across
@@ -621,7 +694,9 @@ function DeathSystem.RevivePlayer(player, healthPercent, resourcePercent)
 	end
 
 	-- Restore movement
-	humanoid.WalkSpeed = data.originalSpeed
+	-- §AGX/STATS: BaseWalkSpeed may have moved while downed (a buff
+	-- expired); mob effects were cleared at knockdown, so base is right.
+	humanoid.WalkSpeed = humanoid:GetAttribute("BaseWalkSpeed") or data.originalSpeed
 	humanoid.JumpPower = 50
 	humanoid.JumpHeight = 7.2
 
@@ -737,7 +812,8 @@ function performRevive(player, teleportToSpawn)
 		humanoid.AutoRotate    = true
 
 		-- Restore movement props.
-		humanoid.WalkSpeed  = data.originalSpeed
+		-- §AGX/STATS: current BaseWalkSpeed (bonus may have changed while dead).
+		humanoid.WalkSpeed  = humanoid:GetAttribute("BaseWalkSpeed") or data.originalSpeed
 		humanoid.JumpPower  = 50
 		humanoid.JumpHeight = 7.2
 
@@ -847,6 +923,13 @@ end
 -- ═══════════════════════════════════════════════════════════
 -- STATE QUERIES
 -- ═══════════════════════════════════════════════════════════
+
+--- §AGX/STATS: true once Init ran. Only combat places (LaneDefense,
+--- HordeMode, CentralBoss) load DeathSystem, so ConsumableEffects uses
+--- this as its "is this a run?" gate (Lobby / SocialPlaza → false).
+function DeathSystem.IsActive()
+	return initialized
+end
 
 function DeathSystem.GetState(player)
 	local data = playerStates[player]

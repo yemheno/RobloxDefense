@@ -47,7 +47,12 @@ function PlayerAttack.Init()
 	-- Receive combat config from server (on spawn and class change)
 	NetworkManager.OnServerEvent("CombatConfig", function(data)
 		combatConfig = data
-		lastAttackTime = 0
+		-- §AGX/STATS: a "stats" resend (AttackSpeed bonus changed mid-fight)
+		-- only re-paces; resetting the timer would fire an early swing the
+		-- server rejects.
+		if type(data) ~= "table" or data.reason ~= "stats" then
+			lastAttackTime = 0
+		end
 	end)
 
 	-- Input handling

@@ -75,6 +75,12 @@ end
 -- TARGET FINDING
 -- ═══════════════════════════════════════════════════════════
 
+-- §AGX/STATS: AoESize is already applied here. SkillManager.ExecuteSkill
+-- hands class modules a per-cast view whose shapeParams (range / width /
+-- innerRadius) are scaled by (1 + AoESize/100), so this function and the
+-- GetTargetsInCircle(pos, skill.shapeParams.range) call sites resolve the
+-- scaled shape. Don't scale again here. Ad-hoc tables (Hunter's pierce
+-- arrow line) are hit-detection helpers, not AoE, and stay unscaled.
 function BaseSkills.GetTargetsInShape(origin, direction, skill)
 	return BaseSkills.AttackShapes.GetTargetsInShape(skill.shape, {
 		origin = origin,

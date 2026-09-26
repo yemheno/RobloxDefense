@@ -149,7 +149,18 @@ if NetworkManager then
 			local char = localPlayer.Character
 			local humanoid = char and char:FindFirstChildOfClass("Humanoid")
 			if humanoid and savedWalkSpeed then
-				humanoid.WalkSpeed = savedWalkSpeed
+				-- §AGX/STATS: timed MovementSpeed buffs keep ticking during the
+				-- pause, so the saved value can be stale. When alive and not
+				-- cast-locked, restore the server's current X13 speed (active
+				-- Stun/Slow first, then BaseWalkSpeed); otherwise the old value.
+				local restore = savedWalkSpeed
+				if localPlayer:GetAttribute("DeathState") == "Alive"
+					and not humanoid:GetAttribute("CastMoveLock") then
+					restore = humanoid:GetAttribute("MoveFxSpeed")
+						or humanoid:GetAttribute("BaseWalkSpeed")
+						or savedWalkSpeed
+				end
+				humanoid.WalkSpeed = restore
 				savedWalkSpeed = nil
 			end
 		end

@@ -25,7 +25,8 @@
                           warns at boot if a config sets it.
 
     Use path (§AGX/X10b): client fires "UseConsumable" (InventoryUI Use
-    button) → ConsumableEffects validates (owns it, alive, not paused,
+    button) → ConsumableEffects validates (§AGX/STATS: combat places only —
+    Lobby / SocialPlaza reply "Use this in a run."; owns it, alive, not paused,
     per-item cooldown, effect precheck) → InventoryManager.ConsumeItem →
     effect applied. RespecToken is not used from the inventory: the
     talent / stat respec panels consume it (TalentManager /
@@ -134,13 +135,12 @@ ConsumableConfig.Consumables = {
         icon     = "💨",
         maxStack = 10,
         cooldown = 45,
-        effect   = { type = "BuffStat", stat = "MovementSpeedPercent", value = 10, duration = 30 },
-        -- §AGX/X10b: stays off. No player move-speed modifier exists: the
-        -- MovementSpeed bonus stat has no reader, and WalkSpeed is owned
-        -- by DeathSystem / MobAI / SkillManager (X13 BaseWalkSpeed
-        -- contract). Needs a speed hook there before this can ship.
-        usable   = false,
-        disabledReason = "needs a player move-speed modifier system",
+        -- §AGX/STATS: MovementSpeed now has a reader (DeathSystem folds it
+        -- into the X13 BaseWalkSpeed; StatCaps.MovementSpeed max 30), so the
+        -- elixir is a plain timed BonusStats buff. Was the non-existent
+        -- "MovementSpeedPercent" key, which BuffStat would have rejected.
+        effect   = { type = "BuffStat", stat = "MovementSpeed", value = 10, duration = 30 },
+        usable   = true,
     },
     {
         id       = "fortune_incense",

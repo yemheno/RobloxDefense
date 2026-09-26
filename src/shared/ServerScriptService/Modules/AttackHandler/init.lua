@@ -41,6 +41,16 @@ local MAX_PENDING_TICKETS = 5       -- max tickets kept per player
 local TICKET_EXPIRY_SECONDS = 5     -- tickets older than this are pruned
 local MELEE_AOE_HIT_CAP = 20       -- generous cap for melee / AoE splash shapes
 
+-- §AGX/STATS: AttackSpeed changes (buff expiry, Eagle Eye, Frenzy) are
+-- pushed to the client via CombatConfig, which takes a round trip. For
+-- this long after a change the server accepts the FASTER of the old and
+-- new cadence, so a buff ending mid-swing doesn't get legit attacks
+-- rejected. A debuff can be outrun for at most this window.
+local ATTACK_SPEED_GRACE = 1.0
+local graceCooldown = {}    -- [player] = pre-change cooldown (seconds)
+local graceUntil    = {}    -- [player] = os.clock() deadline
+local resendQueued  = {}    -- [player] = true while a stats resend is deferred
+
 -- Range buffers (studs) to account for network latency and character movement
 local MELEE_RANGE_BUFFER = 10
 local RANGED_RANGE_BUFFER = 15
@@ -155,18 +165,48 @@ function AttackHandler.Init()
 		AttackHandler.RemovePlayer(player)
 	end)
 
+	-- §AGX/STATS: AttackSpeed moved → open the transition grace and resend
+	-- the client its pacing (coalesced: several sources changing in one
+	-- frame send one CombatConfig).
+	local bmMod = Modules:FindFirstChild("BonusManager")
+	local okBM, BonusManager = false, nil
+	if bmMod then okBM, BonusManager = pcall(require, bmMod) end
+	if okBM and BonusManager and BonusManager.OnChanged then
+		BonusManager.OnChanged(function(player, changed)
+			local oldPct = changed.AttackSpeed
+			if oldPct == nil or not player.Parent then return end
+			local oldSpeed = ClassManager.GetAttackSpeed(player, oldPct)
+			if oldSpeed and oldSpeed > 0 then
+				graceCooldown[player] = 1 / oldSpeed
+				graceUntil[player] = os.clock() + ATTACK_SPEED_GRACE
+			end
+			if resendQueued[player] then return end
+			resendQueued[player] = true
+			task.defer(function()
+				resendQueued[player] = nil
+				if player.Parent and player.Character then
+					AttackHandler.SendCombatConfig(player, "stats")
+				end
+			end)
+		end)
+	end
+
 end
 
 -- ═══════════════════════════════════════════════════════════
 -- COMBAT CONFIG (sent to client on spawn / class change)
 -- ═══════════════════════════════════════════════════════════
 
-function AttackHandler.SendCombatConfig(player)
+-- §AGX/STATS: `reason = "stats"` marks a mid-combat pacing update (the
+-- AttackSpeed bonus changed); the client keeps its attack timer instead
+-- of resetting it, so the resend can't grant a free early swing.
+function AttackHandler.SendCombatConfig(player, reason)
 	local isRanged = ClassManager.IsRanged(player)
 	local config = {
 		isRanged   = isRanged,
 		attackSpeed = ClassManager.GetAttackSpeed(player),
 		animationId = ClassManager.GetBasicAttackAnimation(player),
+		reason      = reason,
 	}
 
 	if isRanged then
@@ -381,7 +421,9 @@ function AttackHandler.HandleHitReport(player, data)
 	ticket.hitsUsed = ticket.hitsUsed + 1
 
 	-- Apply damage (server-authoritative — no client-controlled multiplier)
-	DamageHandler.DamageMob(target, player, {})
+	-- §AGX/X11: the swing's attackId lets every target of one cleave /
+	-- pierce share the Spell Rhythm bonus (KeystoneRules.OutgoingHit).
+	DamageHandler.DamageMob(target, player, { basicAttackId = attackId })
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -412,6 +454,18 @@ function AttackHandler.CheckCooldown(player)
 	local now = os.clock()
 	local cooldown = AttackHandler.GetCooldown(player)
 
+	-- §AGX/STATS: transition grace (see ATTACK_SPEED_GRACE).
+	local gUntil = graceUntil[player]
+	if gUntil then
+		if now < gUntil then
+			local prev = graceCooldown[player]
+			if prev and prev < cooldown then cooldown = prev end
+		else
+			graceUntil[player] = nil
+			graceCooldown[player] = nil
+		end
+	end
+
 	if playerCooldowns[player] and (now - playerCooldowns[player]) < cooldown then
 		return false
 	end
@@ -426,6 +480,9 @@ end
 
 function AttackHandler.RemovePlayer(player)
 	playerCooldowns[player] = nil
+	graceCooldown[player] = nil  -- §AGX/STATS
+	graceUntil[player] = nil
+	resendQueued[player] = nil
 	pendingAttacks[player] = nil
 	lastAttackId[player] = nil
 	-- §T2/Z5: tear down the per-player connections.

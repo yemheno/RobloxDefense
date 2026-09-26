@@ -1226,7 +1226,7 @@ Currently **disabled** (PerSecond=0, Delay=5s).
 | mana_crystal_large | **120** | Merits | 5 |
 | power_scroll | **150** | Merits | 5 |
 | iron_skin_potion | **150** | Merits | 5 |
-| swiftness_elixir *(off, see §23)* | 100 | Merits | 3 |
+| swiftness_elixir | 100 | Merits | 3 |
 | fortune_incense | **10** | Essence | 8 |
 | crit_oil | **120** | Merits | 5 |
 | respec_scroll | **25** | Essence | 10 |
@@ -2180,7 +2180,7 @@ Pablo: *"You can create some random character at the beginning, but the second c
 
 | Tab | Always sold (`staple = true`) | Rotation pool | Slots | Period |
 |---|---|---|---|---|
-| Consumables | `health_potion`, `health_potion_large`, `mana_crystal`, `mana_crystal_large`, `respec_scroll` | `health_elixir`, `power_scroll`, `iron_skin_potion`, `fortune_incense`, `crit_oil` (`swiftness_elixir` joins when it becomes usable, X10) | **3 of 5** | **6 h** (00/06/12/18 UTC) |
+| Consumables | `health_potion`, `health_potion_large`, `mana_crystal`, `mana_crystal_large`, `respec_scroll` | `health_elixir`, `power_scroll`, `iron_skin_potion`, `fortune_incense`, `crit_oil`, `swiftness_elixir` (live since §AGX/STATS) | **3 of 6** | **6 h** (00/06/12/18 UTC) |
 | Cosmetics | none | all 7 | **4 of 7** | **24 h** (00:00 UTC) |
 | Premium (Robux) | all | none | — | never |
 

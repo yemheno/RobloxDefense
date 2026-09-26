@@ -15,6 +15,10 @@ local ClassManager = nil
 local SkillRegistry = nil
 local BonusManager = nil
 local PlayerDataManager = nil
+-- §AGX/STATS: stat readers resolved once in Init (Audit_4.7 §5.4) —
+-- CooldownReduction, CastTimeReduction and AoESize are read per cast.
+local getTotalStat = function(_player, _stat) return 0 end
+local capStat = function(_stat, v) return v end
 
 -- Skill execution helpers (set during Init — these used to live in SkillManager/SkillExecutor.lua)
 local BaseSkills = nil
@@ -23,6 +27,79 @@ local SkillEffects = nil
 -- §AGX/X7: Horde vote-pause check, bound in Init from AttackHandler so the
 -- rule lives in one place. Default is "never paused" until Init runs.
 local isWorldPaused = function(_player) return false end
+
+-- §AGX/STATS: ReadyGate, lazy (§5.3). SetupPlayer runs on PlayerAdded,
+-- before the client's SkillCooldownUpdate listener exists (§5.5).
+local _ReadyGate
+local function getReadyGate()
+	if _ReadyGate ~= nil then return _ReadyGate or nil end
+	local mod = Modules:FindFirstChild("ReadyGate")
+	local ok, result = false, nil
+	if mod then ok, result = pcall(require, mod) end
+	_ReadyGate = (ok and result) or false
+	return _ReadyGate or nil
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- §AGX/STATS: CAST-TIME STAT READERS
+-- ═══════════════════════════════════════════════════════════
+
+-- Capped percent of a derived stat (base + primary scaling + data.Bonus).
+local function cappedStat(player, statName)
+	return capStat(statName, getTotalStat(player, statName) or 0)
+end
+
+--- CooldownReduction % (StatCaps 40) applied to a skill cooldown.
+function SkillManager.GetEffectiveCooldown(player, duration)
+	local cdr = cappedStat(player, "CooldownReduction")
+	if cdr > 0 then return duration * (1 - cdr / 100) end
+	return duration
+end
+
+--- CastTimeReduction % (StatCaps 40) applied to a skill's cast time.
+function SkillManager.GetEffectiveCastTime(player, castTime)
+	local ctr = cappedStat(player, "CastTimeReduction")
+	if ctr > 0 then return castTime * (1 - ctr / 100) end
+	return castTime
+end
+
+-- AoESize: skills execute with a per-cast view whose shapeParams are
+-- scaled by (1 + AoESize/100). BaseSkills.GetTargetsInShape and the
+-- GetTargetsInCircle(skill.shapeParams.range) call sites then resolve the
+-- bigger shape with no class-module change, and the SkillActivated /
+-- SkillCastStarted payloads carry the same numbers to the client visuals.
+-- Scaled views are cached per (skill, whole-percent), so steady-state casts
+-- allocate nothing. `angle` and cast distance (`maxRange`) are not sizes.
+local AOE_SCALED_KEYS = { range = true, width = true, innerRadius = true, radius = true, length = true }
+local aoeViews = setmetatable({}, { __mode = "k" })  -- [skill] = { [pct] = view }
+
+local function withAoESize(player, skill)
+	if type(skill.shapeParams) ~= "table" then return skill end
+	local data = PlayerDataManager.GetData(player)
+	local raw = data and data.Bonus and data.Bonus.AoESize or 0
+	local pct = math.floor(capStat("AoESize", raw) + 0.5)
+	if pct == 0 then return skill end
+
+	local perSkill = aoeViews[skill]
+	if not perSkill then
+		perSkill = {}
+		aoeViews[skill] = perSkill
+	end
+	local view = perSkill[pct]
+	if view then return view end
+
+	local mult = 1 + pct / 100
+	view = table.clone(skill)
+	local params = table.clone(skill.shapeParams)
+	for key, value in pairs(params) do
+		if AOE_SCALED_KEYS[key] and type(value) == "number" then
+			params[key] = value * mult
+		end
+	end
+	view.shapeParams = params
+	perSkill[pct] = view
+	return view
+end
 
 -- Player tracking
 local playerCooldowns = {}    -- [player] = { [skillId] = endTime }
@@ -41,6 +118,10 @@ function SkillManager.Init()
 	ClassManager = require(Modules:WaitForChild("ClassManager"))
 	SkillRegistry = require(Modules:WaitForChild("SkillRegistry"))
 	PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
+	-- §AGX/STATS: cache the function refs (see the declarations above).
+	if PlayerDataManager.GetTotalStat then getTotalStat = PlayerDataManager.GetTotalStat end
+	local DataConfig = require(Modules:WaitForChild("PlayerDataConfig"))
+	if DataConfig.CapStat then capStat = DataConfig.CapStat end
 
 	-- Optional: BonusManager (source-separated bonus aggregation)
 	local bmMod = Modules:FindFirstChild("BonusManager")
@@ -168,11 +249,19 @@ function SkillManager.SetupPlayer(player)
 		end
 	end
 
-	NetworkManager.FireClient(player, "SkillCooldownUpdate", {
+	-- §AGX/STATS: PlayerAdded push → ReadyGate (Audit_4.7 §5.5); a plain
+	-- FireClient here raced the client's listener and was dropped.
+	local payload = {
 		skills = classSkills,
 		costs = costs,
 		cooldowns = {},
-	})
+	}
+	local rg = getReadyGate()
+	if rg then
+		rg.FireClient(player, "SkillCooldownUpdate", payload)
+	else
+		NetworkManager.FireClient(player, "SkillCooldownUpdate", payload)
+	end
 end
 
 function SkillManager.RemovePlayer(player)
@@ -185,7 +274,10 @@ end
 -- CASTING SYSTEM
 -- ═══════════════════════════════════════════════════════════
 
-function SkillManager.StartCasting(player, skill, inputData)
+-- §AGX/STATS: `castTime` is the CastTimeReduction-adjusted duration
+-- (ExecuteSkill computes it); falls back to the skill's own value.
+function SkillManager.StartCasting(player, skill, inputData, castTime)
+	castTime = castTime or skill.castTime
 	local character = player.Character
 	if not character then return false end
 
@@ -208,7 +300,7 @@ function SkillManager.StartCasting(player, skill, inputData)
 		skillId = skill.id,
 		skill = skill,
 		inputData = inputData,
-		endTime = os.clock() + skill.castTime,
+		endTime = os.clock() + castTime,
 		originalWalkSpeed = originalWalkSpeed,
 	}
 
@@ -224,7 +316,7 @@ function SkillManager.StartCasting(player, skill, inputData)
 	-- Notify client
 	NetworkManager.FireClient(player, "SkillCastStarted", {
 		skillId = skill.id,
-		castTime = skill.castTime,
+		castTime = castTime,  -- §AGX/STATS: reduced; drives the client cast bar
 		skillData = skill,
 	})
 
@@ -266,7 +358,10 @@ function SkillManager.CompleteCasting(player, castData)
 	if humanoid and skill.lockMovement then
 		-- §AGX/X13: honour a mob Stun/Slow still active on the player.
 		humanoid:SetAttribute("CastMoveLock", nil)
-		humanoid.WalkSpeed = humanoid:GetAttribute("MoveFxSpeed") or castData.originalWalkSpeed
+		-- §AGX/STATS: current BaseWalkSpeed — a MovementSpeed change during
+		-- the cast re-derived it; castData's copy is from cast start.
+		humanoid.WalkSpeed = humanoid:GetAttribute("MoveFxSpeed")
+			or humanoid:GetAttribute("BaseWalkSpeed") or castData.originalWalkSpeed
 	end
 
 	-- Clear casting state
@@ -281,6 +376,7 @@ function SkillManager.CompleteCasting(player, castData)
 	})
 
 	-- Execute the skill effect
+	if StatsManager and StatsManager.KeystoneRules then StatsManager.KeystoneRules.OnSkillCast(player) end -- §AGX/X11: Spell Rhythm
 	SkillRegistry.ExecuteSkill(player, skill, castData.inputData)
 end
 
@@ -302,7 +398,10 @@ function SkillManager.InterruptCasting(player, reason)
 	if humanoid and skill.lockMovement then
 		-- §AGX/X13: honour a mob Stun/Slow still active on the player.
 		humanoid:SetAttribute("CastMoveLock", nil)
-		humanoid.WalkSpeed = humanoid:GetAttribute("MoveFxSpeed") or castData.originalWalkSpeed
+		-- §AGX/STATS: current BaseWalkSpeed — a MovementSpeed change during
+		-- the cast re-derived it; castData's copy is from cast start.
+		humanoid.WalkSpeed = humanoid:GetAttribute("MoveFxSpeed")
+			or humanoid:GetAttribute("BaseWalkSpeed") or castData.originalWalkSpeed
 	end
 
 	-- Refund resource
@@ -481,6 +580,9 @@ function SkillManager.TryUseSkill(player, skillId, inputData)
 end
 
 function SkillManager.ExecuteSkill(player, skill, inputData)
+	-- §AGX/STATS: AoESize-scaled view of the skill for this cast.
+	skill = withAoESize(player, skill)
+
 	-- Deduct resource
 	if skill.usesAllResource then
 		-- Ultimate: consume ALL current resource and pass amount to skill
@@ -498,7 +600,9 @@ function SkillManager.ExecuteSkill(player, skill, inputData)
 	-- Check if skill has cast time
 	if skill.castTime and skill.castTime > 0 then
 		-- Start casting (skill executes after cast time)
-		return SkillManager.StartCasting(player, skill, inputData)
+		-- §AGX/STATS: CastTimeReduction shortens the wind-up.
+		return SkillManager.StartCasting(player, skill, inputData,
+			SkillManager.GetEffectiveCastTime(player, skill.castTime))
 	else
 		-- Instant skill - execute immediately
 		NetworkManager.FireClient(player, "SkillActivated", {
@@ -506,6 +610,7 @@ function SkillManager.ExecuteSkill(player, skill, inputData)
 			skillData = skill,
 		})
 
+		if StatsManager and StatsManager.KeystoneRules then StatsManager.KeystoneRules.OnSkillCast(player) end -- §AGX/X11: Spell Rhythm
 		return SkillRegistry.ExecuteSkill(player, skill, inputData)
 	end
 end
@@ -538,6 +643,9 @@ function SkillManager.StartCooldown(player, skillId, duration)
 		playerCooldowns[player] = {}
 	end
 
+	-- §AGX/STATS: CooldownReduction (capped 40%). The reduced duration is
+	-- what the client's cooldown sweep receives, so display == server.
+	duration = SkillManager.GetEffectiveCooldown(player, duration)
 	playerCooldowns[player][skillId] = os.clock() + duration
 
 	NetworkManager.FireClient(player, "SkillCooldownUpdate", {

@@ -79,6 +79,17 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Force an `error()` in `RollBonuses` (or refinement's `GetCeilingBelow`): the exact Merits/Essence come back with a "refunded" toast. An error after the item changed: no refund, a "reopen the menu" toast, and the next attempt still works.
 - [ ] Several Horde votes back to back: one countdown each, and the world unpauses ~5 s after each resolve.
 
+## 2g. Bonus stats now live (`§AGX/STATS`)
+- [ ] Hunter spawns at WalkSpeed ≈ 17.3 (innate +8%). Swiftness Elixir in a run → ≈ 18.9, back to 17.3 after 30 s with a "wore off" line.
+- [ ] With the elixir on: Ogre Roar then GroundSlam → slowed, stunned, then back to the buffed base (not 8). Knockdown/revive and death/respawn restore the current base.
+- [ ] Lobby / SocialPlaza: using any consumable says "Use this in a run." and spends nothing.
+- [ ] Horde: pause during the elixir, let it expire, unpause → base speed.
+- [ ] Attack-speed buff/debuff (Frenzy card, Eagle Eye): cadence changes at once; spam-click across the change → no rejected attacks, no free early swing.
+- [ ] CDR gear: the cooldown sweep matches the server (pressing at 0 casts). 60% raw behaves as 40%.
+- [ ] Cast-time reduction shortens the cast bar and the effect lands when it ends. AoESize gear hits mobs just outside the base radius.
+- [ ] High Status Resistance: GroundSlam stun is visibly shorter (the client stun visual may still run the full length).
+- [ ] Arrive in a run with a party-picked class: switching class right away is allowed (no 30 s cooldown).
+
 ## 3. Teleports and matchmaking (`X4`, `X6`, `X14`, `X15`)
 Studio can't test reserved servers. Check what it can:
 - [ ] Kick, leave, join or disband during the countdown → "Party changed — queue cancelled".

@@ -151,7 +151,23 @@ PlayerDataConfig.StatCaps = {
 	Lifesteal = { min = 0, max = 25 },
 	AttackSpeed = { min = -50, max = 75 },
 	StatusResistance = { min = 0, max = 60 },
+	-- §AGX/STATS: caps for the two bonus stats that had a reader added
+	-- without one. Negative floors keep trade-off talents (Unyielding
+	-- Advance -8% move, Bastion -10%) meaningful but bounded.
+	MovementSpeed = { min = -50, max = 30 },
+	AoESize = { min = -50, max = 50 },
 }
+
+-- §AGX/STATS: one clamp for every StatCaps reader (percent-point stats).
+-- NaN / non-number → 0; stats without a cap pass through unchanged.
+function PlayerDataConfig.CapStat(statName, value)
+	if type(value) ~= "number" or value ~= value then return 0 end
+	local cap = PlayerDataConfig.StatCaps[statName]
+	if not cap then return value end
+	if cap.min and value < cap.min then return cap.min end
+	if cap.max and value > cap.max then return cap.max end
+	return value
+end
 
 --============================================
 -- ACCOUNT DEFAULTS (shared across all classes)
