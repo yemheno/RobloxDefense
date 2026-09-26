@@ -1,5 +1,7 @@
 # RobloxDefense UI: information architecture and interaction consistency audit (ui-ux)
 
+> **Frozen as-built spec (2026-09-26).** Kept at this path because code comments cite it. Live summary: [ARCHITECTURE § UI](../ARCHITECTURE.md#ui); its design questions are answered in [DESIGN_DECISIONS § UI](../DESIGN_DECISIONS.md#ui-decisions).
+
 This is a static, read-only pass. I made no edits. Paths are relative to `/home/user/RobloxDefense/`, and all `src/.../UI` paths sit under `StarterPlayer/StarterPlayerScripts/UI`.
 
 **Severity labels.** These map to the project's four levels:

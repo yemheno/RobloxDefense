@@ -1,5 +1,7 @@
 # ui-visual: visual system audit and proposal (RobloxDefense, static, read-only)
 
+> **Frozen as-built spec (2026-09-26).** Kept at this path because code comments cite it. Live summary: [ARCHITECTURE § UI](../ARCHITECTURE.md#ui); its design questions are answered in [DESIGN_DECISIONS § UI](../DESIGN_DECISIONS.md#ui-decisions).
+
 Path shorthands: `S/` = `src/shared/StarterPlayer/StarterPlayerScripts/UI/`, `L/` = `src/lobby/StarterPlayer/StarterPlayerScripts/UI/`, `CB/` = `src/centralboss/StarterPlayer/StarterPlayerScripts/UI/`, `M/` = `src/shared/StarterPlayer/StarterPlayerScripts/Modules/`.
 Severity tags: [BUG] = 🚨, [SPAGHETTI] = 🟡, [MINOR] = 🟢, [DESIGN-Q] = ❓.
 Phone figures use an 844x390 dp landscape viewport (iPhone 14 class). They are arithmetic from the code, not Studio measurements. Anything marked "verify" needs the Studio Device Emulator.

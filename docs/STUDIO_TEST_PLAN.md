@@ -13,6 +13,11 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Lobby, LaneDefense, HordeMode, CentralBoss and SocialPlaza each start with **no red errors** in Output, especially `CRITICAL: required module … Init() failed` (`§AGX/X16`, boot now fails hard) and any `attempt to call a nil value`.
 - [ ] Exactly one of each of `NotifyGui`, `PanelGui`, `TooltipLayer` in PlayerGui, and no `LootNotificationGui`.
 
+## 0b. Admin surface is Studio-only (`§AGX/SEC`)
+- [ ] In Studio: TestingUI shows for you and the admin commands work (`addXP`, `bossHP`).
+- [ ] `DebugCommand("addXP", "abc")` (non-numeric) is rejected with a warning; nothing changes.
+- [ ] *Published:* no TestingUI, and `ReplicatedStorage.Events` has no `AdminAction`, `AdminActionResult`, `DebugCommand` or `ModifySystemStat`.
+
 ## 1. Save safety: the highest stakes (`§AGX/X2`, `X3`, `X3r*`, `X8`)
 - [ ] Lobby → queue → the Lane run ends → back in the Lobby: Merits/XP earned in the run are present.
 - [ ] Rejoin the same server quickly after leaving: no data rollback. If a "still being saved" kick appears, it should only happen when the previous save is truly stuck.
@@ -69,6 +74,7 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Spell Rhythm: cast 1–3 skills then basic attack → +8/16/24% damage and "Rhythm N/3" feed lines; nothing after 5 s; every mob in one cleave gets it; the next swing doesn't.
 - [ ] Party auras (Team Test, 2 players): owner takes Patron Saint → the member within 30 studs gains half the owner's talent XP/Merit/Healing bonuses; out of range, death, respec or owner leaving clears it within ~1 s; the owner never gets their own.
 - [ ] Bonus talent points: reach level 50 → Veteran toast shows "+1 Talent Point" and the talent total goes up; rejoin gives no second point.
+- [ ] Bonus talent point back-pay (`§AGX/BTP`): an account that already had `boss_slayer` T2 before this build gets its +1 on login, once.
 - [ ] Equip gear with a crit-damage roll: Stats shows crit damage like 1.5 → 1.6, not pinned at 1.8.
 
 ## 2f. Review fixes (`§AGX/D-FIX`)
@@ -93,8 +99,10 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 ## 2h. Second review fixes (`§AGX/D-FIX`, `§AGX/D-FIX2`)
 - [ ] **Paid wipe revive** now actually charges and revives (a getter always returned nil before 7f3e503). Knockdown clears mob slows. Run difficulty follows TeleportData (Nightmare → 1 free revive).
 - [ ] **Healer gear:** a Life Steward weapon with Healing Power / Healing % rolls raises heal numbers; the Equipment screen shows "Healing Power", not a raw key.
+- [ ] **Status Resistance rolls:** gear with a `statusResistance` roll shortens GroundSlam's stun (Stats shows the higher value).
 - [ ] **Resource pools:** a Life Energy / Aether / Killer Instinct / Determination roll or talent (e.g. Focused Aether +5) raises the bar's max at once; unequipping lowers it and caps the current value. Check that the bigger bars (up to ~140) feel right.
 - [ ] Horde: wipe just before the 45 s vote → no vote or pause over the DEFEAT screen; Victory → no vote either.
+- [ ] Horde: get the party wiped **while a vote is open** → the vote closes, Defeat shows, the world doesn't stay paused, and the return to the Lobby still fires.
 - [ ] Slow DataStore: the gate waits ("Waiting for party (0/1)…") until data loads; then mobs spawn at the right level and the party class is applied.
 - [ ] Lobby, 2 players in one party, one with Patron Saint: the other gets the aura within 30 studs; players outside a party get nothing.
 - [ ] Keystone penalties now apply: Overwhelm −6% attack speed, Unyielding Advance −8% move speed, Last Bastion's low-Determination slow, Eagle Eye −30% attack speed.
@@ -177,18 +185,18 @@ Studio can't test reserved servers. Check what it can:
   - Locked in combat places.
   - The gamepad radial shows all 7 Character entries.
 - [ ] Respec costs 25 Essence everywhere (UI labels too); the respec scroll costs 25.
-- [ ] **Consumables** (`§AGX/X10b`): the 8 potions/buffs are buyable; Swiftness shows "Coming soon".
+- [ ] **Consumables** (`§AGX/X10b`, `§AGX/STATS`): all 9 potions/buffs are buyable when in stock, Swiftness Elixir included (no "Coming soon").
   - Inventory → Use on a potion: refused at full HP (count unchanged); when hurt, HP rises over ~2 s and the count drops. Reuse within the cooldown says "on cooldown".
   - Mana Crystal refused when the bar is full. Power Scroll / Crit Oil refresh their timer instead of stacking, and the Feed says "… wore off." after 45 s.
   - Fortune Incense: kill Merits +15%. Ironskin: Armor +~12%, no compounding on refresh.
   - Knocked down or Horde paused: Use refused.
   - Leave mid-buff and rejoin: the buff is gone, and MeritBonus in Stats is back to gear/talent only.
 - [ ] **Shop rotation** (`§AGX/D7`):
-  - Consumables: 5 staples + exactly 3 buffs; Cosmetics: 4 of 7; Premium: no rotation bar. "Rotates in hh:mm" matches the next 00/06/12/18 UTC (Consumables) or 00:00 UTC (Cosmetics).
+  - Consumables: 5 staples + exactly 3 of the 6 rotating buffs (Swiftness is in the pool); Cosmetics: 4 of 7; Premium: no rotation bar. "Rotates in hh:mm" matches the next 00/06/12/18 UTC (Consumables) or 00:00 UTC (Cosmetics).
   - Rejoin or change server: same stock. A second account sees different stock.
   - Refresh: first tap "Confirm (5 ◆)", second tap re-rolls (≥1 new item, timer unchanged). Then 10, then 20; after 3, "No refreshes left". Survives rejoin.
   - Fire `ShopRefresh` twice in one frame with the same payload: charged once. Buying an item not in your stock is rejected with no charge.
-  - NPC shops still sell potions and crystals; Swiftness still can't be bought.
+  - NPC shops still sell potions and crystals. Swiftness can be bought from the global shop when it's in your rotation.
 - [ ] Daily login: the calendar day advances per claim, and the spree resets after a missed day (`X47`).
 - [ ] Leaderboards: Highest Wave and Play Time have entries after a run (`X27`).
 - [ ] **Premium:** everything is disabled until you create the real products. When you do, follow `docs/BALANCE_NUMBERS.md` §48 and the steps in commit `1c6e333`.

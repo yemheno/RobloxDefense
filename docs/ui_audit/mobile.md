@@ -1,5 +1,7 @@
 # UI-MOBILE: mobile layout audit and specification (RobloxDefense)
 
+> **Frozen as-built spec (2026-09-26).** Kept at this path because code comments cite it. Live summary: [ARCHITECTURE § UI](../ARCHITECTURE.md#ui); its design questions are answered in [DESIGN_DECISIONS § UI](../DESIGN_DECISIONS.md#ui-decisions).
+
 This was a read-only static pass. No repo files were edited. All paths are relative to `/home/user/RobloxDefense`.
 Severity tags (plain text instead of emoji): **[BUG]** = bug, **[SPAG]** = spaghetti, **[MINOR]** = minor, **[DQ]** = design question for Pablo.
 Items that overlap known work are tagged *(known: ...)*. None of this touches the Audit_4.7 §10 decided-against list.

@@ -1,5 +1,7 @@
 # Shell (P3) + HUD regions (P5): opinion and build spec
 
+> **Frozen as-built spec (2026-09-26).** Kept at this path because code comments cite it. Live summary: [ARCHITECTURE § UI](../ARCHITECTURE.md#ui); its design questions are answered in [DESIGN_DECISIONS § UI](../DESIGN_DECISIONS.md#ui-decisions).
+
 ArchitectUX, 2026-09-26. Read-only static pass on HEAD `cdba264`. Paths are relative to `/home/user/RobloxDefense/`.
 - `S/` = `src/shared/StarterPlayer/StarterPlayerScripts/`
 - `L/` = `src/lobby/StarterPlayer/StarterPlayerScripts/`

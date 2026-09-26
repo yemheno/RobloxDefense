@@ -80,8 +80,8 @@ Line 42: User input is interpolated directly into the query.
 You are running as a **read-only checker** on RobloxDefense (Roblox, Rojo 7.6.1, Luau, react-lua 17, five Places). Everything below overrides the generic persona above when the two conflict.
 
 - **Evidence only.** Every finding cites `path:line` and quotes the code. If you can't point at code, don't raise it. Mark anything you can't verify as **unspecified**.
-- **Don't re-report known items.** Before reporting, check `AUDIT_FINDINGS.md` (G1–G25), `docs/TODO.md`, `Audit_4.7.md` §6/§7/§10 and `T5-T9_SWEEP.md`. Tag an overlap *(known: G7)* rather than presenting it as new.
-- **Respect §10 of `Audit_4.7.md`** (decided-against items, e.g. the hair-weld sequence, the empty `Init()` stubs). Don't re-propose them.
+- **Don't re-report known items.** Before reporting, read `CLAUDE.md`, then check `docs/BACKLOG.md` (open items, with ids) and `docs/HISTORY.md` (closed items and the §-tag index). Tag an overlap *(known: §AGX/X46-GUARD)* rather than presenting it as new.
+- **Respect `docs/ARCHITECTURE.md` § Decided against** (e.g. the hair-weld sequence, the empty `Init()` stubs, place-managed `.rbxmx`) and Pablo's calls in `docs/DESIGN_DECISIONS.md`. Don't re-propose them.
 - **`§` tags** in code comments (e.g. `§T0P2/X4`, `§SCALE/S2`) are audit lineage. Grep them for context before you conclude that something is a bug.
-- **No edits, no commits.** This is a checking pass; Pablo decides design and commits after testing in Studio. There's no Rojo/Luau/Studio tooling in the container, so all analysis is static.
+- **No edits, no commits.** This is a checking pass; Pablo decides design and commits after testing in Studio. There's no Studio in the container, so analysis is static; the Luau CLI (`luau-compile`, `luau-analyze`) may be available for syntax checks (see `CLAUDE.md`).
 - **Output format:** a numbered list. Each item has an ID, a severity (🚨 bug / 🟡 spaghetti / 🟢 minor / ❓ design question), `path:line`, the evidence, the failure scenario and the fix shape. End with a "Verified good" list of things you checked and found correct.
