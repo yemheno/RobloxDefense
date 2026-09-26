@@ -3,9 +3,10 @@
     Centralized shop catalog for the 3-tab shop system.
 
     ⚠ §DISC/D7 (Pablo): the CURRENT ITEMS ARE PLACEHOLDERS ("random
-    nonsense objects") — don't balance-audit them. The real shop pass
-    (curated catalog + rotation timer + paid Essence refresh) is
-    tracked in docs/TODO.md §DISC/D7.
+    nonsense objects") — don't balance-audit them. §AGX/D7: the rotation
+    timer + paid Essence refresh are built (ShopConfig.Rotation /
+    .Refresh below, ShopManager, BALANCE_NUMBERS §D7); the curated
+    catalog is still to come.
 
     Three tabs:
       Cosmetics    — headgear & outfits (unlocks, not consumable)
@@ -21,6 +22,10 @@
       enabled    boolean? false = hidden from shop UIs and rejected server-side.
                           §AGX/X10: Consumables derive it from
                           ConsumableConfig.IsUsable at load (see bottom).
+      staple     boolean? §AGX/D7: true = always sold. In a rotating tab
+                          (ShopConfig.Rotation) every other enabled entry
+                          is in the rotation pool and only sold while it
+                          is in that player's current rotation.
 
     The shop pulls display info (name, desc, icon, rarity) from the
     underlying config module, not duplicated here.
@@ -96,12 +101,14 @@ ShopConfig.Consumables = {
     -- Cheap healing
     {
         itemId   = "health_potion",
+        staple   = true,  -- §AGX/D7: always sold (never rotates)
         tab      = "Consumables",
         price    = 25,
         currency = "Merits",
     },
     {
         itemId   = "health_potion_large",
+        staple   = true,  -- §AGX/D7: always sold (never rotates)
         tab      = "Consumables",
         price    = 100,
         currency = "Merits",
@@ -117,12 +124,14 @@ ShopConfig.Consumables = {
     -- Resource restorers
     {
         itemId   = "mana_crystal",
+        staple   = true,  -- §AGX/D7: always sold (never rotates)
         tab      = "Consumables",
         price    = 30,
         currency = "Merits",
     },
     {
         itemId   = "mana_crystal_large",
+        staple   = true,  -- §AGX/D7: always sold (never rotates)
         tab      = "Consumables",
         price    = 120,
         currency = "Merits",
@@ -174,6 +183,7 @@ ShopConfig.Consumables = {
     -- RESPEC_COSTS).
     {
         itemId   = "respec_scroll",
+        staple   = true,  -- §AGX/D7: always sold (never rotates)
         tab      = "Consumables",
         price    = 25,
         currency = "Essence",
@@ -288,6 +298,48 @@ ShopConfig.Premium = {
 }
 
 -- ═══════════════════════════════════════════════════════════
+-- ROTATION + PAID REFRESH  (§DISC/D7, BALANCE_NUMBERS §D7)
+-- ═══════════════════════════════════════════════════════════
+-- §AGX/D7: each rotating tab shows its `staple` entries plus `slots`
+-- entries drawn from the rest of the tab (enabled only). The draw is a
+-- deterministic per-player seed of (UserId, tab, period index, reroll
+-- nonce), computed on the SERVER (ShopManager), so it needs no DataStore
+-- write per rotation and rejoining / server-hopping can't re-roll it.
+-- Periods are aligned to the UTC epoch (86400 and 21600 divide a day), so
+-- every server agrees on when a tab rotates.
+-- Premium never rotates: a countdown on a Robux listing is fake urgency
+-- (X40 / economy-designer "no dark patterns").
+ShopConfig.Rotation = {
+    Cosmetics   = { slots = 4, period = 86400 },  -- daily, 00:00 UTC
+    Consumables = { slots = 3, period = 21600 },  -- every 6 h, 00/06/12/18 UTC
+}
+
+-- §AGX/D7: "Refresh now" re-rolls ONE tab's current rotation for Essence.
+-- Pure sink (Essence is never sold for Robux, X40 / §48). The counter is
+-- per UTC day and shared by all tabs; the nth refresh of the day costs
+-- prices[n]; after `dailyCap` the button locks until 00:00 UTC.
+ShopConfig.Refresh = {
+    prices       = { 5, 10, 20 },  -- Essence (≈1.25k / 2.5k / 5k Merits at 1 E = 250 M)
+    dailyCap     = 3,
+    minRemaining = 300,  -- s: refused when the free rotation is < 5 min away
+    grace        = 10,   -- s: a buy of last period's item is still honoured this long after the flip
+}
+
+--- §AGX/D7: rotation settings for a tab, or nil (tab never rotates).
+function ShopConfig.GetRotation(tab)
+    return ShopConfig.Rotation[tab]
+end
+
+--- §AGX/D7: the Essence price of the next refresh given how many were
+--- already used today, or nil when the daily cap is reached.
+function ShopConfig.GetRefreshPrice(usedToday)
+    local n = (tonumber(usedToday) or 0) + 1
+    if n > ShopConfig.Refresh.dailyCap then return nil end
+    local prices = ShopConfig.Refresh.prices
+    return prices[n] or prices[#prices]
+end
+
+-- ═══════════════════════════════════════════════════════════
 -- HELPERS
 -- ═══════════════════════════════════════════════════════════
 
@@ -338,6 +390,21 @@ end
 --- §AGX/X10/X34: server-side purchasability of a shop entry.
 function ShopConfig.IsEnabled(entry)
     return entry ~= nil and entry.enabled ~= false
+end
+
+--- §AGX/D7: the rotation pool of a tab, in catalog order (deterministic):
+--- enabled, non-staple entries. Empty for a tab that does not rotate.
+--- Must stay below the `enabled` derivation above so X10 hides unusable
+--- consumables from the pool too (they never take a slot).
+function ShopConfig.GetRotationPool(tab)
+    local pool = {}
+    if not ShopConfig.Rotation[tab] then return pool end
+    for _, entry in ipairs(ShopConfig.GetTab(tab)) do
+        if not entry.staple and ShopConfig.IsEnabled(entry) then
+            table.insert(pool, entry)
+        end
+    end
+    return pool
 end
 
 return ShopConfig

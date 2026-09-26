@@ -249,6 +249,13 @@ PlayerDataConfig.AccountDefaults = {
 	-- Account.RespecTokens are cleaned up by the deprecated-key sweep
 	-- in PlayerDataManager/init.lua.
 
+	-- §AGX/D7: shop rotation. Paid refreshes used on UTC day `day` (cap: ShopConfig.Refresh) + per-tab re-roll count for the current period. The rotation itself is derived from (UserId, period), never stored.
+	ShopRotation = {
+		day       = 0,            -- floor(os.time() / 86400) of the last paid refresh
+		refreshes = 0,            -- paid refreshes used that day
+		rolls     = {},           -- { [tab] = { period = periodIndex, n = reRolls } }
+	},
+
 	-- Daily login tracking
 	DailyLogin = {
 		lastClaimDate = 0,        -- os.time() of last daily claim

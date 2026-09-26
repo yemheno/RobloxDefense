@@ -140,6 +140,12 @@ Studio can't test reserved servers. Check what it can:
   - Fortune Incense: kill Merits +15%. Ironskin: Armor +~12%, no compounding on refresh.
   - Knocked down or Horde paused: Use refused.
   - Leave mid-buff and rejoin: the buff is gone, and MeritBonus in Stats is back to gear/talent only.
+- [ ] **Shop rotation** (`§AGX/D7`):
+  - Consumables: 5 staples + exactly 3 buffs; Cosmetics: 4 of 7; Premium: no rotation bar. "Rotates in hh:mm" matches the next 00/06/12/18 UTC (Consumables) or 00:00 UTC (Cosmetics).
+  - Rejoin or change server: same stock. A second account sees different stock.
+  - Refresh: first tap "Confirm (5 ◆)", second tap re-rolls (≥1 new item, timer unchanged). Then 10, then 20; after 3, "No refreshes left". Survives rejoin.
+  - Fire `ShopRefresh` twice in one frame with the same payload: charged once. Buying an item not in your stock is rejected with no charge.
+  - NPC shops still sell potions and crystals; Swiftness still can't be bought.
 - [ ] Daily login: the calendar day advances per claim, and the spree resets after a missed day (`X47`).
 - [ ] Leaderboards: Highest Wave and Play Time have entries after a run (`X27`).
 - [ ] **Premium:** everything is disabled until you create the real products. When you do, follow `docs/BALANCE_NUMBERS.md` §48 and the steps in commit `1c6e333`.

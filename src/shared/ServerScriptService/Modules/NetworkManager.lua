@@ -240,6 +240,7 @@ local EVENTS = {
     ShopResult             = { rateLimit = nil,  readyGated = false },
     ShopPurchase           = { rateLimit = nil,  readyGated = false },
     GetShopState           = { rateLimit = nil,  readyGated = false },
+    ShopRefresh            = { rateLimit = 2,    readyGated = false }, -- §AGX/D7: paid shop rotation refresh (reply: NotifyService.Inline)
 
     -- ── Inventory ────────────────────────────────────────────────────
     GetInventory           = { rateLimit = nil,  readyGated = false },

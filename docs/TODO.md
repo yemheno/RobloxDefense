@@ -773,7 +773,7 @@ tags in code).
   now backs BOTH PartyManager invite checks and TeleportManager launch
   validation — future gates (achievement locks §D5, class comp,
   per-difficulty floors) get added there once and apply at both gates.
-- `[P1/Content]` **§DISC/D7 — Shop rotation + paid refresh.** Build:
+- ✅ *(Done 2026-09-26, §AGX/D7: per-player deterministic rotation (Consumables 3 of 5 buffs / 6 h, Cosmetics 4 of 7 / 24 h, staples + Premium fixed); Refresh 5/10/20 Essence, cap 3/day. See BALANCE_NUMBERS §D7.)* **§DISC/D7 — Shop rotation + paid refresh.** Build:
   rotation timer (server-side, per catalog section), plus a manual
   "refresh now" costing Essence. ShopConfig is currently a static
   catalog — needs rotation state + UI. Content pass.

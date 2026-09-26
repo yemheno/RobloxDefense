@@ -2171,5 +2171,70 @@ Pablo: *"You can create some random character at the beginning, but the second c
 
 ---
 
+## D7. Shop Rotation + Paid Refresh
+
+**Source:** `ShopConfig.lua` (`Rotation`, `Refresh`, `staple`), `ShopManager.lua` (§AGX/D7), `GlobalShopUI.lua` · *Added 2026-09-26 (§DISC/D7). Not yet tested in Studio. The catalog items themselves are still placeholders.*
+
+### What rotates
+
+| Tab | Always sold (`staple = true`) | Rotation pool | Slots | Period |
+|---|---|---|---|---|
+| Consumables | `health_potion`, `health_potion_large`, `mana_crystal`, `mana_crystal_large`, `respec_scroll` | `health_elixir`, `power_scroll`, `iron_skin_potion`, `fortune_incense`, `crit_oil` (`swiftness_elixir` joins when it becomes usable, X10) | **3 of 5** | **6 h** (00/06/12/18 UTC) |
+| Cosmetics | none | all 7 | **4 of 7** | **24 h** (00:00 UTC) |
+| Premium (Robux) | all | none | — | never |
+
+Why:
+- **Staples never rotate.** Basic healing and mana are needed to play, and the respec scroll is the Essence fallback of §47. Rotating them would gate play or talent experiments behind luck. The two NPC shops sell only staples, so they are unaffected.
+- **Buffs and cosmetics rotate.** They are optional, so rotating them gives variety and a reason to check back without blocking anyone. 3 of 5 means each buff is up about 60% of the time, and any buff is at most one 6 h period away most of the time. 4 of 7 cosmetics means each one is shown on about 57% of days.
+- **Premium never rotates.** A countdown on a Robux listing is fake urgency, a dark pattern. It also keeps §48 simple.
+- Unusable (`enabled = false`) items are left out of the pool, so they never take a slot.
+
+### Per-player, deterministic, no DataStore writes
+
+Each rotation is drawn on the server from the seed `(UserId, tab, periodIndex, roll)`:
+- `periodIndex = floor(os.time() / period)`. It is aligned to the UTC epoch, so every server agrees.
+- `roll` is the number of paid refreshes of that tab in that period.
+- The draw is an FNV-1a hash feeding an xorshift32 partial Fisher-Yates. It is pure Luau, not `Random.new`, so an engine update can't change it.
+
+Properties:
+- Nothing is written when a tab rotates.
+- Rejoining or hopping servers can't re-roll the stock.
+- The client never computes the draw. The server sends the list in `ShopState.rotation`.
+
+The server refuses to sell a rotating item that is not in that player's current rotation. There is a **10 s grace** after a flip, for a click on the last second. This check covers the global shop and the NPC `ShopHandler` route.
+
+Headless check with the luau CLI over 20,000 draws: each consumable is up 59.6–60.7% of the time (target 60%), and each cosmetic 56.6–57.7% (target 57.1%).
+
+### Paid refresh ("Refresh now")
+
+| Rule | Value |
+|---|---|
+| Scope | Re-rolls **one** tab's current rotation. The timer does not move. |
+| Price (nth refresh of the UTC day, shared across tabs) | **5 / 10 / 20 Essence** (≈1,250 / 2,500 / 5,000 Merits at 1 E = 250 M, §33) |
+| Daily cap | **3** (max **35 Essence/day**). Resets at 00:00 UTC. |
+| Guaranteed change | A re-roll always shows at least one item the previous roll did not. It redraws up to 8 times, and in the 20k-draw test no identical re-roll happened. |
+| Refused without charge | Less than 5 min left before the free rotation; the tab doesn't rotate; the pool is not bigger than the slot count; daily cap reached; not enough Essence; **stale request** (the `{period, roll}` the client saw no longer matches, which makes a double-click or replay idempotent) |
+| Order | Per-player lock (the shared purchase lock, same pattern as EquipmentRefinement `attemptLock`). Then `SpendEssence`, and its result is checked. Then the counter is written in one assignment, with a refund if that write throws. |
+| Storage | `Account.ShopRotation = { day, refreshes, rolls = { [tab] = { period, n } } }`. It saves in the same blob as the Essence it cost, so a lost save loses both. |
+| Robux | **Never.** Essence is earn-only (X40, §48), so this is a pure Essence sink. |
+
+### Sink sizing
+
+Essence income (mid-game): Lane Normal ≈ 15 E/run (§33 anchor). Daily login ≈ 7.6 E/day from the calendar plus ≈ 1.2 from the spree (§34).
+
+| Archetype | Runs/day | ≈ Essence/day | Max refresh spend | Share if maxed |
+|---|---|---|---|---|
+| Casual | 1 | ≈ 24 | 5 (one refresh is the realistic max) | ≈ 21% |
+| Core | 4 | ≈ 69 | 35 | ≈ 51% |
+| Grinder | 10 | ≈ 159 | 35 | ≈ 22% |
+
+The refresh is an optional convenience sink, and the free rotation is always the no-cost path. Doubling the price and capping at 3 bounds the worst day at 35 E, about 1.4 of a respec (25 E).
+
+Value check: hunting a specific 25 E cosmetic costs about 9 E of refreshes on average (first refresh 5 E, then a 43% chance of needing the 10 E one), a ≈37% impatience premium. Refreshing only to find a Merit-priced buff (≤150 M) is poor value on purpose, because the free 6 h rotation covers that.
+
+Telemetry to add later: refreshes per player-day and the share of players who refresh at least once. The target is >20% participation, or the prices get revisited.
+
+---
+
 *Last updated from full codebase audit, March 2026. All values verified against source files.*
 *Respec economy section added in the April 2026 overnight respec-fragment update.*

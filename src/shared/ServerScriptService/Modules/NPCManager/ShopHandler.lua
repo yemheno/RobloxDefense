@@ -32,11 +32,24 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 function ShopHandler.OnInteract(player, def)
+	-- §AGX/D7: list only what this player can buy right now. Today's NPC
+	-- stock is all staples (health_potion / mana_crystal, always sold), so
+	-- nothing is filtered; a rotating item listed on an NPC later shows only
+	-- while it is in the player's rotation. ShopManager re-checks on Buy.
+	local items = {}
+	for _, item in ipairs(def.shopItems or {}) do
+		local inStock = true
+		if _ShopManager and _ShopManager.IsInRotation then
+			inStock = _ShopManager.IsInRotation(player, item.itemId)
+		end
+		if inStock then table.insert(items, item) end
+	end
+
 	-- Send shop data to client
 	local shopData = {
 		npcId    = def.id,
 		npcName  = def.name,
-		items    = def.shopItems or {},
+		items    = items,
 	}
 
 	NetworkManager.FireClient(player, "NPCShopOpen", shopData)

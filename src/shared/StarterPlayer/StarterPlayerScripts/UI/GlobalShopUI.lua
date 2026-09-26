@@ -10,6 +10,14 @@
     palette, the hand-rolled backdrop/close/tabs/cards and formatCurrency are
     gone (CurrencyPill formats).
 
+    §AGX/D7: rotating tabs (ShopConfig.Rotation) show their staples plus the
+    player's current server-drawn rotation (ShopState.rotation[tab]). A bar
+    under the tabs shows "Rotates in hh:mm" and a SECONDARY "Refresh (N ◆)"
+    button (D1: orange stays for a view's one primary CTA; this is a sink,
+    not the main action). Refresh = two taps (arm, then confirm within 4 s)
+    and fires "ShopRefresh" { tab, period, roll } via useRequest; the server
+    answers with NotifyService.Inline and a fresh ShopState.
+
     Props:
       onClose  function  — callback to close the panel
 ]]
@@ -36,6 +44,7 @@ local Button       = require(Common:WaitForChild("Button"))
 local Card         = require(Common:WaitForChild("Card"))
 local Tabs         = require(Common:WaitForChild("Tabs"))
 local CurrencyPill = require(Common:WaitForChild("CurrencyPill"))
+local useRequest   = require(Common:WaitForChild("useRequest"))  -- §AGX/D7
 
 -- CosmeticConfig lives in ServerScriptService/Modules (server-only) and is not
 -- accessible from the client. The shop uses ShopConfig display info as fallback.
@@ -63,6 +72,16 @@ local TAB_ITEMS = {
 local PILL_CURRENCY = { Merits = "merits", Essence = "essence" }
 
 local STATUS_H = 24   -- design px
+local ROT_H    = Theme.Metrics.button.sm   -- §AGX/D7: rotation bar height (44)
+local REFRESH_W = 168     -- §AGX/D7: design px, fits "Confirm (20 ◆)"
+local CONFIRM_WINDOW = 4  -- §AGX/D7: s the armed "Confirm" stays up
+local REFETCH_GAP = 5     -- §AGX/D7: s between expiry re-requests
+
+-- §AGX/D7: seconds → "hh:mm" (minutes rounded up, so 59 s reads 00:01).
+local function formatHHMM(seconds)
+	local mins = math.max(0, math.ceil(seconds / 60))
+	return string.format("%02d:%02d", math.floor(mins / 60), mins % 60)
+end
 
 -- ═══════════════════════════════════════════════════════════
 -- ITEM CARD  (§AGX/UI-P6: Card + CurrencyPill + Button)
@@ -162,13 +181,70 @@ local function GlobalShopUI(props)
 		merits = 0, essence = 0, level = 1, owned = {},
 	})
 
+	-- §AGX/D7: rotation countdown. `receivedAt` = os.clock() when the last
+	-- ShopState landed (endsIn is relative to it); `now` ticks once a second.
+	local receivedAt, setReceivedAt = React.useState(os.clock())
+	local now, setNow = React.useState(os.clock())
+	local armedTab, setArmedTab = React.useState(nil)   -- two-tap confirm
+	local stateRef = React.useRef(nil)
+	stateRef.current = { state = shopState, receivedAt = receivedAt }
+
+	-- §AGX/D7: paid refresh feedback (NotifyService.Inline "ShopRefresh",
+	-- the InventoryUI Use pattern).
+	local refreshReq = useRequest("ShopRefresh", {
+		pendingText = "Refreshing…",
+		holdFor     = 3,
+	})
+
+	React.useEffect(function()
+		local alive = true
+		local lastRefetch = 0
+		local thread = task.spawn(function()
+			while alive do
+				task.wait(1)
+				if not alive then break end
+				local t = os.clock()
+				setNow(t)
+				-- A tab's rotation ran out: ask for the new one (throttled).
+				local cur = stateRef.current
+				local rot = cur and cur.state and cur.state.rotation
+				if type(rot) == "table" and (t - lastRefetch) >= REFETCH_GAP then
+					for _, info in pairs(rot) do
+						if type(info) == "table" and type(info.endsIn) == "number"
+							and info.endsIn - (t - cur.receivedAt) <= -1 then
+							lastRefetch = t
+							NetworkManager.FireServer("GetShopState")
+							break
+						end
+					end
+				end
+			end
+		end)
+		return function()
+			alive = false
+			if coroutine.status(thread) == "suspended" then task.cancel(thread) end
+		end
+	end, {})
+
+	-- §AGX/D7: disarm the confirm tap after CONFIRM_WINDOW.
+	React.useEffect(function()
+		if not armedTab then return nil end
+		local thread = task.delay(CONFIRM_WINDOW, function() setArmedTab(nil) end)
+		return function()
+			if coroutine.status(thread) == "suspended" then task.cancel(thread) end
+		end
+	end, { armedTab })
+
 	-- Request state on mount
 	React.useEffect(function()
 		local mounted = true
 		NetworkManager.FireServer("GetShopState")
 
 		local conn1 = NetworkManager.OnServerEvent("ShopState", function(data)
-			if data then setShopState(data) end
+			if data and mounted then
+				setShopState(data)
+				setReceivedAt(os.clock())  -- §AGX/D7: countdown base
+			end
 		end)
 
 		local conn2 = NetworkManager.OnServerEvent("ShopResult", function(data)
@@ -206,10 +282,21 @@ local function GlobalShopUI(props)
 	local balances = { merits = shopState.merits or 0, essence = shopState.essence or 0 }
 	local owned = shopState.owned or {}
 
+	-- §AGX/D7: rotating tab → staples + this player's current rotation.
+	-- Until the first ShopState arrives only staples show (server decides).
+	local rotCfg  = ShopConfig.GetRotation(activeTab)
+	local rotInfo = rotCfg and shopState.rotation and shopState.rotation[activeTab] or nil
+	local inRotation = {}
+	if rotInfo and type(rotInfo.items) == "table" then
+		for _, id in ipairs(rotInfo.items) do inRotation[id] = true end
+	end
+
 	local entries = ShopConfig.GetTab(activeTab)
 	for i, entry in ipairs(entries) do
 		-- Skip items that have been explicitly disabled in ShopConfig
 		if entry.enabled == false then continue end
+		-- §AGX/D7: skip rotating items that aren't in stock for this player.
+		if rotCfg and not entry.staple and not inRotation[entry.itemId] then continue end
 
 		-- Resolve display info
 		local itemInfo = nil
@@ -255,8 +342,85 @@ local function GlobalShopUI(props)
 	end
 
 	local tabsH = Theme.Metrics.tabs.height
-	local listTop = tabsH + (status and STATUS_H + SP.xs or 0)
 	local z = Theme.Z.window
+
+	-- §AGX/D7: rotation bar ("Rotates in hh:mm" + secondary Refresh).
+	local rotBar = nil
+	local rotH = 0
+	if rotCfg then
+		rotH = ROT_H + SP.xs
+		local refresh   = shopState.refresh or {}
+		local price     = refresh.price           -- nil = daily cap reached
+		local remaining = rotInfo and (rotInfo.endsIn - (now - receivedAt)) or nil
+		local armed     = armedTab == activeTab
+		local essence   = shopState.essence or 0
+
+		local label, variant, tip = "Refresh", "secondary", nil
+		if not rotInfo then
+			variant = "locked"
+		elseif not price then
+			label, variant, tip = "No refreshes left", "locked", "Resets at 00:00 UTC."
+		elseif not rotInfo.canRefresh then
+			label, variant, tip = "Refresh", "locked", "Nothing to refresh, or the free rotation is under 5 min away."
+		elseif essence < price then
+			label, variant, tip = "Refresh (" .. price .. " " .. Theme.Glyphs.essence .. ")", "locked", "Not enough Essence."
+		else
+			label = (armed and "Confirm (" or "Refresh (") .. price .. " " .. Theme.Glyphs.essence .. ")"
+			tip   = (refresh.used or 0) .. " / " .. (refresh.cap or 0) .. " refreshes used today. New stock now; the timer doesn't reset."
+		end
+
+		rotBar = e("Frame", {
+			Name                   = "RotationBar",
+			Position               = UDim2.fromOffset(0, tabsH + SP.xs),
+			Size                   = UDim2.new(1, 0, 0, ROT_H),
+			BackgroundTransparency = 1,
+			ZIndex                 = z + 2,
+		}, {
+			padding = e("UIPadding", {
+				PaddingLeft = UDim.new(0, SP.lg), PaddingRight = UDim.new(0, SP.lg),
+			}),
+			timer = e(Text, {
+				style  = "label",
+				color  = "text.secondary",
+				text   = remaining and ("Rotates in " .. formatHHMM(remaining)) or "Loading stock…",
+				size   = UDim2.new(1, -(REFRESH_W + SP.md), 1, 0),
+				zIndex = z + 2,
+			}),
+			refresh = e(Button, {
+				name        = "RefreshBtn",
+				variant     = variant,
+				size        = "sm",
+				width       = REFRESH_W,
+				label       = label,
+				tooltip     = tip,
+				loading     = refreshReq.pending,
+				anchorPoint = Vector2.new(1, 0),
+				position    = UDim2.fromScale(1, 0),
+				zIndex      = z + 2,
+				onActivated = function()
+					if variant ~= "secondary" or not rotInfo then return end
+					if not armed then
+						setArmedTab(activeTab)
+						return
+					end
+					setArmedTab(nil)
+					refreshReq.send({
+						tab    = activeTab,
+						period = rotInfo.period,
+						roll   = rotInfo.roll,
+					})
+				end,
+			}),
+		})
+	end
+
+	-- Status: the refresh request's inline answer wins while it's showing.
+	local shownStatus = status
+	if refreshReq.state ~= "idle" and refreshReq.message then
+		shownStatus = { text = refreshReq.message, ok = refreshReq.state ~= "err", pending = refreshReq.pending }
+	end
+	local statusTop = tabsH + rotH + SP.xs
+	local listTop = tabsH + rotH + (shownStatus and STATUS_H + SP.xs or 0)
 
 	-- ── Render ─────────────────────────────────────────────
 	return e(AppWindow, {
@@ -287,16 +451,21 @@ local function GlobalShopUI(props)
 			tabs = e(Tabs, {
 				items    = TAB_ITEMS,
 				value    = activeTab,
-				onChange = setActiveTab,
+				onChange = function(id)
+					setArmedTab(nil)  -- §AGX/D7: never carry an armed refresh across tabs
+					setActiveTab(id)
+				end,
 				zIndex   = z + 2,
 			}),
+			rotation = rotBar,  -- §AGX/D7
 			-- Status message
-			status = status and e(Text, {
+			status = shownStatus and e(Text, {
 				style    = "label",
-				text     = status.text,
-				color    = status.ok and "state.success" or "state.danger",
+				text     = shownStatus.text,
+				color    = shownStatus.pending and "text.secondary"
+					or (shownStatus.ok and "state.success" or "state.danger"),
 				align    = "center",
-				position = UDim2.fromOffset(0, tabsH + SP.xs),
+				position = UDim2.fromOffset(0, statusTop),
 				size     = UDim2.new(1, 0, 0, STATUS_H),
 				zIndex   = z + 2,
 			}) or nil,
