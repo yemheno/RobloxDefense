@@ -6,7 +6,28 @@ local Players          = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
 
 local DATA_STORE_KEY = "PlayerData_v1"
-local AUTO_SAVE_INTERVAL = 300  -- seconds between auto-saves
+-- §AGX/X3: was 300. Auto-save is also the session-lock heartbeat, so it
+-- has to beat LOCK_STALE_AFTER below — at 300 s a live server's lock
+-- would look stale for 3.5 min of every 5 and could be stolen.
+local AUTO_SAVE_INTERVAL = 60  -- seconds between auto-saves
+
+-- §AGX/X3: session lock. The saved record carries
+-- `_session = { jobId, placeId, time }` next to Account/Classes/… (there
+-- is no wrapper table and adding one would break every existing save).
+-- It is stripped on load and never lives in the in-memory data.
+local LOCK_STALE_AFTER   = 90   -- s; a lock older than this is dead and may be stolen
+local LOCK_WAIT_MAX      = 20   -- s; how long a load waits on another live server's lock
+local FINAL_SAVE_RETRIES = 3    -- §AGX/X3: extra attempts for the lock-releasing leave save
+
+-- §AGX/X2: number of SavePlayer / lock-release calls currently running.
+-- BindToClose waits for this to reach 0 so leave-saves that started
+-- just before shutdown (ReturnTeleporter empties a server in one go)
+-- aren't cut off.
+local pendingSaves = 0
+
+-- §AGX/X2: set once BindToClose starts. Stops the auto-save loop so it
+-- can't re-take a lock the shutdown save just released.
+local shuttingDown = false
 
 -- §PDM-D7: gate the noisy save-entry print behind a flag. Was useful to
 -- diagnose the §PERSIST1 XP-loss bug; now it's just log spam in production.
@@ -32,6 +53,12 @@ local savingPlayers = {}
 -- this set before writing. Cleared when the player sets up again.
 local wipedPlayers = {}
 
+-- §AGX/X3: keys whose lock-releasing final save has started. A plain
+-- (auto/force) save that lands after it would re-take the lock and make
+-- the player's next server wait until it goes stale, so the UpdateAsync
+-- transform aborts non-releasing writes for these keys. Cleared when
+-- the player sets up again.
+local releasingPlayers = {}
 -- Child systems (loaded in Init)
 local ClassSystem
 local StatSystem
@@ -108,8 +135,9 @@ function PlayerDataManager.Init()
 
 	-- Auto-save loop
 	task.spawn(function()
-		while true do
+		while not shuttingDown do  -- §AGX/X2: stop once shutdown saves begin
 			task.wait(AUTO_SAVE_INTERVAL)
+			if shuttingDown then break end
 			for _, player in ipairs(Players:GetPlayers()) do
 				PlayerDataManager.SavePlayer(player)
 			end
@@ -122,22 +150,23 @@ function PlayerDataManager.Init()
 	-- wait up to 3 s for an in-flight auto-save plus the SetAsync yield —
 	-- a full server could blow the 30 s BindToClose budget and lose the
 	-- tail of the player list. Spawn all, then wait for completion.
+	-- §AGX/X2: wait on the global pendingSaves counter instead of only the
+	-- saves spawned here, and never early-return on an empty server — the
+	-- usual case is ReturnTeleporter emptying the server, whose
+	-- PlayerRemoving leave-saves are still in flight when this runs.
+	-- §AGX/X3: these are final saves, so they release the session lock.
 	game:BindToClose(function()
-		local players = Players:GetPlayers()
-		local remaining = #players
-		if remaining == 0 then return end
-		for _, player in ipairs(players) do
-			task.spawn(function()
-				PlayerDataManager.SavePlayer(player, true)
-				remaining -= 1
-			end)
+		shuttingDown = true
+		for _, player in ipairs(Players:GetPlayers()) do
+			task.spawn(PlayerDataManager.SavePlayer, player, true, true)
 		end
+		-- 25 s cap keeps us inside Roblox's 30 s shutdown budget.
 		local deadline = os.clock() + 25
-		while remaining > 0 and os.clock() < deadline do
+		while pendingSaves > 0 and os.clock() < deadline do
 			task.wait(0.1)
 		end
-		if remaining > 0 then
-			warn("[PlayerDataManager] BindToClose deadline hit with", remaining, "save(s) unfinished")
+		if pendingSaves > 0 then
+			warn("[PlayerDataManager] BindToClose deadline hit with", pendingSaves, "save(s) unfinished")
 		end
 	end)
 
@@ -224,31 +253,113 @@ end
 
 -- Sentinel value: distinguishes "first visit (nil)" from "DataStore error".
 local LOAD_FAILED = { __loadFailed = true }
+-- §AGX/X3: another live server still holds the session lock after
+-- LOCK_WAIT_MAX (e.g. its leave-save never landed). Kicked like
+-- LOAD_FAILED, with a "try again shortly" message.
+local LOAD_LOCKED = { __loadLocked = true }
+-- §AGX/X3: the player left while we were waiting on the lock.
+local LOAD_ABANDONED = { __loadAbandoned = true }
 
 local LOAD_MAX_RETRIES = 3
 local LOAD_RETRY_DELAY = 2  -- seconds (doubles each retry)
 
+-- §AGX/X3: session-lock helpers. game.JobId is "" in Studio, which is
+-- still a consistent per-session id for this logic.
+local function NewSessionLock()
+	return { jobId = game.JobId, placeId = game.PlaceId, time = os.time() }
+end
+
+-- True when `lock` belongs to ANOTHER server and is recent enough that
+-- the server is presumed alive. Records from before §AGX/X3 have no
+-- `_session` at all and read as unlocked.
+local function IsForeignLiveLock(lock)
+	if type(lock) ~= "table" then return false end
+	if lock.jobId == game.JobId then return false end
+	local t = tonumber(lock.time) or 0
+	return (os.time() - t) < LOCK_STALE_AFTER
+end
+
 -- Load raw data from DataStore with retry.
 -- Returns the saved table on success, nil on genuine first visit,
 -- or LOAD_FAILED if all retries are exhausted.
-local function LoadRawData(userId)
+-- §AGX/X3: now an UpdateAsync that takes the session lock in the same
+-- round-trip (GetAsync couldn't). If another live server holds the lock
+-- — normally the teleport source whose leave-save hasn't landed yet —
+-- back off and retry for up to LOCK_WAIT_MAX, then return LOAD_LOCKED.
+-- A stale lock is simply overwritten (stolen). First visits write a
+-- lock-only record so a second server can't also treat them as new.
+-- The returned table has `_session` stripped; an empty table means
+-- first visit and is returned as nil.
+local function LoadRawData(userId, player)
+	local key = tostring(userId)
 	local delay = LOAD_RETRY_DELAY
-	for attempt = 1, LOAD_MAX_RETRIES do
+	local errorAttempts = 0
+	local lockDelay = 1
+	local lockDeadline = os.clock() + LOCK_WAIT_MAX
+	while true do
+		local heldBy = nil
 		local ok, result = pcall(function()
-			return LOCAL_DATASTORE:GetAsync(tostring(userId))
+			return LOCAL_DATASTORE:UpdateAsync(key, function(old)
+				heldBy = nil  -- transform can run more than once; reset per call
+				if type(old) == "table" and IsForeignLiveLock(old._session) then
+					heldBy = old._session
+					return nil  -- abort: don't touch another live server's record
+				end
+				local record = if type(old) == "table" then old else {}
+				record._session = NewSessionLock()
+				return record
+			end)
 		end)
-		if ok then
-			return result  -- nil = first visit, table = existing data
+		if ok and not heldBy then
+			if type(result) ~= "table" then return nil end
+			result._session = nil
+			if next(result) == nil then return nil end  -- lock-only record = first visit
+			return result
 		end
-		warn("[PlayerDataManager] DataStore load error (attempt "
-			.. attempt .. "/" .. LOAD_MAX_RETRIES .. ") for userId",
-			userId, ":", result)
-		if attempt < LOAD_MAX_RETRIES then
+		if ok then
+			-- Locked by another live server.
+			if os.clock() >= lockDeadline then
+				warn("[PlayerDataManager] Session lock for userId", userId,
+					"still held by job", tostring(heldBy.jobId), "after", LOCK_WAIT_MAX, "s")
+				return LOAD_LOCKED
+			end
+			task.wait(math.min(lockDelay, math.max(0, lockDeadline - os.clock())))
+			lockDelay = math.min(lockDelay * 2, 4)
+		else
+			errorAttempts += 1
+			warn("[PlayerDataManager] DataStore load error (attempt "
+				.. errorAttempts .. "/" .. LOAD_MAX_RETRIES .. ") for userId",
+				userId, ":", result)
+			if errorAttempts >= LOAD_MAX_RETRIES then
+				return LOAD_FAILED
+			end
 			task.wait(delay)
 			delay = delay * 2
 		end
+		if player and not player.Parent then
+			return LOAD_ABANDONED
+		end
 	end
-	return LOAD_FAILED
+end
+
+-- §AGX/X3: drop our lock without writing data. Used when the player
+-- leaves between the lock-taking load and SetupPlayer storing the data
+-- (the §T0P2/X3 guard) — otherwise their next server waits
+-- LOCK_WAIT_MAX on a lock nobody will release. Counted in pendingSaves.
+local function ReleaseLockOnly(key)
+	pendingSaves += 1
+	local ok, err = pcall(function()
+		LOCAL_DATASTORE:UpdateAsync(key, function(old)
+			if type(old) ~= "table" or type(old._session) ~= "table" then return nil end
+			if old._session.jobId ~= game.JobId then return nil end  -- not ours
+			old._session = nil
+			return old
+		end)
+	end)
+	pendingSaves -= 1
+	if not ok then
+		warn("[PlayerDataManager] Failed to release session lock for key", key, ":", err)
+	end
 end
 local function CreateDefaultData()
 	local data = {
@@ -292,11 +403,23 @@ function PlayerDataManager.SetupPlayer(player)
 
 	-- §T0P2/X17: a rejoin after an admin wipe starts a fresh life for
 	-- this key — lift the save tombstone.
-	wipedPlayers[tostring(player.UserId)] = nil
+	local userKey = tostring(player.UserId)
+	wipedPlayers[userKey] = nil
+
+	-- §AGX/X3: a quick rejoin to THIS server can arrive while the previous
+	-- session's leave-save is still running. Our own jobId never blocks
+	-- the lock, so wait for that save here (capped) or we'd load the
+	-- pre-save record.
+	local waitedForSave = 0
+	while savingPlayers[userKey] and waitedForSave < 10 do
+		task.wait(0.1)
+		waitedForSave += 0.1
+	end
+	releasingPlayers[userKey] = nil  -- §AGX/X3: new session for this key
 
 	-- Try loading persisted data; fall back to fresh defaults only on genuine first visit.
 	local doneDataLoad = BootProfiler.Begin("DataLoad " .. player.Name)  -- §PERF/BP
-	local rawSaved = LoadRawData(player.UserId)
+	local rawSaved = LoadRawData(player.UserId, player)
 	doneDataLoad()
 
 	-- §T0P2/X3: the player may have left while LoadRawData was yielding
@@ -304,8 +427,13 @@ function PlayerDataManager.SetupPlayer(player)
 	-- Without this guard we'd store data for a departed Player (strong
 	-- key → leaks forever) and fire dataReadyCallbacks for a ghost,
 	-- setting up downstream state whose cleanup hook already fired.
-	if not player.Parent then
+	if not player.Parent or rawSaved == LOAD_ABANDONED then
 		setupInProgress[player] = nil
+		-- §AGX/X3: the load took the session lock; hand it back so the
+		-- player's next server doesn't wait on it.
+		if rawSaved ~= LOAD_FAILED and rawSaved ~= LOAD_LOCKED and rawSaved ~= LOAD_ABANDONED then
+			task.spawn(ReleaseLockOnly, userKey)
+		end
 		return
 	end
 
@@ -314,6 +442,15 @@ function PlayerDataManager.SetupPlayer(player)
 		warn("[PlayerDataManager] CRITICAL: Cannot load data for", player.Name, "— kicking to prevent data loss.")
 		setupInProgress[player] = nil
 		player:Kick("Unable to load your saved data. Please rejoin. If this persists, contact support.")
+		return
+	end
+
+	-- §AGX/X3: another server still owns this save (its leave-save never
+	-- landed within LOCK_WAIT_MAX). Loading anyway would fork the data.
+	if rawSaved == LOAD_LOCKED then
+		warn("[PlayerDataManager] Session still locked by another server for", player.Name, "— kicking.")
+		setupInProgress[player] = nil
+		player:Kick("Your data is still being saved by another server. Please rejoin in a minute.")
 		return
 	end
 
@@ -415,7 +552,10 @@ function PlayerDataManager.RemovePlayer(player)
 	-- §PERSIST1: force save on player leaving (teleport-out, disconnect,
 	-- kick). This MUST NOT be skipped by the auto-save dedup or the
 	-- player loses XP / progression earned since the last successful save.
-	PlayerDataManager.SavePlayer(player, true)
+	-- §AGX/X3: release=true — this save hands the session lock back (the
+	-- teleport destination is waiting on it) and retries with backoff
+	-- before we drop the in-memory copy below.
+	PlayerDataManager.SavePlayer(player, true, true)
 	playerDataStore[player] = nil
 
 	-- §T0-FOLLOWUP/L3: clear the in-flight setup flag in case the player
@@ -473,7 +613,42 @@ end
 -- Force=true waits for the in-flight save to clear (max 3s), then
 -- writes the latest state. Auto-save still uses force=false for
 -- normal dedup behaviour.
-function PlayerDataManager.SavePlayer(player, force)
+-- §AGX/X3: `release` marks the player's final save (PlayerRemoving /
+-- BindToClose): it clears the session lock in the same UpdateAsync and
+-- retries FINAL_SAVE_RETRIES times with backoff. Other saves refresh
+-- the lock's timestamp (auto-save is the lock heartbeat).
+local function WriteRecord(key, data, release)
+	local abortReason = nil
+	local ok, err = pcall(function()
+		LOCAL_DATASTORE:UpdateAsync(key, function(old)
+			abortReason = nil  -- transform can run more than once; reset per call
+			-- §T0P2/X17: re-check the tombstone at write time too.
+			if wipedPlayers[key] then
+				abortReason = "wiped"
+				return nil
+			end
+			if not release and releasingPlayers[key] then
+				abortReason = "lock already released"
+				return nil
+			end
+			-- Never overwrite a record another live server owns — its
+			-- copy is newer than ours (it loaded after we lost the lock).
+			if type(old) == "table" and IsForeignLiveLock(old._session) then
+				abortReason = "locked by job " .. tostring(old._session.jobId)
+				return nil
+			end
+			-- Shallow copy so `_session` never lands in the in-memory data.
+			local record = table.clone(data)
+			record._session = if release then nil else NewSessionLock()
+			return record
+		end)
+	end)
+	if not ok then return "error", err end
+	if abortReason then return "aborted", abortReason end
+	return "ok"
+end
+
+local function SavePlayerImpl(player, force, release)
 	if DEBUG_SAVE then
 		print(string.format("[PlayerDataManager] SavePlayer ENTRY: %s force=%s",
 			tostring(player and player.Name), tostring(force == true)))
@@ -489,6 +664,13 @@ function PlayerDataManager.SavePlayer(player, force)
 	end
 
 	local key = tostring(player.UserId)
+
+	-- §AGX/X3: from here on no plain save may re-take the lock.
+	if release then
+		releasingPlayers[key] = true
+	elseif shuttingDown then
+		return  -- §AGX/X2: shutdown saves are release saves only
+	end
 
 	if force then
 		-- §PERSIST1: wait for any in-flight save (auto-save) to clear
@@ -514,16 +696,44 @@ function PlayerDataManager.SavePlayer(player, force)
 
 	savingPlayers[key] = true
 
-	local ok, err = pcall(function()
-		LOCAL_DATASTORE:SetAsync(key, data)
-	end)
+	-- §AGX/X3: UpdateAsync + session lock (was a blind SetAsync). The
+	-- final save retries with backoff; an "aborted" result is never
+	-- retried — another server owns the record, or the key was wiped.
+	local attempts = if release then 1 + FINAL_SAVE_RETRIES else 1
+	local backoff = 1
+	local status, detail
+	for attempt = 1, attempts do
+		status, detail = WriteRecord(key, data, release)
+		if status ~= "error" then break end
+		if attempt < attempts then
+			warn("[PlayerDataManager] Save error for", player.Name, "(attempt "
+				.. attempt .. "/" .. attempts .. "):", detail, "— retrying")
+			task.wait(backoff)
+			backoff *= 2
+		end
+	end
 
 	savingPlayers[key] = nil
 
-	if not ok then
-		warn("[PlayerDataManager] Failed to save data for", player.Name, ":", err)
+	if status == "error" then
+		warn("[PlayerDataManager] Failed to save data for", player.Name, ":", detail)
+	elseif status == "aborted" then
+		warn("[PlayerDataManager] Save skipped for", player.Name, "—", detail)
 	else
-		print("[PlayerDataManager] Saved data for", player.Name, force and "(force)" or "")
+		print("[PlayerDataManager] Saved data for", player.Name,
+			release and "(final)" or (force and "(force)" or ""))
+	end
+end
+
+-- §AGX/X2: every save goes through this counted wrapper so BindToClose
+-- can wait for leave-saves already in flight. pcall guarantees the
+-- decrement even if the save body throws.
+function PlayerDataManager.SavePlayer(player, force, release)
+	pendingSaves += 1
+	local ok, err = pcall(SavePlayerImpl, player, force, release)
+	pendingSaves -= 1
+	if not ok then
+		warn("[PlayerDataManager] SavePlayer errored for", tostring(player and player.Name), ":", err)
 	end
 end
 

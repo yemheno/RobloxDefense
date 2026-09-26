@@ -62,9 +62,69 @@ local function getInventoryManager()
 	return _InventoryManager
 end
 
+-- §AGX/X8: InputActions is the canonical action/default-binding table.
+-- It lives under StarterPlayerScripts (client folder) but is pure data
+-- (names + Enum values), and StarterPlayer's contents exist on the
+-- server too, so we read it from there rather than keep a second copy.
+-- `false` = looked, not found (house lazy-getter pattern, Audit §5.3).
+local _InputActions = nil
+local function getInputActions()
+	if _InputActions ~= nil then
+		return _InputActions or nil
+	end
+	local sps = game:GetService("StarterPlayer"):FindFirstChild("StarterPlayerScripts")
+	local mods = sps and sps:FindFirstChild("Modules")
+	local inputSystem = mods and mods:FindFirstChild("InputSystem")
+	local mod = inputSystem and inputSystem:FindFirstChild("InputActions")
+	if not mod then
+		_InputActions = false
+		warn("[SharedEventHandlers] InputActions not found — keybind allowlist falls back to saved actions.")
+		return nil
+	end
+	local ok, result = pcall(require, mod)
+	_InputActions = ok and type(result) == "table" and type(result.Definitions) == "table" and result or false
+	return _InputActions or nil
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- HELPERS
 -- ═══════════════════════════════════════════════════════════
+
+-- §AGX/X8: SaveKeybindings limits. The payload is stored verbatim in the
+-- DataStore profile, so an oversized or non-UTF-8 table would make every
+-- save of that profile fail.
+local KEYBIND_MAX_ENTRIES  = 64   -- total (action, platform) pairs kept
+local KEYBIND_MAX_SCANNED  = 256  -- stop walking a hostile table after this many keys
+local KEYBIND_MAX_NAME_LEN = 32
+local KEYBIND_MIN_INTERVAL = 0.5  -- s between accepted saves per player
+local KEYBIND_PLATFORMS_FALLBACK = { Keyboard = true, Gamepad = true, Touch = true }
+-- InputSystem.LoadBindings also resolves Enum.UserInputType names and
+-- SettingsUI binds mouse buttons that way, so these stay valid values.
+local KEYBIND_EXTRA_INPUT_NAMES = { MouseButton1 = true, MouseButton2 = true, MouseButton3 = true }
+local lastKeybindSave = setmetatable({}, { __mode = "k" })
+
+local function isValidKeyName(v)
+	if type(v) ~= "string" or #v == 0 or #v > KEYBIND_MAX_NAME_LEN then return false end
+	if utf8.len(v) == nil then return false end
+	if KEYBIND_EXTRA_INPUT_NAMES[v] then return true end
+	local ok, item = pcall(function() return Enum.KeyCode[v] end)
+	return ok and item ~= nil
+end
+
+-- Allowed platforms for one action: the platform keys of its defaults.
+-- Without the catalog, fall back to actions the player already has saved.
+local function allowedPlatformsFor(actionName, savedBindings)
+	local ia = getInputActions()
+	if ia then
+		local def = ia.Definitions[actionName]
+		if type(def) ~= "table" or type(def.defaults) ~= "table" then return nil end
+		return def.defaults
+	end
+	if type(savedBindings) == "table" and type(savedBindings[actionName]) == "table" then
+		return KEYBIND_PLATFORMS_FALLBACK
+	end
+	return nil
+end
 
 local DERIVED_STAT_KEYS = {
 	"Health", "Damage", "Armor", "Penetration",
@@ -269,22 +329,42 @@ function SharedEventHandlers.Register(deps)
 	-- ── SaveKeybindings ───────────────────────────────────
 	-- Client sends serialized overrides: { actionName = { Keyboard = "KeyName" } }
 	-- Server stores them in data.Account.Keybindings (sent back on next PlayerInfoUpdate).
+	-- §AGX/X8: allowlist actions (InputActions catalog) and platforms (that
+	-- action's defaults), require real KeyCode names (plus mouse buttons),
+	-- cap lengths/counts and rate-limit. Invalid entries are dropped, not
+	-- the whole table. The old type-only check let a client store any
+	-- table, including non-UTF-8 strings that break every profile save.
 	NetworkManager.OnClientEvent("SaveKeybindings", function(player, serialized)
 		if type(serialized) ~= "table" then return end
+		local now = os.clock()
+		local last = lastKeybindSave[player]
+		if last and now - last < KEYBIND_MIN_INTERVAL then return end
 		local data = DataManager.GetData(player)
 		if not data or not data.Account then return end
+		lastKeybindSave[player] = now
 
-		-- Sanitize: only keep string action-names with table values of string key-names
+		local saved = data.Account.Keybindings
 		local clean = {}
+		local kept, scanned = 0, 0
 		for actionName, platforms in pairs(serialized) do
-			if type(actionName) == "string" and type(platforms) == "table" then
-				local cleanPlatforms = {}
+			scanned += 1
+			if scanned > KEYBIND_MAX_SCANNED or kept >= KEYBIND_MAX_ENTRIES then break end
+			local allowed = type(actionName) == "string" and type(platforms) == "table"
+				and allowedPlatformsFor(actionName, saved)
+			if allowed then
+				local cleanPlatforms = nil
 				for platform, keyName in pairs(platforms) do
-					if type(platform) == "string" and type(keyName) == "string" then
+					scanned += 1
+					if scanned > KEYBIND_MAX_SCANNED or kept >= KEYBIND_MAX_ENTRIES then break end
+					if type(platform) == "string" and allowed[platform] ~= nil and isValidKeyName(keyName) then
+						cleanPlatforms = cleanPlatforms or {}
 						cleanPlatforms[platform] = keyName
+						kept += 1
 					end
 				end
-				clean[actionName] = cleanPlatforms
+				if cleanPlatforms then
+					clean[actionName] = cleanPlatforms
+				end
 			end
 		end
 		data.Account.Keybindings = clean
