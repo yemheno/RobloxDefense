@@ -49,9 +49,16 @@ local CONFIG = {
 	-- game pauses (mobs + spawns) and players get a decision window to
 	-- buy a revive-in-place; otherwise the run ends. Essence-priced for
 	-- now — Robux Developer Product later (TODO §DISC/D3b).
-	WipeGraceSeconds    = 10,
+	-- §AGX/X40 (Pablo): free wipe-revives per run by difficulty, then
+	-- ONE paid revive per run. The window is longer and the paid option
+	-- only shows to players who can already afford it (no upsell under a
+	-- countdown — Roblox: "never pressured into purchases").
+	WipeGraceSeconds    = 15,
 	WipeReviveEssence   = 25,       -- placeholder price, tune freely
 	WipeInvulnSeconds   = 3,        -- invulnerability after wipe-revive
+	FreeWipeRevives     = { Normal = 3, Hard = 2, Nightmare = 1 },
+	FreeWipeReviveDefault = 1,      -- unknown difficulty → strictest
+	PaidWipeRevivesPerRun = 1,
 }
 
 -- ═══════════════════════════════════════════════════════════
@@ -70,6 +77,11 @@ local wipeGraceActive = false
 local wipeGraceToken  = 0
 local wipeGraceEndsAt = 0
 
+-- §AGX/X40: per-run revive budget; reset when a run starts (PREPARING).
+local freeWipeRevivesUsed = 0
+local paidWipeRevivesUsed = 0
+
+
 -- Lazy sibling getters (avoid load-order coupling)
 local _CurrencyManager
 local function getCurrencyManager()
@@ -87,6 +99,40 @@ local function getMobAI()
 	local ok, result = mod and pcall(require, mod)
 	_MobAI = (ok and result) or false
 	return _MobAI or nil
+end
+
+-- §AGX/X40 helpers (after the lazy getters they use).
+local function getRunDifficulty()
+	local mod = Modules:FindFirstChild("TeleportDataReader")
+	local ok, tdr = mod and pcall(require, mod)
+	local diff = ok and tdr and tdr.GetDifficulty and tdr.GetDifficulty()
+	return type(diff) == "string" and diff or "Normal"
+end
+
+local function freeWipeRevivesLeft()
+	local cap = CONFIG.FreeWipeRevives[getRunDifficulty()] or CONFIG.FreeWipeReviveDefault
+	return math.max(0, cap - freeWipeRevivesUsed)
+end
+
+local function paidWipeRevivesLeft()
+	return math.max(0, CONFIG.PaidWipeRevivesPerRun - paidWipeRevivesUsed)
+end
+
+-- Per-player offer: free if any left; otherwise paid only for players who
+-- can afford it and only while the per-run paid budget remains.
+local function buildWipeOffer(player)
+	local free = freeWipeRevivesLeft()
+	if free > 0 then
+		return { kind = "free", freeLeft = free, seconds = math.max(0, wipeGraceEndsAt - os.clock()) }
+	end
+	if paidWipeRevivesLeft() > 0 then
+		local cm = getCurrencyManager()
+		local canPay = cm and cm.CanAffordEssence and cm.CanAffordEssence(player, CONFIG.WipeReviveEssence)
+		if canPay then
+			return { kind = "paid", cost = CONFIG.WipeReviveEssence, seconds = math.max(0, wipeGraceEndsAt - os.clock()) }
+		end
+	end
+	return { kind = "none", seconds = math.max(0, wipeGraceEndsAt - os.clock()) }
 end
 
 local function getHordePauseManager()
@@ -130,6 +176,21 @@ function DeathSystem.Init()
 	-- Listen for respawn requests
 	NetworkManager.OnClientEvent("RequestRespawn", function(player)
 		DeathSystem.HandleRespawnRequest(player)
+	end)
+
+	-- §AGX/X40: reset the per-run wipe-revive budget when a run starts.
+	-- Deferred so GameStateManager (combat places only) is loaded first.
+	task.defer(function()
+		local gsmMod = Modules:FindFirstChild("GameStateManager")
+		local ok, gsm = gsmMod and pcall(require, gsmMod)
+		if ok and gsm and gsm.OnStateChanged then
+			gsm.OnStateChanged(function(newState)
+				if newState == "Preparing" then
+					freeWipeRevivesUsed = 0
+					paidWipeRevivesUsed = 0
+				end
+			end)
+		end
 	end)
 
 	-- §DISC/D3b: wipe-revive events
@@ -442,10 +503,21 @@ function DeathSystem.CheckPartyWipe()
 	local hpm = getHordePauseManager()
 	if hpm and hpm.Pause then pcall(hpm.Pause) end
 
-	NetworkManager.FireAllClients("WipeReviveOffer", {
-		cost    = CONFIG.WipeReviveEssence,
-		seconds = CONFIG.WipeGraceSeconds,
-	})
+	-- §AGX/X40: nothing left to offer → end the run now (no dead-air
+	-- countdown with no options).
+	if freeWipeRevivesLeft() == 0 and paidWipeRevivesLeft() == 0 then
+		wipeGraceActive = false
+		if mobAI and mobAI.SetPaused then pcall(mobAI.SetPaused, false) end
+		if hpm and hpm.Resume then pcall(hpm.Resume) end
+		NetworkManager.FireAllClients("WipeReviveResolved", { revived = false })
+		gsm.TriggerDefeat()
+		return
+	end
+
+	-- §AGX/X40: per-player offer (free / paid-if-affordable / none).
+	for _, p in ipairs(all) do
+		NetworkManager.FireClient(p, "WipeReviveOffer", buildWipeOffer(p))
+	end
 
 	task.delay(CONFIG.WipeGraceSeconds, function()
 		if not wipeGraceActive or wipeGraceToken ~= myToken then return end
@@ -468,19 +540,26 @@ function DeathSystem.HandleWipeRevive(player)
 	local data = playerStates[player]
 	if not data or data.state ~= "Dead" then return end
 
-	local cm = getCurrencyManager()
-	if not cm or not cm.SpendEssence then return end
-	if not cm.SpendEssence(player, CONFIG.WipeReviveEssence) then
-		-- Personal denial — re-offer with the reason + remaining time.
-		NetworkManager.FireClient(player, "WipeReviveOffer", {
-			cost    = CONFIG.WipeReviveEssence,
-			seconds = math.max(0, wipeGraceEndsAt - os.clock()),
-			denied  = "Not enough Essence",
-		})
-		return
+	-- §AGX/X40: free revives first; the paid one only once they're gone.
+	local usedFree = false
+	if freeWipeRevivesLeft() > 0 then
+		freeWipeRevivesUsed += 1
+		usedFree = true
+	else
+		if paidWipeRevivesLeft() <= 0 then return end
+		local cm = getCurrencyManager()
+		if not cm or not cm.SpendEssence then return end
+		if not cm.SpendEssence(player, CONFIG.WipeReviveEssence) then
+			-- Personal denial — re-offer with the reason + remaining time.
+			local offer = buildWipeOffer(player)
+			offer.denied = "Not enough Essence"
+			NetworkManager.FireClient(player, "WipeReviveOffer", offer)
+			return
+		end
+		paidWipeRevivesUsed += 1
 	end
 
-	-- Payment cleared → resolve the wipe.
+	-- Revive granted → resolve the wipe.
 	wipeGraceActive = false
 	wipeGraceToken += 1  -- invalidates the pending defeat timer
 
@@ -503,8 +582,10 @@ function DeathSystem.HandleWipeRevive(player)
 	NetworkManager.FireAllClients("WipeReviveResolved", {
 		revived = true,
 		name    = player.Name,
+		free    = usedFree,
 	})
-	print("[DeathSystem]", player.Name, "bought the wipe-revive — run continues")
+	print("[DeathSystem]", player.Name, usedFree and "used a free wipe-revive" or "bought the wipe-revive",
+		"— run continues (free used", freeWipeRevivesUsed, "/ paid used", paidWipeRevivesUsed, ")")
 end
 
 -- ═══════════════════════════════════════════════════════════

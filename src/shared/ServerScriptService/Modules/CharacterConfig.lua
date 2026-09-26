@@ -45,8 +45,12 @@ CharacterConfig.BodyModelCount = 1
 CharacterConfig.HeadModelCount = 1
 CharacterConfig.HairModelCount = 1
 
+-- §AGX/X18: upper bound — math.huge passed (floor(inf) == inf) and got
+-- saved. 64 leaves plenty of room for future asset packs.
+local MAX_MODEL_SLOT = 64
+
 local function isPositiveInt(v)
-    return type(v) == "number" and v == math.floor(v) and v >= 1
+    return type(v) == "number" and v == math.floor(v) and v >= 1 and v <= MAX_MODEL_SLOT
 end
 
 function CharacterConfig.IsValidBodyModel(v) return isPositiveInt(v) end

@@ -416,10 +416,29 @@ end
 -- CHARACTER CREATION SAVE
 -- ═══════════════════════════════════════════════════════════
 
+-- §AGX/X18 (Pablo): once a character exists, changing its appearance is
+-- behind a flag — `CharacterData.appearanceChangeUnlocked`, set by
+-- CharacterManager.GrantAppearanceChange (call it from an item's use
+-- handler or a store grant). One grant = one re-customization.
+local lastCreationSubmit = {}  -- [player] = os.clock() of last accepted submit
+local CREATION_SUBMIT_COOLDOWN = 1
+
 local function SaveCharacterCreation(player, payload)
     local data = PlayerDataManager.GetData(player)
     if not data then
         warn("[CharacterManager] No data for", player.Name)
+        return
+    end
+
+    local now = os.clock()
+    if lastCreationSubmit[player] and now - lastCreationSubmit[player] < CREATION_SUBMIT_COOLDOWN then
+        return
+    end
+
+    local existing = data.Account.CharacterData
+    local isRecustomize = existing ~= nil and existing.isCreated == true
+    if isRecustomize and not existing.appearanceChangeUnlocked then
+        warn("[CharacterManager] Rejected appearance change (not unlocked) from", player.Name)
         return
     end
 
@@ -447,6 +466,10 @@ local function SaveCharacterCreation(player, payload)
     cd.preset    = bodyModel   -- §CC-LEGACY mirror; drop in v0.7
     cd.skinColor = skinColor
     cd.isCreated = true
+    if isRecustomize then
+        cd.appearanceChangeUnlocked = nil  -- §AGX/X18: grant consumed
+    end
+    lastCreationSubmit[player] = now
 
     -- §T1.4/Y12: character-created info print removed.
     -- Response to client→server submit; client already has a listener for
@@ -549,6 +572,11 @@ function CharacterManager.Init()
     NetworkManager.GetEvent("CharacterCreationComplete")
     NetworkManager.GetEvent("RequestCharacterStatus")
 
+    -- §AGX/X18: forget the submit cooldown on leave.
+    Players.PlayerRemoving:Connect(function(player)
+        lastCreationSubmit[player] = nil
+    end)
+
     -- Client submits its creation form.
     NetworkManager.OnClientEvent("CharacterCreationComplete", function(player, payload)
         if type(payload) ~= "table" then return end
@@ -641,6 +669,34 @@ end
 function CharacterManager.GetClothingColorId(player)
     local cd = CharacterManager.GetCharacterData(player)
     return cd and cd.clothingColor
+end
+
+
+-- ═══════════════════════════════════════════════════════════
+-- APPEARANCE CHANGE GRANT  (§AGX/X18)
+-- ═══════════════════════════════════════════════════════════
+
+--- Unlock ONE appearance change for a player who already created their
+--- character, and open the creation screen for them. Intended callers:
+--- a consumable's use handler, or a store/premium grant. `source` is a
+--- free-form tag for logs (e.g. "item:appearance_token", "store").
+--- Returns true if granted.
+function CharacterManager.GrantAppearanceChange(player, source)
+    local data = PlayerDataManager.GetData(player)
+    local cd = data and data.Account and data.Account.CharacterData
+    if not cd or not cd.isCreated then
+        return false  -- first-time creation is always free; nothing to unlock
+    end
+    cd.appearanceChangeUnlocked = true
+    print("[CharacterManager] Appearance change granted to", player.Name, "via", tostring(source))
+    sendCreationRequired(player)
+    return true
+end
+
+function CharacterManager.HasAppearanceChange(player)
+    local data = PlayerDataManager.GetData(player)
+    local cd = data and data.Account and data.Account.CharacterData
+    return cd ~= nil and cd.appearanceChangeUnlocked == true
 end
 
 return CharacterManager

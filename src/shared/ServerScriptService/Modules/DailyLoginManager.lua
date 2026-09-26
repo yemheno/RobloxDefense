@@ -8,8 +8,13 @@
         totalDays     = 0,    -- lifetime total login days
     }
 
-    Streak resets if the player misses a calendar day.
-    Rewards scale with streak (day 1 = small, day 7 = big, day 30 = jackpot).
+    §AGX/X47 (Pablo): TWO tracks per claim —
+      • Daily login (casual): the 30-day calendar advances by totalDays —
+        every day you claim, whenever that is. It never resets.
+      • Spree (consistent): consecutive-day streak. Missing a UTC day
+        resets it to 1. Pays a bonus that scales with the spree, plus
+        milestone bonuses at 7 / 14 / 30 days.
+    `streak` keeps its old field name and now means the spree.
 
     Network events:
       Client → Server    "ClaimDailyLogin"     → triggers DailyLoginResult
@@ -113,6 +118,26 @@ local DAILY_REWARDS = {
     [30] = { {"Merits", 10000}, {"Essence", 100}, {"RespecToken", 1} },
 }
 
+-- §AGX/X47: spree bonus on top of the calendar reward. Scales with the
+-- consecutive-day spree (capped at 30) — about +18% Merits over a full
+-- 30-day spree vs. the calendar alone, so casual players aren't far behind.
+local SPREE_MERITS_PER_DAY = 10
+local SPREE_CAP            = 30
+local SPREE_MILESTONES = {
+    [7]  = { {"Essence", 5} },
+    [14] = { {"Essence", 10} },
+    [30] = { {"Essence", 20} },
+}
+
+function DailyLoginManager.GetSpreeBonus(spree)
+    local list = { {"Merits", SPREE_MERITS_PER_DAY * math.min(spree, SPREE_CAP)} }
+    local cyc = ((spree - 1) % SPREE_CAP) + 1
+    for _, entry in ipairs(SPREE_MILESTONES[cyc] or {}) do
+        table.insert(list, entry)
+    end
+    return list
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- HELPERS
 -- ═══════════════════════════════════════════════════════════
@@ -188,14 +213,19 @@ function DailyLoginManager.CheckAndClaim(player)
     -- lastClaimDate FIRST so any concurrent CanClaim observes "claimed
     -- today". The streak/totalDays bookkeeping happens immediately after
     -- so the visible reward day matches the granted reward.
+    -- §AGX/X39: remember the old state so a failed grant can roll back.
+    local prev = { lastClaimDate = login.lastClaimDate, streak = login.streak, totalDays = login.totalDays }
+
     local wasYesterday  = isYesterday(login.lastClaimDate or 0)
     local newStreak     = wasYesterday and ((login.streak or 0) + 1) or 1
     login.streak        = newStreak
     login.totalDays     = (login.totalDays or 0) + 1
     login.lastClaimDate = now
 
-    -- Get reward for current streak day
-    local rewardList = DailyLoginManager.GetRewardForDay(newStreak)
+    -- §AGX/X47: calendar reward by total days claimed + spree bonus.
+    local rewardList = {}
+    for _, e in ipairs(DailyLoginManager.GetRewardForDay(login.totalDays)) do table.insert(rewardList, e) end
+    for _, e in ipairs(DailyLoginManager.GetSpreeBonus(newStreak)) do table.insert(rewardList, e) end
 
     -- Grant rewards (wrapped in pcall so a downstream error in
     -- AddMerits/AddEssence/AddItem doesn't release the lock without us
@@ -224,16 +254,25 @@ function DailyLoginManager.CheckAndClaim(player)
     claimLock[player] = nil
 
     if not grantOk then
-        warn("[DailyLoginManager] Reward grant failed for", player.Name, ":", grantErr)
+        -- §AGX/X39: roll the claim back so the player can retry today.
+        -- Rewards granted before the error stay granted (idempotency of
+        -- partial grants isn't worth the complexity here; the failure
+        -- mode is rare and the retry only re-grants the same day once).
+        warn("[DailyLoginManager] Reward grant failed for", player.Name, ":", grantErr, "— claim rolled back")
+        login.lastClaimDate = prev.lastClaimDate
+        login.streak        = prev.streak
+        login.totalDays     = prev.totalDays
+        return false, nil
     end
 
     print("[DailyLoginManager]", player.Name, "claimed Day", newStreak,
         "(Total:", login.totalDays .. ")", "→", table.concat(rewardSummary, ", "))
 
     return true, {
-        rewards   = rewardSummary,
-        streak    = newStreak,
-        totalDays = login.totalDays,
+        rewards     = rewardSummary,
+        streak      = newStreak,
+        totalDays   = login.totalDays,
+        calendarDay = ((login.totalDays - 1) % 30) + 1,
     }
 end
 
@@ -255,8 +294,9 @@ function DailyLoginManager.Init()
             net.FireClient(player, "DailyLoginResult", {
                 ok        = true,
                 rewards   = result.rewards,
-                streak    = result.streak,
-                totalDays = result.totalDays,
+                streak      = result.streak,
+                totalDays   = result.totalDays,
+                calendarDay = result.calendarDay,
             })
         else
             net.FireClient(player, "DailyLoginResult", {
@@ -275,10 +315,14 @@ function DailyLoginManager.Init()
         local canClaim = DailyLoginManager.CanClaim(player)
 
         -- Peek at what the next reward would be
-        local nextStreak = canClaim
-            and (isYesterday(login.lastClaimDate or 0) and (login.streak or 0) + 1 or 1)
-            or (login.streak or 0)
-        local nextReward = DailyLoginManager.GetRewardForDay(math.max(nextStreak, 1))
+        -- §AGX/X47: a missed day shows the spree already reset.
+        local claimedYesterdayOrToday = (not canClaim) or isYesterday(login.lastClaimDate or 0)
+        local currentSpree = claimedYesterdayOrToday and (login.streak or 0) or 0
+        local nextStreak = canClaim and (currentSpree + 1) or currentSpree
+        local nextTotal  = canClaim and ((login.totalDays or 0) + 1) or (login.totalDays or 0)
+        local nextReward = {}
+        for _, e in ipairs(DailyLoginManager.GetRewardForDay(math.max(nextTotal, 1))) do table.insert(nextReward, e) end
+        for _, e in ipairs(DailyLoginManager.GetSpreeBonus(math.max(nextStreak, 1))) do table.insert(nextReward, e) end
 
         -- Build summary strings for each reward
         local nextRewardSummary = {}
@@ -287,10 +331,11 @@ function DailyLoginManager.Init()
         end
 
         net.FireClient(player, "DailyLoginStatus", {
-            canClaim   = canClaim,
-            streak     = login.streak or 0,
-            totalDays  = login.totalDays or 0,
-            nextReward = nextRewardSummary,
+            canClaim    = canClaim,
+            streak      = currentSpree,
+            totalDays   = login.totalDays or 0,
+            calendarDay = (((math.max(nextTotal, 1)) - 1) % 30) + 1,
+            nextReward  = nextRewardSummary,
         })
     end)
 

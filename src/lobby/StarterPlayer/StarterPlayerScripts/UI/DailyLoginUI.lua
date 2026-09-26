@@ -62,7 +62,9 @@ local function DailyLoginUI(props)
 		end
 	end, {})
 
-	local streakText  = status and ("Day " .. tostring(status.streak) .. "  ·  Total days: " .. tostring(status.totalDays)) or "Loading…"
+	-- §AGX/X47: calendar (casual, never resets) + spree (consecutive days).
+	local streakText  = status and string.format("Calendar day %d/30  ·  Spree: %d day%s",
+		status.calendarDay or 1, status.streak or 0, (status.streak == 1) and "" or "s") or "Loading…"
 	local rewardText  = (status and status.nextReward) and table.concat(status.nextReward, ",  ") or "—"
 	local canClaim    = status and status.canClaim == true
 

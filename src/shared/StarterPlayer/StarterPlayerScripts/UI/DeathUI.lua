@@ -96,10 +96,14 @@ local function DeathUI()
 	-- Listen for server events
 	React.useEffect(function()
 		local wipeConn = NetworkManager.OnServerEvent("WipeReviveOffer", function(data)
+			-- §AGX/X40: kind = "free" | "paid" | "none" (paid only reaches
+			-- players who can already afford it).
 			setWipeOffer({
-				cost   = data.cost or 0,
-				endsAt = os.clock() + (data.seconds or 10),
-				denied = data.denied,
+				kind     = data.kind or "paid",
+				freeLeft = data.freeLeft or 0,
+				cost     = data.cost or 0,
+				endsAt   = os.clock() + (data.seconds or 10),
+				denied   = data.denied,
 			})
 		end)
 		local wipeDone = NetworkManager.OnServerEvent("WipeReviveResolved", function(_data)
@@ -309,14 +313,30 @@ local function DeathUI()
 					LayoutOrder            = 2,
 				}) or nil,
 
-				reviveBtn = wipeOffer and React.createElement("TextButton", {
+				-- §AGX/X40: neutral wording; no button when there's nothing
+				-- this player can use (they wait on the party instead).
+				waitLbl = (wipeOffer and wipeOffer.kind == "none") and React.createElement("TextLabel", {
+					Size                   = UDim2.new(1, 0, 0, 30),
+					BackgroundTransparency = 1,
+					Font                   = Enum.Font.Gotham,
+					TextScaled             = true,
+					TextColor3             = Color3.fromRGB(220, 220, 220),
+					TextStrokeTransparency = 0.5,
+					TextStrokeColor3       = Color3.new(0, 0, 0),
+					Text                   = "Waiting for your party…",
+					LayoutOrder            = 3,
+				}) or nil,
+
+				reviveBtn = (wipeOffer and wipeOffer.kind ~= "none") and React.createElement("TextButton", {
 					-- §T10/LIVE2 sizing: offset height, generous width.
 					Size                   = UDim2.new(0.8, 0, 0, 46),
 					BackgroundColor3       = Color3.fromRGB(45, 175, 95),
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
 					TextColor3             = Color3.fromRGB(255, 255, 255),
-					Text                   = "REVIVE IN PLACE  —  " .. tostring(wipeOffer.cost) .. " ♦",
+					Text                   = (wipeOffer.kind == "free")
+						and string.format("REVIVE  —  FREE (%d left)", wipeOffer.freeLeft)
+						or ("REVIVE  —  " .. tostring(wipeOffer.cost) .. " ♦"),
 					LayoutOrder            = 3,
 					AutoButtonColor        = true,
 					[React.Event.Activated] = function()
