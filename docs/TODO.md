@@ -455,48 +455,46 @@
 
 ## 14b. Memory & Lifetimes (Janitor audit)
 
-- `[P0]` **§T1.1-JAN1 — Codebase-wide leak audit** — `Modules/Janitor.lua`
-  landed in T1.1 as a per-scope lifetime primitive (handles
-  RBXScriptConnection, Instance, thread, function, and any
-  `:Destroy()` / `:Disconnect()` table). Sweep every module that
-  manages per-player or per-character lifetime and migrate. Known
-  candidates discovered so far:
-  - `CharacterManager` ✅ migrated (T1.1)
-  - `CosmeticManager/init.lua` — duplicate `PlayerAdded` +
-    for-existing-players loop, both register `CharacterAdded` conns
-    that are never explicitly disconnected. `PlayerRemoving` calls
-    `PlayerCosmeticManager.CleanupPlayer` but it's not clear whether
-    that disconnects the CharacterAdded conn.
-  - All `Modules/PlayerDataManager/PlayerStatSystem`, `PlayerLevelSystem`
-    et al. — verify each `Player*Added` / `Character*Added` /
-    `signal:Connect` has a teardown path.
-  - `MobAI`, `MobSpawner`, `MobAssetLoader` — mob lifetime conns.
-  - `DefenseLine`, `GameStateManager` — game-mode lifetime conns.
-  - `AttackHandler`, `HitTracker`, `SkillManager` — per-cast conns.
-  - `VisualEquipmentManager`, `WeaponManager`, `ArmorManager` —
-    per-attached-item conns + the watcher pattern.
-  - `VoteManager`, `HordeModeSpawner`, `HordePauseManager` —
-    per-vote / per-run conns.
-  - All five `*Main.server.lua` scripts — any inline `:Connect` they
-    own.
+- ✅ **§T1.1-JAN1 — Codebase-wide leak audit** (closed 2026-09-26,
+  27ab36e §AGX/T11-JAN). Every module that owns a per-player, per-character,
+  per-mob, per-run or per-cast lifetime was mapped and fixed with the house
+  pattern (Audit_4.7 §5.1–5.2). The five `*Main.server.lua` scripts were
+  covered by the §AGX/SEC pass (d5e052b).
 
-  Process: per-module audit, identify lifetime owner, replace ad-hoc
-  bookkeeping with a Janitor scoped to that owner. Each module gets
-  its own commit. **Track in this section** as items get closed.
+  | Module | Lifetimes | Before | After |
+  |---|---|---|---|
+  | CosmeticManager/init | per-player CharacterAdded ×2 paths, 0.5 s/0.3 s apply threads | ❌ untracked, possible double wire | ✅ Janitor + guard (PlayerRemoving) |
+  | PlayerCosmetic/MobCosmeticManager | none held (mob FX are children of the mob) | ✅ | ✅ |
+  | PlayerStat/Level/Class/BonusSystem | no connections; data table owned by PDM init | ⚠️ unbounded Humanoid wait; toast not ReadyGate-routed | ✅ 10 s bound; toast via ReadyGate |
+  | PlayerDataManager/init (frozen) | per-player CharacterAdded (Janitor), RemovePlayer | ✅ | ✅ (labelled) |
+  | MobAI | per-mob Died/AncestryChanged; pending-cast tables (15 s cleanup loop); playerSlows (weak, prunes itself); module Heartbeat | ✅ tracked by hand; re-register orphaned connections | ✅ per-mob Janitor + re-register guard |
+  | MobSpawner | per-run wave thread (hook, spawn loop, clear poll, auto-advance) | ❌ could outlive Reset | ✅ run generation |
+  | MobAssetLoader | none | ✅ | ✅ |
+  | DefenseLine (+Health/Combo/Detection/Animation) | module Heartbeat; per-breach task.delay; processed/animating mob tables | ⚠️ breach delay outlived Reset | ✅ run generation; tables cleared on breach and Reset |
+  | GameStateManager | countdown thread (cancelled); Victory/Defeat return delay | ⚠️ timer could fire in a later run | ✅ stateEpoch |
+  | AttackHandler/init | per-player CharacterAdded + DeathState (Janitor); ticket/cooldown tables | ⚠️ double wire on join race | ✅ guard + label |
+  | DamageHandler | spectator attribute connection; batch tables (flushed each window); handledMobs (weak) | ⚠️ relied on Player being destroyed | ✅ Janitor on PlayerRemoving |
+  | HitTracker | playerStats (cleared on RemovePlayer), module Heartbeat | ✅ | ✅ |
+  | SkillManager | cooldown/buff/casting tables (RemovePlayer); lock (weak) | ⚠️ re-created after leave | ✅ Parent guard |
+  | SkillEffects | mob effects (weak), player effects (cleans itself every 0.5 s), number batches | ✅ | ✅ |
+  | VisualEquipmentManager | per-player CharacterAdded + reattach thread; per-accessory weld watcher (disconnects when the clone leaves) | ✅ ad hoc; thread untracked | ✅ Janitor, thread tracked |
+  | WeaponManager (+XP/Bonus) | per-player CharacterAdded (Janitor), setup threads (end within 5 s), initializedPlayers; XP batch; reroll lock (weak) | ⚠️ double wire on join race | ✅ guard + label |
+  | ArmorManager (+Bonus) | setup thread (ends within 5 s), initializedPlayers (cleared); reroll lock (weak) | ✅ | ✅ |
+  | VoteManager | Player-keyed vote tables (PlayerRemoving); resolve thread (cancelled by Reset); post-resolve delays | ❌ delays outlived Reset | ✅ run Janitor; eligible list pruned |
+  | HordeModeSpawner | per-player markers + spawn thread; level-tick generation; module-lifetime Added/Removing connections | ✅ ad hoc | ✅ Janitor |
+  | HordePauseManager | none | ✅ | ✅ |
+  | *Main.server.lua ×5 | inline connections, Studio-only debug hooks | — | ✅ covered by §AGX/SEC (d5e052b) |
 
-  *(Partial, 2026-09-26 reconcile:)* `Janitor` is now required by
-  CharacterManager, AttackHandler, PlayerDataManager, WeaponManager and
-  the new `centralboss/.../BossEncounter.lua` (b19cec8). MobAI's per-mob
-  conns are tracked (§T3/W4). Still to do: CosmeticManager keeps the
-  duplicate pattern (`CosmeticManager/init.lua:115-132`: a PlayerAdded
-  handler plus an existing-players loop, each with an untracked
-  CharacterAdded conn), plus the rest of the list above. No §AGX commit
-  touched this item.
+  Follow-ups still open (Wave C): `SkillManager.SetupPlayer` fires
+  `SkillCooldownUpdate` without ReadyGate; the Weapon/Armor `rerollLock`
+  stays set if a reroll throws halfway.
 
-- `[📝]` **§T1.1-JAN2 — Janitor leak-detection telemetry** — once the
-  audit lands, add a debug print mode that snapshots active Janitor
-  counts per system every 60s. A monotonically growing count is the
-  smoking gun for the next leak we miss. Off by default.
+- ✅ **§T1.1-JAN2 — Janitor leak-detection telemetry** (closed, 27ab36e).
+  `Janitor.new(label)` tracks live counts per label; set
+  `game:SetAttribute("JanitorTelemetry", true)` to print a snapshot every
+  60 s (off by default). `Janitor.GetLiveCounts()` / `PrintSnapshot()` for
+  ad-hoc checks. A `*.player` count that keeps climbing after players
+  leave is a leak.
 
 ## 15. Persistence / Telemetry
 
@@ -951,8 +949,7 @@ but has not run yet (see §20 §AGX/STUDIO).
 - **Class unlock toast** (was `[P2]`, §14): `PlayerClassSystem.lua:140-151`
   fires an `AchievementUnlocked`-shaped "Class Unlocked!" toast
   (28e7fd7 §EASY/E6). Since b38a8a3 §AGX/UI-P4 it shows as a Notify banner.
-  *Nit:* it uses a direct `FireClient`, not ReadyGate, so an unlock found
-  during the login scan could arrive before the client subscribes.
+  Routed through ReadyGate since 27ab36e §AGX/T11-JAN.
 - **HitTracker.SaveLifetimeStats stub** (was `[P1]`, §15): the method and
   its session stat block are gone (§T1.4/Y5, b291a39; see
   `HitTracker.lua:277-288`). Lifetime data lives in achievement and

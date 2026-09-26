@@ -147,7 +147,7 @@ local playerJanitors = setmetatable({}, { __mode = "k" })
 local function getPlayerJanitor(player)
 	local jan = playerJanitors[player]
 	if not jan then
-		jan = Janitor.new()
+		jan = Janitor.new("PlayerDataManager.player")
 		playerJanitors[player] = jan
 	end
 	return jan

@@ -379,6 +379,7 @@ end
 -- and the wave part of Power's prestige bonus (GearRating) were always 0.
 -- The mode Mains call this on each wave/level completion (Lane: MobSpawner
 -- OnWaveCompleted; Horde: its level watcher) — no MobSpawner edit needed.
+-- `wave` is the highest wave/level COMPLETED (not merely reached; §AGX/SEC).
 -- Stores max(current, wave) for every player in the server. In-memory only;
 -- it rides the normal PlayerDataManager saves, and LeaderboardManager
 -- persists it on leave.

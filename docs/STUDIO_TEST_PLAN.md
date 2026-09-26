@@ -34,6 +34,15 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Refine pity never exceeds the chapter cap (`X9`); the Chapter 3+ refine costs are the new values (`X43`).
 - [ ] Mobs are server-owned (Settings → Network → *Are Owners Shown*). Watch server physics in a 72-mob Horde; if it's too expensive, flip `MobSpawnHelper.SERVER_OWNED_TIERS.normal = false` (`X45`).
 
+## 2b. Lifetimes and leaks (`§AGX/T11-JAN`)
+- [ ] Join, respawn and leave: cosmetics and the weapon visual re-apply **once** per respawn, not twice.
+- [ ] Run `game:SetAttribute("JanitorTelemetry", true)` in the server command bar, wait 60 s: the `*.player` live counts drop back after players leave.
+- [ ] A class unlock at login or on level-up shows its toast (it now waits for the client handshake).
+- [ ] Lane: Reset or Defeat mid-wave, then start again: one spawn loop, no stray "Wave complete", and a breach still animating at Reset does not damage the new line.
+- [ ] Horde: pause/resume, and a player leaving mid-run: their markers vanish and spawning continues for the others.
+- [ ] Supply and threat votes still close with the countdown and unpause after 5 s.
+- [ ] Victory → auto-return to the Lobby still fires.
+
 ## 3. Teleports and matchmaking (`X4`, `X6`, `X14`, `X15`)
 Studio can't test reserved servers. Check what it can:
 - [ ] Kick, leave, join or disband during the countdown → "Party changed — queue cancelled".

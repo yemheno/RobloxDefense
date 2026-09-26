@@ -699,12 +699,12 @@ ready gate, player progression measurement, etc.).
 
 *Refreshed 2026-09-26 against the code after the agency-checks session.*
 
-- **§T1.1-JAN1 — Janitor leak audit** (P0). Still the main T11 item.
+- ✅ **§T1.1-JAN1 — Janitor leak audit** closed (27ab36e); table in TODO §14b. *Previously:*
   Janitor is now used in CharacterManager, AttackHandler,
   PlayerDataManager, WeaponManager and BossEncounter. CosmeticManager is
   still first in line (`CosmeticManager/init.lua:115-132`, the duplicate
   PlayerAdded pattern). Then the rest of TODO §14b.
-- **§T1.1-JAN2** — telemetry: snapshot Janitor counts per system every
+- ✅ **§T1.1-JAN2** (closed, 27ab36e) — telemetry: snapshot Janitor counts per system every
   60s, debug-only (after JAN1).
 - **Balance audit:** the **economy** half is largely done by
   §AGX/X41-X43 (78392c0): Essence sources, one Merit:Essence anchor
@@ -945,7 +945,9 @@ ServerReady            — §T0P2/X9: now ReadyGate-ROUTED (was wrongly
 CharacterCreationRequired   — server push at first-login check (T1.1 migrated)
 WeaponEquipped              — server push at EnsureStarterWeapon (T0 migrated)
 ArmorEquipped               — server push at EnsureStarterArmor (T0 migrated)
-AchievementUnlocked         — server push (T0 migrated)
+AchievementUnlocked         — server push (T0 migrated); also the
+                              class-unlock toast (PlayerClassSystem,
+                              §AGX/T11-JAN)
 TalentStateUpdate           — TalentManager.SendState (T0 migrated)
 ```
 

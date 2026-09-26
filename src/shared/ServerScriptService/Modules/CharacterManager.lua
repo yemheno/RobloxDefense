@@ -80,7 +80,7 @@ local setupFired        = setmetatable({}, { __mode = "k" })
 local function getPlayerJanitor(player)
     local jan = playerJanitors[player]
     if not jan then
-        jan = Janitor.new()
+        jan = Janitor.new("CharacterManager.player")
         playerJanitors[player] = jan
     end
     return jan
@@ -244,7 +244,7 @@ function CharacterManager.ApplyTemplate(player)
     -- again on the same Character first destroys the previous Janitor.
     local existing = templateJanitors[character]
     if existing then existing:Destroy() end
-    local jan = Janitor.new()
+    local jan = Janitor.new("CharacterManager.character")
     jan:LinkToInstance(character)
     templateJanitors[character] = jan
 
