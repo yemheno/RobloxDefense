@@ -121,7 +121,7 @@ function DamageHandler.DamageMob(mob, player, options)
 		lifesteal = KR.ModifyLifesteal(player, lifesteal)
 		-- Clarity Surge: a critical SKILL hit (sourceSkill set by BaseSkills) restores Aether.
 		if damageResult.wasCrit and options.sourceSkill then
-			KR.OnCritSkillHit(player)
+			KR.OnCritSkillHit(player, options.sourceSkill)
 		end
 	end
 	lifesteal = math.min(lifesteal, LIFESTEAL_CAP)  -- §AGX/BAL

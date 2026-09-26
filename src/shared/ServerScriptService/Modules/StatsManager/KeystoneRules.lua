@@ -26,8 +26,9 @@
       PartyAura (1 Hz, sibling module, Start below)  PatronSaint, FortuneFavors
 
     Rules NOT here stay "(coming soon)" (TalentTreeConfig.IMPLEMENTED_RULES):
-    ArcSaturation, EyeOfTheStorm (AoESize has no consumer), CalmUnderFire
-    (CDR / StatusResistance / AttackSpeed have no consumer).
+    ArcSaturation, EyeOfTheStorm (need a per-cast hit-count hook; AoESize
+    itself is read since §AGX/STATS) and CalmUnderFire (its stats are all
+    read since §AGX/STATS; the rule itself is not written yet).
     §AGX/X11: SpellRhythm (rewritten, below) and the two party auras
     (StatsManager/PartyAura) landed with the delegated balance pass.
 
@@ -249,6 +250,10 @@ local function rhythmBasicHit(player, swingId, now)
 	local r = rhythm[player]
 	if not r then return 0 end
 	if swingId ~= nil and r.swing == swingId then return r.swingPct end
+	-- §AGX/D-FIX (review N1): attack ids are monotonic; a late hit from an
+	-- older swing must not steal the current swing's slot (its other
+	-- cleave/pierce targets would then get 0%).
+	if swingId ~= nil and r.swing ~= nil and swingId < r.swing then return 0 end
 	local stacks = 0
 	for i = 1, RHYTHM_MAX do
 		if r[i] > now then stacks += 1 end
@@ -265,12 +270,19 @@ end
 
 --- Records a hit on `mob`; returns true if `mob` was ALREADY marked (the
 --- hit that completes the 4-in-3s sequence marks it for the following hits).
-local function quarryHit(player, mob, now)
+local function quarryHit(player, mob, now, swingId)
 	local q = quarry[player]
 	if not q then
 		q = { target = nil, h1 = -math.huge, h2 = -math.huge, h3 = -math.huge, markedUntil = 0 }
 		quarry[player] = q
 	end
+	-- §AGX/D-FIX (review S3): extra targets of the SAME basic swing (pierce /
+	-- cleave) don't count as switching target, or packs would reset the
+	-- count every swing and the keystone would never mark anything.
+	if swingId ~= nil and q.swing == swingId and q.target ~= mob then
+		return false
+	end
+	q.swing = swingId
 	if q.target ~= mob then
 		-- "Hitting a different target removes the mark" (and restarts the count).
 		q.target = mob
@@ -353,7 +365,7 @@ function KeystoneRules.OutgoingHit(player, targetMob, options)
 	end
 
 	if targetMob and hasRule(player, "RelentlessQuarry") then
-		if quarryHit(player, targetMob, now) then
+		if quarryHit(player, targetMob, now, options and options.basicAttackId) then
 			crit = crit + QUARRY_CRIT
 			pen  = pen + QUARRY_PEN
 		end
@@ -483,8 +495,18 @@ function KeystoneRules.ModifyLifesteal(player, lifesteal)
 end
 
 --- Clarity Surge: each critical SKILL hit restores 4 Aether.
-function KeystoneRules.OnCritSkillHit(player)
+-- §AGX/D-FIX (review S1): once per CAST, not per target — an AoE crit on a
+-- pack used to refund more Aether than the skill cost. All targets of one
+-- cast resolve in the same step, so (skill, 0.25 s window) identifies it.
+local claritySkillGrant = setmetatable({}, { __mode = "k" })  -- [player] = { skill, t }
+local CLARITY_CAST_WINDOW = 0.25
+function KeystoneRules.OnCritSkillHit(player, sourceSkill)
 	if hasRule(player, "ClaritySurge") then
+		local now = os.clock()
+		local g = claritySkillGrant[player]
+		if g and g.skill == sourceSkill and now - g.t < CLARITY_CAST_WINDOW then return end
+		if g then g.skill, g.t = sourceSkill, now
+		else claritySkillGrant[player] = { skill = sourceSkill, t = now } end
 		grantResourceIf(player, "Aether", CLARITY_SKILL_AETHER)
 	end
 end

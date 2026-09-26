@@ -138,7 +138,10 @@ local _VEM
 local function attachArmorVisual(player, className, armorId)
 	if _VEM == nil then
 		local mod = script.Parent:FindFirstChild("VisualEquipmentManager")
-		local ok, result = mod and pcall(require, mod)
+		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+		-- so this getter always returned nil. Two-step form keeps both.
+		local ok, result = false, nil
+		if mod then ok, result = pcall(require, mod) end
 		_VEM = (ok and result) or false
 	end
 	if not _VEM or not _VEM.AttachClassArmor then return end

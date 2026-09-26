@@ -1059,10 +1059,16 @@ local function getStatusResistance(player)
 	if not _srResolved then
 		_srResolved = true
 		local pdm = Modules:FindFirstChild("PlayerDataManager")
-		local ok, mod = pdm and pcall(require, pdm)
+		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+		-- so this getter always returned nil. Two-step form keeps both.
+		local ok, mod = false, nil
+		if pdm then ok, mod = pcall(require, pdm) end
 		if ok and mod then _getTotalStat = mod.GetTotalStat end
 		local cfgMod = Modules:FindFirstChild("PlayerDataConfig")
-		local okC, cfg = cfgMod and pcall(require, cfgMod)
+		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+		-- so this getter always returned nil. Two-step form keeps both.
+		local okC, cfg = false, nil
+		if cfgMod then okC, cfg = pcall(require, cfgMod) end
 		if okC and cfg then _capStat = cfg.CapStat end
 	end
 	if not _getTotalStat then return 0 end

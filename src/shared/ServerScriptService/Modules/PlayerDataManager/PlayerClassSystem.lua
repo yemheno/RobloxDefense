@@ -175,7 +175,10 @@ function PlayerClassSystem.UnlockClass(player, className)
 		rg.FireClient(player, "AchievementUnlocked", payload)
 	else
 		local nmMod = Modules:FindFirstChild("NetworkManager")
-		local ok, nm = nmMod and pcall(require, nmMod)
+		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+		-- so this getter always returned nil. Two-step form keeps both.
+		local ok, nm = false, nil
+		if nmMod then ok, nm = pcall(require, nmMod) end
 		if ok and nm and nm.FireClient then
 			nm.FireClient(player, "AchievementUnlocked", payload)
 		end

@@ -379,7 +379,7 @@ function ShopManager.RefreshRotation(player, tab, expect)
         if not wrote then
             warn("[ShopManager] RefreshRotation write failed for", player.Name, "-", writeErr,
                 "— refunding", price, "Essence")
-            getCurrencyManager().AddEssence(player, price)
+            getCurrencyManager().AddEssence(player, price, { raw = true })  -- §AGX/D-FIX: refunds skip earn listeners
             return false, "Internal error — refunded."
         end
 

@@ -743,13 +743,12 @@ TalentTreeConfig.StartNodeId = "start"
 -- Shared (client + server) so the UI tag and the server skip can't drift.
 -- §AGX/X11: (X11-RULES) 12 of 15 implemented. Still "(coming soon)":
 --   ArcSaturation, EyeOfTheStorm — need an AoESize consumer (none exists)
---   CalmUnderFire — CDR / StatusResistance / AttackSpeed have no consumer
+--   CalmUnderFire — its stats are read since §AGX/STATS; rule not written yet
 -- SpellRhythm (KeystoneRules), PatronSaint + FortuneFavors
 -- (StatsManager/PartyAura) landed with the X11 balance pass.
 -- Penalty stats restored with their rule: Overwhelm AttackSpeed −6 and
--- Unyielding Advance MovementSpeed −8. NOTE both stats have no consumer yet
--- (same for Last Bastion's low-Determination slow), so those prices are
--- inert until AttackSpeed / MovementSpeed bonuses are wired.
+-- Unyielding Advance MovementSpeed −8; both apply since §AGX/STATS (as does
+-- Last Bastion's low-Determination slow).
 TalentTreeConfig.IMPLEMENTED_RULES = {
 	Overwhelm         = true,
 	SecondHeart       = true,

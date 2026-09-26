@@ -265,7 +265,14 @@ end
 --- Reset a source to empty.
 function BonusManager.ClearSource(player, source)
     BonusManager.SetupPlayer(player)
-    playerBonuses[player][source] = {}
+    -- §AGX/D-FIX (review N5): aura_<UserId> keys are
+    -- dropped instead of emptied, so a member's source map doesn't grow with
+    -- every aura owner seen this session. Fixed keys stay as empty tables.
+    if string.sub(source, 1, 5) == "aura_" then
+        playerBonuses[player][source] = nil
+    else
+        playerBonuses[player][source] = {}
+    end
     BonusManager.Recalculate(player)
 end
 

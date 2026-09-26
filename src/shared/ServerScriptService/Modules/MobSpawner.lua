@@ -147,7 +147,10 @@ function MobSpawner.Init()
 		-- Idle used to start an unlosable wave farm (no line damage, wipes
 		-- ignored, XP still paid, forced Victory at the end).
 		local gsmMod = Modules:FindFirstChild("GameStateManager")
-		local okGsm, gsm = gsmMod and pcall(require, gsmMod)
+		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+		-- so this getter always returned nil. Two-step form keeps both.
+		local okGsm, gsm = false, nil
+		if gsmMod then okGsm, gsm = pcall(require, gsmMod) end
 		if not (okGsm and gsm and gsm.IsDefending and gsm.IsDefending()) then return end
 		if waveState == "idle" then
 			MobSpawner.StartNextWave()

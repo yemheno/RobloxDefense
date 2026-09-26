@@ -87,7 +87,10 @@ local _CurrencyManager
 local function getCurrencyManager()
 	if _CurrencyManager ~= nil then return _CurrencyManager or nil end
 	local mod = Modules:FindFirstChild("CurrencyManager")
-	local ok, result = mod and pcall(require, mod)
+	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+	-- so this getter always returned nil. Two-step form keeps both.
+	local ok, result = false, nil
+	if mod then ok, result = pcall(require, mod) end
 	_CurrencyManager = (ok and result) or false
 	return _CurrencyManager or nil
 end
@@ -96,7 +99,10 @@ local _MobAI
 local function getMobAI()
 	if _MobAI ~= nil then return _MobAI or nil end
 	local mod = Modules:FindFirstChild("MobAI")
-	local ok, result = mod and pcall(require, mod)
+	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+	-- so this getter always returned nil. Two-step form keeps both.
+	local ok, result = false, nil
+	if mod then ok, result = pcall(require, mod) end
 	_MobAI = (ok and result) or false
 	return _MobAI or nil
 end
@@ -107,7 +113,10 @@ local _BonusManager
 local function getBonusManager()
 	if _BonusManager ~= nil then return _BonusManager or nil end
 	local mod = Modules:FindFirstChild("BonusManager")
-	local ok, result = mod and pcall(require, mod)
+	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+	-- so this getter always returned nil. Two-step form keeps both.
+	local ok, result = false, nil
+	if mod then ok, result = pcall(require, mod) end
 	_BonusManager = (ok and result) or false
 	return _BonusManager or nil
 end
@@ -116,7 +125,10 @@ local _DataConfig
 local function getDataConfig()
 	if _DataConfig ~= nil then return _DataConfig or nil end
 	local mod = Modules:FindFirstChild("PlayerDataConfig")
-	local ok, result = mod and pcall(require, mod)
+	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+	-- so this getter always returned nil. Two-step form keeps both.
+	local ok, result = false, nil
+	if mod then ok, result = pcall(require, mod) end
 	_DataConfig = (ok and result) or false
 	return _DataConfig or nil
 end
@@ -137,7 +149,10 @@ end
 -- §AGX/X40 helpers (after the lazy getters they use).
 local function getRunDifficulty()
 	local mod = Modules:FindFirstChild("TeleportDataReader")
-	local ok, tdr = mod and pcall(require, mod)
+	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+	-- so this getter always returned nil. Two-step form keeps both.
+	local ok, tdr = false, nil
+	if mod then ok, tdr = pcall(require, mod) end
 	local diff = ok and tdr and tdr.GetDifficulty and tdr.GetDifficulty()
 	return type(diff) == "string" and diff or "Normal"
 end
@@ -215,7 +230,10 @@ function DeathSystem.Init()
 	-- Deferred so GameStateManager (combat places only) is loaded first.
 	task.defer(function()
 		local gsmMod = Modules:FindFirstChild("GameStateManager")
-		local ok, gsm = gsmMod and pcall(require, gsmMod)
+		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
+		-- so this getter always returned nil. Two-step form keeps both.
+		local ok, gsm = false, nil
+		if gsmMod then ok, gsm = pcall(require, gsmMod) end
 		if ok and gsm and gsm.OnStateChanged then
 			gsm.OnStateChanged(function(newState)
 				if newState == "Preparing" then
