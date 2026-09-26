@@ -70,7 +70,11 @@ local function CombatApp()
 		BackgroundTransparency = 1,
 	}, {
 		-- HUD (no MainMenu button in combat places)
-		hud = (not fullscreenOpen) and React.createElement(HUD, {
+		-- §AGX/UX-02: always mounted; `hidden` hides it while a menu is open.
+		-- Unmounting reset its run state (gameState/runEnded/betweenWaves),
+		-- so closing Stats mid-wave showed "Start Game" and lost Next Wave.
+		hud = React.createElement(HUD, {
+			hidden              = fullscreenOpen,
 			onClassesClick      = function() setShowClassReference(true) end,
 			onStatsClick        = function() setShowStatsMenu(true) end,
 			onTalentsClick      = function() setShowTalents(true) end,
@@ -79,7 +83,7 @@ local function CombatApp()
 			onAchievementsClick = function() setShowAchievements(true) end,
 			onSettingsClick     = function() setShowSettings(true) end,
 			onShopClick         = function() setShowShop(true) end,
-		}) or nil,
+		}),
 
 		-- Battle class badge (compact, read-only)
 		battleClass = (not fullscreenOpen) and React.createElement(BattleClassUI) or nil,
@@ -93,16 +97,26 @@ local function CombatApp()
 		-- §LD-BC3 fix companion: use TextButton for the dim layer so
 		-- click-outside-the-panel also closes (in addition to the now-
 		-- clickable close button at top-right of the panel).
-		classReference = showClassReference and React.createElement("TextButton", {
+		-- §AGX/UX-14: the panel used to be a CHILD of the closing backdrop
+		-- button and its Frames weren't Active, so a click on empty panel
+		-- space fell through and closed it. Backdrop and panel are now
+		-- siblings in a transparent holder, and BattleClassUI's expanded
+		-- panel is Active (sinks input). Only clicks outside close it.
+		classReference = showClassReference and React.createElement("Frame", {
 			Size = UDim2.fromScale(1, 1),
-			BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-			BackgroundTransparency = 0.35,
-			BorderSizePixel = 0,
-			Text = "",
-			AutoButtonColor = false,
+			BackgroundTransparency = 1,
 			ZIndex = 6,
-			[React.Event.Activated] = function() setShowClassReference(false) end,
 		}, {
+			backdrop = React.createElement("TextButton", {
+				Size = UDim2.fromScale(1, 1),
+				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+				BackgroundTransparency = 0.35,
+				BorderSizePixel = 0,
+				Text = "",
+				AutoButtonColor = false,
+				ZIndex = 6,
+				[React.Event.Activated] = function() setShowClassReference(false) end,
+			}),
 			reference = React.createElement(BattleClassUI, {
 				showBadge = false,
 				expanded = true,

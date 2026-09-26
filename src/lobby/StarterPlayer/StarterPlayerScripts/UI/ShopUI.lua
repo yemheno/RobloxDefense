@@ -33,10 +33,34 @@ local function ItemCard(props)
 	local item = props.item
 	local npcId = props.npcId
 	local statusMsg, setStatusMsg = React.useState(nil)
+	local statusOk, setStatusOk   = React.useState(true)  -- §AGX/UX-03
 	local mountedRef = React.useRef(true)
+	local clearTimerRef = React.useRef(nil)  -- §AGX/UX-03
 	React.useEffect(function()
-		return function() mountedRef.current = false end
+		return function()
+			mountedRef.current = false
+			if clearTimerRef.current then task.cancel(clearTimerRef.current) end
+		end
 	end, {})
+
+	local function flashStatus(text, ok, seconds)
+		setStatusMsg(text)
+		setStatusOk(ok)
+		if clearTimerRef.current then task.cancel(clearTimerRef.current) end
+		clearTimerRef.current = task.delay(seconds, function()
+			clearTimerRef.current = nil
+			if mountedRef.current then setStatusMsg(nil) end
+		end)
+	end
+
+	-- §AGX/UX-03: server result for THIS card (ShopUI routes it by itemId).
+	-- A fresh table per result, so repeat purchases re-trigger the effect.
+	local result = props.result
+	React.useEffect(function()
+		if result then
+			flashStatus(result.text, result.ok, 3)
+		end
+	end, { result })
 
 	return React.createElement("Frame", {
 		Size             = UDim2.fromScale(1, 1),
@@ -95,7 +119,7 @@ local function ItemCard(props)
 			Size = UDim2.fromScale(0.6, 0.2),
 			BackgroundTransparency = 1,
 			Text = statusMsg,
-			TextColor3 = C.green,
+			TextColor3 = statusOk and C.green or C.red,  -- §AGX/UX-03
 			Font = Enum.Font.Gotham,
 			TextScaled = true,
 			TextXAlignment = Enum.TextXAlignment.Left,
@@ -118,10 +142,9 @@ local function ItemCard(props)
 					action = "Buy",
 					itemId = item.id,
 				})
-				setStatusMsg("Purchasing…")
-				task.delay(2, function()
-					if mountedRef.current then setStatusMsg(nil) end
-				end)
+				if props.onBuy then props.onBuy(item.id) end  -- §AGX/UX-03
+				-- Fallback clear if no result ever arrives (e.g. out of range).
+				flashStatus("Purchasing…", true, 4)
 			end,
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
@@ -134,6 +157,11 @@ local function ShopUI(props)
 	local onClose = props.onClose or function() end
 
 	local shopData, setShopData = React.useState(nil)
+	-- §AGX/UX-03: last purchase result { itemId, text, ok } for the cards
+	local result, setResult = React.useState(nil)
+	local pendingItemRef = React.useRef(nil)   -- item.id of the last Buy click
+	local shopNpcRef     = React.useRef(nil)   -- npcId of the open shop (for the listener)
+	shopNpcRef.current = shopData and shopData.npcId or nil
 
 	React.useEffect(function()
 		local conns = {}
@@ -141,11 +169,23 @@ local function ShopUI(props)
 		conns[1] = NetworkManager.OnServerEvent("NPCShopOpen", function(data)
 			-- data = { npcId, npcName, items = { { id, name, description, price, currency } } }
 			setShopData(data)
+			setResult(nil)  -- §AGX/UX-03
 		end)
 
-		-- Success / error feedback
-		conns[2] = NetworkManager.OnServerEvent("NPCResponse", function(data)
-			-- Could show toast-style feedback; for now ignored
+		-- §AGX/UX-03: purchase results arrive as NPCDialogue
+		-- { type = "ShopSuccess"|"ShopError", npcId, message, itemId? }
+		-- (ShopHandler.lua). The old listener was on NPCResponse, which the
+		-- server never sends to clients. ShopError has no itemId, so fall
+		-- back to the card the player last clicked.
+		conns[2] = NetworkManager.OnServerEvent("NPCDialogue", function(data)
+			if type(data) ~= "table" then return end
+			if data.type ~= "ShopSuccess" and data.type ~= "ShopError" then return end
+			if shopNpcRef.current == nil or data.npcId ~= shopNpcRef.current then return end
+			setResult({
+				itemId = data.itemId or pendingItemRef.current,
+				text   = data.message or (data.type == "ShopSuccess" and "Purchased!" or "Purchase failed."),
+				ok     = data.type == "ShopSuccess",
+			})
 		end)
 
 		return function()
@@ -186,6 +226,9 @@ local function ShopUI(props)
 				item   = item,
 				npcId  = shopData.npcId,
 				order  = i,
+				-- §AGX/UX-03: route the server result to the card it belongs to
+				result = (result and result.itemId == item.id) and result or nil,
+				onBuy  = function(itemId) pendingItemRef.current = itemId end,
 			}),
 		})
 	end

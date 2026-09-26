@@ -89,7 +89,10 @@ local function LobbyApp()
 		BackgroundTransparency = 1,
 	}, {
 		-- HUD
-		hud = (not fullscreenOpen) and React.createElement(HUD, {
+		-- §AGX/UX-02: always mounted; `hidden` hides it while a menu is open
+		-- (unmounting reset its local state and re-fetched everything).
+		hud = React.createElement(HUD, {
+			hidden          = fullscreenOpen,
 			onClassesClick  = function() setShowClassMenu(true) end,
 			onStatsClick    = function() setShowStatsMenu(true) end,
 			onTalentsClick  = function() setShowTalents(true) end,
@@ -104,7 +107,7 @@ local function LobbyApp()
 			onLeaderboardClick = function() setShowLeaderboard(true) end,
 			onInventoryClick   = function() setShowInventory(true) end,
 			hideStartButton = true,
-		}) or nil,
+		}),
 
 		-- Character creation (first login)
 		characterCreation = showCharCreate and React.createElement(CharacterCreation, {

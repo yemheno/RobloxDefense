@@ -78,6 +78,20 @@ local function NPCDialog(props)
 	local currentNode, setCurrentNode = React.useState(nil)    -- current node key in tree
 	local questData, setQuestData = React.useState(nil)        -- quest offer data
 	local teleportData, setTeleportData = React.useState(nil)  -- teleport destinations
+	-- §AGX/UX-03: inline result line for quest actions ({ text, ok } or nil)
+	local statusMsg, setStatusMsg = React.useState(nil)
+	local pendingQuestRef = React.useRef(nil)  -- questId of the last Accept/Turn In
+	local statusTimerRef  = React.useRef(nil)
+	-- Uses only refs + state setters, so the first-render copy captured by
+	-- the listener effect below stays valid.
+	local function showStatus(text, ok)
+		setStatusMsg({ text = text, ok = ok })
+		if statusTimerRef.current then task.cancel(statusTimerRef.current) end
+		statusTimerRef.current = task.delay(4, function()
+			statusTimerRef.current = nil
+			setStatusMsg(nil)
+		end)
+	end
 
 	-- ── Event listeners ──────────────────────────────────
 	React.useEffect(function()
@@ -85,13 +99,54 @@ local function NPCDialog(props)
 
 		conns[1] = NetworkManager.OnServerEvent("NPCDialogue", function(data)
 			-- data = { npcId, npcName, dialogue = { [key] = { text, choices = { { text, next } } } } }
+			-- §AGX/UX-03: the server reuses this event for action RESULTS
+			-- (ShopHandler/QuestHandler/TeleportHandler send
+			-- { type = "ShopSuccess"|"ShopError"|"Quest*"|"TeleportComplete", message }).
+			-- Those used to be opened as an empty lore tree and closed the panel.
+			-- Only "Dialogue" (LoreHandler) or an untyped payload is a tree.
+			if type(data) ~= "table" then return end
+			local kind = data.type
+			if kind ~= nil and kind ~= "Dialogue" and kind ~= "Lore" then
+				if kind == "QuestAccepted" or kind == "QuestCompleted" or kind == "QuestError" then
+					local ok = kind ~= "QuestError"
+					-- Patch the open quest list so its button reflects the result.
+					local qid = pendingQuestRef.current
+					pendingQuestRef.current = nil
+					if ok and qid then
+						setQuestData(function(prev)
+							if not prev or not prev.quests then return prev end
+							local nextQuests = {}
+							for i, q in ipairs(prev.quests) do
+								if (q.questId or q.id) == qid then
+									local copy = table.clone(q)
+									copy.status = (kind == "QuestAccepted") and "InProgress" or "Completed"
+									nextQuests[i] = copy
+								else
+									nextQuests[i] = q
+								end
+							end
+							local nextData = table.clone(prev)
+							nextData.quests = nextQuests
+							return nextData
+						end)
+					end
+					showStatus(data.message or (ok and "Done." or "Failed."), ok)
+				end
+				-- Shop* results are shown by ShopUI; TeleportComplete needs no UI.
+				return
+			end
+			setStatusMsg(nil)
 			setDialogData({
 				npcId    = data.npcId,
 				npcName  = data.npcName,
 				tree     = data.dialogue,
 				type     = "Lore",
 			})
-			setCurrentNode("start")
+			-- §AGX/UX-03: LoreHandler sends an ARRAY of nodes ({ {text, choices} },
+			-- choices use `label` and numeric `next`, 0 = end), so "start" was
+			-- always nil and every lore chat closed itself. Accept both shapes.
+			local tree = data.dialogue
+			setCurrentNode((type(tree) == "table" and tree.start ~= nil) and "start" or 1)
 			setQuestData(nil)
 			setTeleportData(nil)
 		end)
@@ -101,6 +156,7 @@ local function NPCDialog(props)
 			setQuestData(data)
 			setDialogData(nil)
 			setTeleportData(nil)
+			setStatusMsg(nil)  -- §AGX/UX-03
 		end)
 
 		conns[3] = NetworkManager.OnServerEvent("NPCTeleportOffer", function(data)
@@ -108,12 +164,14 @@ local function NPCDialog(props)
 			setTeleportData(data)
 			setDialogData(nil)
 			setQuestData(nil)
+			setStatusMsg(nil)  -- §AGX/UX-03
 		end)
 
 		return function()
 			for _, c in conns do
 				if c then c:Disconnect() end
 			end
+			if statusTimerRef.current then task.cancel(statusTimerRef.current) end  -- §AGX/UX-03
 		end
 	end, {})
 
@@ -132,6 +190,8 @@ local function NPCDialog(props)
 		setQuestData(nil)
 		setTeleportData(nil)
 		setCurrentNode(nil)
+		setStatusMsg(nil)  -- §AGX/UX-03
+		pendingQuestRef.current = nil
 		onClose()
 	end
 
@@ -140,6 +200,17 @@ local function NPCDialog(props)
 		or (questData and questData.npcId)
 		or (teleportData and teleportData.npcId)
 	useNpcDistanceClose(activeNpcId, activeNpcId ~= nil, closeDialog)
+
+	-- §AGX/UX-03: a dialogue that points at a missing node (end of tree)
+	-- closes from an effect. It used to call closeDialog() during render,
+	-- which set state mid-render and fired NPCResponse from render.
+	local missingNode = dialogData ~= nil
+		and (dialogData.tree == nil or dialogData.tree[currentNode] == nil)
+	React.useEffect(function()
+		if missingNode then
+			closeDialog()
+		end
+	end, { missingNode })
 
 	------------------------------------------------------------
 	-- Nothing to show
@@ -160,8 +231,7 @@ local function NPCDialog(props)
 		local tree = dialogData.tree or {}
 		local node = tree[currentNode]
 		if not node then
-			-- fallback end
-			closeDialog()
+			-- fallback end: the effect above closes it (§AGX/UX-03)
 			return nil
 		end
 
@@ -180,10 +250,10 @@ local function NPCDialog(props)
 				LayoutOrder = i,
 			}, {
 				btn = React.createElement(ChoiceButton, {
-					text  = choice.text,
+					text  = choice.text or choice.label or "...",  -- §AGX/UX-03: registry uses `label`
 					order = i,
 					onClick = function()
-						if choice.next then
+						if choice.next and choice.next ~= 0 then  -- §AGX/UX-03: 0 = end
 							setCurrentNode(choice.next)
 						else
 							closeDialog()
@@ -358,7 +428,10 @@ local function NPCDialog(props)
 							action = act,
 							questId = quest.questId or quest.id,
 						})
-						closeDialog()
+						-- §AGX/UX-03: stay open so the QuestAccepted/QuestError
+						-- result can show inline (it was closed before it arrived).
+						pendingQuestRef.current = quest.questId or quest.id
+						showStatus("Working…", true)
 					end,
 				}, {
 					corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
@@ -499,6 +572,19 @@ local function NPCDialog(props)
 			}, {
 				inner = innerContent,
 			}),
+
+			-- §AGX/UX-03: quest action result, header row between name and ✕
+			statusLabel = statusMsg and React.createElement("TextLabel", {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.fromScale(0.9, 0),
+				Size = UDim2.fromScale(0.5, 0.1),
+				BackgroundTransparency = 1,
+				Text = statusMsg.text,
+				TextColor3 = statusMsg.ok and C.green or C.red,
+				Font = Enum.Font.GothamBold,
+				TextScaled = true,
+				TextXAlignment = Enum.TextXAlignment.Right,
+			}) or nil,
 		}),
 	})
 end

@@ -44,6 +44,10 @@ local currentState = STATES.IDLE
 local stateStartTime = 0
 local MobSpawner = nil  -- Lazy loaded
 local countdownThread = nil  -- Thread spawned by StartCountdown
+-- §AGX/UX-02: flags the HUD can't rebuild from transitions alone; sent in
+-- the RequestGameState snapshot so a (re)mounted HUD shows the right buttons.
+local runEnded = false       -- true after Defeat/Victory until the next run starts
+local betweenWaves = false   -- true after WaveCompleted until the next WaveStarted
 
 -- When true, entering DEFENDING state will NOT call MobSpawner.StartWave(1).
 -- Used by HordeMode which manages spawning via HordeModeSpawner.
@@ -68,11 +72,37 @@ function GameStateManager.Init()
 		GameStateManager.RequestStart(player)
 	end)
 
+	-- §AGX/UX-02: per-player state snapshot. GameStateChanged is otherwise
+	-- only broadcast on transitions, so a HUD mounted mid-run defaulted to
+	-- "Idle" and offered Start Game. Same payload shape as a transition
+	-- (oldState == newState), plus the optional run flags.
+	NetworkManager.GetEvent("RequestGameState")
+	NetworkManager.OnClientEvent("RequestGameState", function(player)
+		-- nil when MobSpawner doesn't drive waves (e.g. HordeMode): the HUD
+		-- then keeps whatever its own WaveStarted/WaveCompleted said.
+		local waveFlag = nil
+		if MobSpawner and not GameStateManager.suppressWaveStart then
+			waveFlag = betweenWaves
+		end
+		NetworkManager.FireClient(player, "GameStateChanged", {
+			oldState     = currentState,
+			newState     = currentState,
+			timestamp    = stateStartTime,
+			runEnded     = runEnded,
+			betweenWaves = waveFlag,
+		})
+	end)
+
 end
 
 -- Late init (called after MobSpawner is loaded)
 function GameStateManager.LateInit()
 	MobSpawner = require(Modules:WaitForChild("MobSpawner"))
+
+	-- §AGX/UX-02: mirror the between-waves flag for RequestGameState.
+	-- (Public MobSpawner callbacks only; MobSpawner itself is unchanged.)
+	MobSpawner.OnWaveStarted(function() betweenWaves = false end)
+	MobSpawner.OnWaveCompleted(function() betweenWaves = true end)
 
 	-- Listen for wave completion
 	MobSpawner.OnAllWavesCompleted(function(finalWave)
@@ -98,6 +128,16 @@ function GameStateManager.SetState(newState)
 	local oldState = currentState
 	currentState = newState
 	stateStartTime = os.clock()
+
+	-- §AGX/UX-02: same rules the HUD applies to transitions (§AGX/X14).
+	if newState == STATES.DEFEAT or newState == STATES.VICTORY then
+		runEnded = true
+	elseif newState == STATES.PREPARING or newState == STATES.DEFENDING then
+		runEnded = false
+	end
+	if newState ~= STATES.DEFENDING then
+		betweenWaves = false
+	end
 
 	-- Cancel any pending countdown when state changes
 	if countdownThread then

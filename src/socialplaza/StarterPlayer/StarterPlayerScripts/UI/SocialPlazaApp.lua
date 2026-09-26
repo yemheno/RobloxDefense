@@ -23,6 +23,9 @@ local NetworkManager    = require(SharedModules:WaitForChild("NetworkManager"))
 local CharacterCreation = require(SharedUI:WaitForChild("CharacterCreation"))
 local WardrobeUI        = require(SharedUI:WaitForChild("WardrobeUI"))
 local EmoteWheel        = require(SocialPlazaUI:WaitForChild("EmoteWheel"))
+-- §AGX/UX-01: AppearanceBar existed but was never mounted, so setShowWardrobe
+-- was never called with true and the Wardrobe was unreachable in the Plaza.
+local AppearanceBar     = require(SocialPlazaUI:WaitForChild("AppearanceBar"))
 
 local function SocialPlazaApp()
 	local showCharCreate, setShowCharCreate = React.useState(false)
@@ -53,6 +56,11 @@ local function SocialPlazaApp()
 		WardrobeUI = showWardrobe and React.createElement(WardrobeUI, {
 			onClose = function() setShowWardrobe(false) end,
 		}),
+
+		-- §AGX/UX-01: Wardrobe entry point (hidden while a panel is open)
+		AppearanceBar = not (showWardrobe or showCharCreate) and React.createElement(AppearanceBar, {
+			onWardrobeOpen = function() setShowWardrobe(true) end,
+		}) or nil,
 
 		-- EmoteWheel manages its own visibility via the Q key
 		EmoteWheel = React.createElement(EmoteWheel),

@@ -35,7 +35,10 @@ local function BarButton(props)
 	local hovered, setHovered = useState(false)
 
 	return e("TextButton", {
-		Size             = UDim2.fromScale(0.029, 0.052),
+		-- §AGX/UX-01: 0.029 x 0.052 was meant as a share of the SCREEN
+		-- (56 px @1080p) but resolves against the ~142 px bar, i.e. ~4 px
+		-- buttons. The bar now passes the button's share of itself.
+		Size             = props.size or UDim2.fromScale(0.029, 0.052),
 		BackgroundColor3 = hovered and C.btn_hover or C.btn_bg,
 		BorderSizePixel  = 0,
 		AutoButtonColor  = false,
@@ -121,6 +124,7 @@ local function AppearanceBar(props)
 
 		-- Wardrobe button
 		WardrobeBtn = e(BarButton, {
+			size        = UDim2.fromScale(BTN_W / barW, BTN_H / barH),  -- §AGX/UX-01
 			icon        = "👗",
 			label       = "Wardrobe",
 			onActivated = onWardrobeOpen,
@@ -128,6 +132,7 @@ local function AppearanceBar(props)
 
 		-- Emote hint button (not a toggle — EmoteWheel owns its own Q binding)
 		EmoteBtn = e(BarButton, {
+			size        = UDim2.fromScale(BTN_W / barW, BTN_H / barH),  -- §AGX/UX-01
 			icon        = "Q",
 			label       = "Emotes",
 			onActivated = function() end,  -- EmoteWheel opens via InputSystem

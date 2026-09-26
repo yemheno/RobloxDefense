@@ -389,6 +389,9 @@ local function BattleClassUI(props)
 			BackgroundTransparency = 0.08,
 			BorderSizePixel        = 0,
 			ClipsDescendants       = true,
+			-- §AGX/UX-14: sink clicks so empty panel space doesn't reach the
+			-- click-outside-to-close backdrop behind it (CombatApp).
+			Active                 = true,
 		}, {
 			Corner = outerCorner,
 			Stroke = outerStroke,

@@ -203,6 +203,8 @@ local EVENTS = {
     RequestStartGame       = { rateLimit = 2,    readyGated = false },
     RequestNextWave        = { rateLimit = 2,    readyGated = false },
     RequestReturnToLobby   = { rateLimit = 2,    readyGated = false },
+    -- §AGX/UX-02: HUD asks for a state snapshot on mount (reply = GameStateChanged).
+    RequestGameState       = { rateLimit = 2,    readyGated = false },
 
     -- ── Stats / respec ───────────────────────────────────────────────
     RespecStats            = { rateLimit = nil,  readyGated = false },

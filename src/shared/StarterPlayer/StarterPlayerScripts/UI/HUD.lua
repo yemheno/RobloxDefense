@@ -133,6 +133,10 @@ local function HUD(props)
 	local onDailyLoginClick  = props.onDailyLoginClick
 	local onLeaderboardClick = props.onLeaderboardClick
 	local onInventoryClick   = props.onInventoryClick
+	-- §AGX/UX-02: the Apps keep the HUD mounted while a menu is open and
+	-- pass hidden=true instead of unmounting it (unmounting reset
+	-- gameState/runEnded/betweenWaves to their defaults mid-run).
+	local hidden             = props.hidden
 
 	-- Nav panel: collapsed / expanded
 	local menuOpen, setMenuOpen = React.useState(false)
@@ -203,6 +207,13 @@ local function HUD(props)
 
 		-- Request initial snapshot from the server
 		NetworkManager.FireServer("GetPlayerInfo")
+		-- §AGX/UX-02: GameStateChanged only fires on transitions, so a HUD
+		-- that mounts mid-run (late join, respawned ScreenGui) would sit in
+		-- "Idle" and show Start Game. Ask for a snapshot; the reply arrives
+		-- as a GameStateChanged. Lobby (hideStartButton) has no state machine.
+		if not hideStartButton then
+			NetworkManager.FireServer("RequestGameState")
+		end
 
 -- ResourceCache handles the early subscription; we just register as a
 		-- downstream subscriber here so the HUD stays in sync with live updates.
@@ -268,6 +279,14 @@ local function HUD(props)
 			end
 			if data.newState ~= "Preparing" then
 				setCountdown(nil)
+			end
+			-- §AGX/UX-02: RequestGameState snapshots carry the flags that
+			-- transitions alone can't rebuild (both optional).
+			if data.runEnded ~= nil then
+				setRunEnded(data.runEnded == true)
+			end
+			if data.betweenWaves ~= nil then
+				setBetweenWaves(data.betweenWaves == true)
 			end
 		end)
 
@@ -517,6 +536,7 @@ local function HUD(props)
 		Name                   = "HUD",
 		Size                   = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
+		Visible                = not hidden,  -- §AGX/UX-02: hide, don't unmount
 	}, {
 		-- ── Top-left: Menu button ─────────────────────────────────────────────
 		-- §UI-HUD1: was 3.5% × 5% — at 1080p that's 67×54, at higher resolutions
@@ -960,6 +980,22 @@ local function HUD(props)
 				ss = React.createElement("UIStroke", { Color = C.btn_stroke, Thickness = 1.5 }),
 			}),
 
+			-- §AGX/UX-01: Wardrobe entry was dropped in v0.5 (d862558), leaving
+			-- WardrobeUI unreachable; restored in the empty LayoutOrder 4 slot.
+			navWardrobe = onCosmeticsClick and React.createElement("TextButton", {
+				Size             = UDim2.fromScale(1, 1),
+				BackgroundColor3 = C.btn_bg, BorderSizePixel = 0,
+				Text = "Wardrobe", TextColor3 = C.btn_text,
+				Font = Enum.Font.GothamBold, TextScaled = true,
+				LayoutOrder = 4, ZIndex = 6,
+				[React.Event.Activated] = function()
+					setMenuOpen(false) if onCosmeticsClick then onCosmeticsClick() end
+				end,
+			}, {
+				cc = React.createElement("UICorner", { CornerRadius = UDim.new(0.18, 0) }),
+				ss = React.createElement("UIStroke", { Color = C.btn_stroke, Thickness = 1.5 }),
+			}) or nil,
+
 			navTalents = React.createElement("TextButton", {
 				Size             = UDim2.fromScale(1, 1),
 				BackgroundColor3 = C.btn_bg, BorderSizePixel = 0,
@@ -1040,7 +1076,8 @@ local function HUD(props)
 			navInventory = onInventoryClick and React.createElement("TextButton", {
 				Size             = UDim2.fromScale(1, 1),
 				BackgroundColor3 = C.btn_bg, BorderSizePixel = 0,
-				Text = "\u{1F3BA} Inventory",
+				-- §AGX/UX-01 (freebie): was U+1F3BA (trumpet); backpack fits Inventory.
+				Text = "\u{1F392} Inventory",
 				TextColor3 = C.btn_text,
 				Font = Enum.Font.GothamBold, TextScaled = true,
 				LayoutOrder = 10, ZIndex = 6,
