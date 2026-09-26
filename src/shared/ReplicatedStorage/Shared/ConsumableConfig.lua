@@ -13,12 +13,34 @@
       usable     boolean? §AGX/X10: true only when server code actually consumes
                           the item (a use handler exists). Anything else is
                           not purchasable and is hidden from the shops.
+      disabledReason string? §AGX/X10b: why an item stays `usable = false`
+                          (shown nowhere; for designers / the next pass).
+      stacks     boolean? §AGX/X10b: BuffStat only. Default false = re-using
+                          the item REFRESHES its duration (one buff per item).
+                          true = each use adds its own copy of the buff.
+      persistAcrossTeleport boolean? §AGX/X10b: default false = the buff ends
+                          when the player leaves the server (lobby → run
+                          teleport included). true is NOT supported yet
+                          (needs TeleportData plumbing); ConsumableEffects
+                          warns at boot if a config sets it.
+
+    Use path (§AGX/X10b): client fires "UseConsumable" (InventoryUI Use
+    button) → ConsumableEffects validates (owns it, alive, not paused,
+    per-item cooldown, effect precheck) → InventoryManager.ConsumeItem →
+    effect applied. RespecToken is not used from the inventory: the
+    talent / stat respec panels consume it (TalentManager /
+    SharedEventHandlers).
 
     Effect types:
       HealHP      { type = "HealHP",     amount = 50 }
       HealPercent { type = "HealPercent", percent = 0.25 }   -- 25% max HP
+                  optional duration = N → healed evenly over N seconds
       RestoreRes  { type = "RestoreRes",  amount = 30 }      -- class resource
       BuffStat    { type = "BuffStat",    stat = "Damage", value = 10, duration = 30 }
+                  stat = a PlayerDataConfig.BonusStats key (percent points,
+                  e.g. MeritBonus 15 = +15%), timed via BonusManager source
+                  "timed_consumable_<id>". ArmorPercent is special-cased in
+                  ConsumableEffects (see there).
       RespecToken { type = "RespecToken" }                    -- grants 1 token
 ]]
 
@@ -37,6 +59,7 @@ ConsumableConfig.Consumables = {
         maxStack = 20,
         cooldown = 12,
         effect   = { type = "HealPercent", percent = 0.18, duration = 2 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
     {
         id       = "health_potion_large",
@@ -46,6 +69,7 @@ ConsumableConfig.Consumables = {
         maxStack = 10,
         cooldown = 20,
         effect   = { type = "HealPercent", percent = 0.35, duration = 2 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
     {
         id       = "health_elixir",
@@ -55,6 +79,7 @@ ConsumableConfig.Consumables = {
         maxStack = 5,
         cooldown = 30,
         effect   = { type = "HealPercent", percent = 0.25 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
 
     -- ═══ Resource Restorers ═══
@@ -66,6 +91,7 @@ ConsumableConfig.Consumables = {
         maxStack = 20,
         cooldown = 15,
         effect   = { type = "RestoreRes", amount = 25 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
     {
         id       = "mana_crystal_large",
@@ -75,6 +101,7 @@ ConsumableConfig.Consumables = {
         maxStack = 10,
         cooldown = 25,
         effect   = { type = "RestoreRes", amount = 50 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
 
     -- ═══ Buff Items ═══
@@ -86,15 +113,19 @@ ConsumableConfig.Consumables = {
         maxStack = 10,
         cooldown = 60,
         effect   = { type = "BuffStat", stat = "DamagePercent", value = 8, duration = 45 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
     {
         id       = "iron_skin_potion",
         name     = "Ironskin Potion",
-        desc     = "+12% armor-derived mitigation for 45 seconds.",
+        -- §AGX/X10b: "+12% armor-derived mitigation" promised more than it
+        -- does: +12% Armor raises division-based mitigation by less than 12%.
+        desc     = "+12% armor for 45 seconds.",
         icon     = "🛡",
         maxStack = 10,
         cooldown = 60,
         effect   = { type = "BuffStat", stat = "ArmorPercent", value = 12, duration = 45 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
     {
         id       = "swiftness_elixir",
@@ -104,6 +135,12 @@ ConsumableConfig.Consumables = {
         maxStack = 10,
         cooldown = 45,
         effect   = { type = "BuffStat", stat = "MovementSpeedPercent", value = 10, duration = 30 },
+        -- §AGX/X10b: stays off. No player move-speed modifier exists: the
+        -- MovementSpeed bonus stat has no reader, and WalkSpeed is owned
+        -- by DeathSystem / MobAI / SkillManager (X13 BaseWalkSpeed
+        -- contract). Needs a speed hook there before this can ship.
+        usable   = false,
+        disabledReason = "needs a player move-speed modifier system",
     },
     {
         id       = "fortune_incense",
@@ -113,6 +150,7 @@ ConsumableConfig.Consumables = {
         maxStack = 5,
         cooldown = 120,
         effect   = { type = "BuffStat", stat = "MeritBonus", value = 15, duration = 120 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
     {
         id       = "crit_oil",
@@ -122,6 +160,7 @@ ConsumableConfig.Consumables = {
         maxStack = 10,
         cooldown = 60,
         effect   = { type = "BuffStat", stat = "CritChance", value = 8, duration = 45 },
+        usable   = true,  -- §AGX/X10b: ConsumableEffects handles it
     },
 
     -- ═══ Special ═══
@@ -142,7 +181,7 @@ ConsumableConfig.Consumables = {
         maxStack = 99,
         cooldown = 0,
         effect   = { type = "RespecToken" },
-        -- §AGX/X10: the only consumable with a use path today
+        -- §AGX/X10: used by the respec panels, not the inventory Use button
         -- (TalentManager respec / SharedEventHandlers consume it).
         usable   = true,
     },
@@ -174,6 +213,25 @@ end
 function ConsumableConfig.IsUsable(id)
     local def = ConsumableConfig.ById[id]
     return def ~= nil and def.usable == true
+end
+
+--- §AGX/X10b: effect types the inventory "Use" button applies
+-- (ConsumableEffects has a handler for each). RespecToken / None are
+-- consumed elsewhere, so they get no Use button.
+ConsumableConfig.DirectUseEffects = {
+    HealHP      = true,
+    HealPercent = true,
+    RestoreRes  = true,
+    BuffStat    = true,
+}
+
+--- §AGX/X10b: true when the item can be used from the inventory (usable AND
+-- its effect type has a ConsumableEffects handler). Client + server.
+function ConsumableConfig.IsDirectUse(id)
+    local def = ConsumableConfig.ById[id]
+    return def ~= nil and def.usable == true
+        and def.effect ~= nil
+        and ConsumableConfig.DirectUseEffects[def.effect.type] == true
 end
 
 return ConsumableConfig

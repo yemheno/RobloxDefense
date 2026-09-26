@@ -1226,10 +1226,10 @@ Currently **disabled** (PerSecond=0, Delay=5s).
 | mana_crystal_large | **120** | Merits | 5 |
 | power_scroll | **150** | Merits | 5 |
 | iron_skin_potion | **150** | Merits | 5 |
-| swiftness_elixir | **100** | Merits | 3 |
+| swiftness_elixir *(off, see §23)* | 100 | Merits | 3 |
 | fortune_incense | **10** | Essence | 8 |
 | crit_oil | **120** | Merits | 5 |
-| respec_scroll | **50** | Essence | 10 |
+| respec_scroll | **25** | Essence | 10 |
 
 ### Premium Tab (Robux)
 
@@ -1239,23 +1239,44 @@ Currently **disabled** (PerSecond=0, Delay=5s).
 
 ## 23. Consumables
 
-**Source:** `ConsumableConfig.lua`
+**Source:** `ConsumableConfig.lua` (effects, cooldowns), `ShopConfig.lua` (prices), `ConsumableEffects.lua` (use path). *§AGX/X10b (2026-09-26).*
 
-All consumables use percentage-based effects (no flat amounts):
+X10 turned off every consumable without a use handler. X10b adds the handler, so these are usable **and** sold again. `ShopConfig` derives `enabled` from `ConsumableConfig.usable`, so the global shop and the NPC shop follow the same flag.
 
-| Consumable | Effect | Max Stack | Cooldown |
-|---|---|---|---|
-| Health Potion | **18% max HP** over 2s | 20 | 12s |
-| Greater Health Potion | **35% max HP** over 2s | 10 | 20s |
-| Vitality Elixir | **25% max HP** instant | 5 | 30s |
-| Mana Crystal | **+25** resource | 20 | 15s |
-| Greater Mana Crystal | **+50** resource | 10 | 25s |
-| Power Scroll | **+8% DamagePercent** for 45s | 10 | 60s |
-| Ironskin Potion | **+12% ArmorPercent** for 45s | 10 | 60s |
-| Swiftness Elixir | **+10%** MovementSpeed for 30s | 10 | 45s |
-| Fortune Incense | **+15%** MeritBonus for 120s | 5 | 120s |
-| Crit Oil | **+8%** CritChance for 45s | 10 | 60s |
-| Respec Scroll | Grants **1** Respec Token | 5 | 0s |
+| Consumable | Effect | Duration | Price | Lvl | Cooldown | Max stack | Status |
+|---|---|---|---|---|---|---|---|
+| Health Potion | Heal **18% max HP** | over 2s | **25** Merits | — | 12s | 20 | ✅ live |
+| Greater Health Potion | Heal **35% max HP** | over 2s | **100** Merits | 5 | 20s | 10 | ✅ live |
+| Vitality Elixir | Heal **25% max HP** | instant | **5** Essence | 10 | 30s | 5 | ✅ live |
+| Mana Crystal | **+25** class resource | instant | **30** Merits | — | 15s | 20 | ✅ live |
+| Greater Mana Crystal | **+50** class resource | instant | **120** Merits | 5 | 25s | 10 | ✅ live |
+| Power Scroll | **+8%** DamagePercent | 45s | **150** Merits | 5 | 60s | 10 | ✅ live |
+| Ironskin Potion | **+12%** Armor ¹ | 45s | **150** Merits | 5 | 60s | 10 | ✅ live |
+| Swiftness Elixir | +10% move speed | 30s | 100 Merits | 3 | 45s | 10 | ⛔ off ² |
+| Fortune Incense | **+15%** MeritBonus | 120s | **10** Essence | 8 | 120s | 5 | ✅ live |
+| Crit Oil | **+8** CritChance (points) | 45s | **120** Merits | 5 | 60s | 10 | ✅ live |
+| Respec Scroll | 1 free respec (talents or stats) | — | **25** Essence | 10 | — | 99 | ✅ used from the respec panels |
+| Respec Fragment | 4 auto-combine into 1 Respec Scroll | — | not sold | — | — | 99 | passive |
+
+¹ Ironskin is +12% **Armor**. That is not +12% mitigation: armor mitigation is `100 / (100 + armor)`, so it gains less than 12%. While `PlayerDataConfig.BonusStats` has no `ArmorPercent` key, it's applied as a flat Armor bonus of 12% of the player's Armor at use time, excluding its own previous stack. If `ArmorPercent = 0` is added there, `GetTotalStat` applies it as a true percent and no code change is needed.
+² No player move-speed modifier exists. The `MovementSpeed` bonus stat has no reader, and WalkSpeed is owned by DeathSystem, MobAI and SkillManager (the X13 `BaseWalkSpeed` contract). The item stays hidden and unbuyable until one of those has a speed hook.
+
+### Use rules (server-side, `ConsumableEffects.Use`)
+
+- **Validation:** the player must own the item, be alive (not knocked down or dead), and the run must not be paused (same gate as §AGX/X7). The item's per-player cooldown must also be clear.
+- **No waste:** heals are refused at full HP, restores are refused at full resource, and Ironskin is refused with 0 Armor. A refused use doesn't spend the item.
+- **Order:** checks → `InventoryManager.ConsumeItem` → effect. If the effect errors, the item is given back.
+- **Cooldown:** one per item id, per player. Different items, like a Health Potion and a Greater Health Potion, don't share one.
+- **Stacking:** using the same buff again **refreshes** its duration and doesn't add a second copy. The BonusManager source is `timed_consumable_<id>`. A config can opt in to `stacks = true`, and none do. Buffs from *different* items, or from a card with the same stat, do add up.
+- **Heal over time:** the heal is split into 0.25s ticks. It stops if the player is knocked down, dies, leaves, or respawns into a new character.
+- **Lifetime:** buffs last only for the current server and end when the player leaves or teleports (lobby → run included). No config sets `persistAcrossTeleport`, which isn't supported yet. Per-player threads live in a Janitor that's destroyed on `PlayerRemoving`.
+- **Currency:** everything costs Merits or Essence. Consumables are never sold for Robux (§48, X40).
+
+### Economy notes
+
+- **Sinks:** consumables are a repeatable Merit sink, and Fortune Incense and the Elixir are repeatable Essence sinks. Their cost scales with how often they're used, not with level.
+- **Fortune Incense:** 10 Essence for +15% Merits over 120s. It pays off only when 15% of the Merits earned in those 120s is worth more to the player than 10 Essence. It's meant for a dense Merit window, like a Horde wave. *Unspecified:* no Essence↔Merit rate is defined and there's no Merits-per-minute telemetry, so the break-even isn't known. Watch purchases to see whether it's bought at all.
+- **Fortune Incense cap:** the +15% adds to talent and gear MeritBonus. Refunds (`raw = true`, X32) ignore it.
 
 ---
 

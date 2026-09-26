@@ -129,6 +129,9 @@ ShopConfig.Consumables = {
         levelReq = 5,
     },
     -- Buff items
+    -- §AGX/X10b: potions, crystals and buffs are sold again — `enabled` is
+    -- derived from ConsumableConfig.usable (bottom of file), now true for
+    -- all but swiftness_elixir (no move-speed system yet; stays hidden).
     {
         itemId   = "power_scroll",
         tab      = "Consumables",

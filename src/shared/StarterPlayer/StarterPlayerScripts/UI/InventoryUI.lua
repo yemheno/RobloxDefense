@@ -13,6 +13,13 @@
     an "Equipped" summary Panel over a scrolling list of Panel rows with a
     48 px Button (Equip / Unequip, "Full" = locked). The private palette,
     hitArea/minText helpers and TextScaled labels are gone. Same events.
+
+    §AGX/X10b: consumable rows. ConsumableConfig items show their name +
+    icon and a "Use" button (IsDirectUse items) instead of Equip, which the
+    server rejected for them anyway. Use goes through
+    useRequest("UseConsumable") → NotifyService.Inline answer, shown in a
+    status line under the Equipped bar. Respec scrolls/fragments show a
+    hint (they're used from the respec panels) and no button.
 ]]
 
 local Players           = game:GetService("Players")
@@ -31,6 +38,10 @@ local AppWindow   = require(Common:WaitForChild("AppWindow"))
 local Text        = require(Common:WaitForChild("Text"))
 local Button      = require(Common:WaitForChild("Button"))
 local Panel       = require(Common:WaitForChild("Panel"))
+local useRequest  = require(Common:WaitForChild("useRequest"))  -- §AGX/X10b
+
+-- §AGX/X10b: consumable display data + which ones have a Use path.
+local ConsumableConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ConsumableConfig"))
 
 local e  = React.createElement
 local R  = Theme.Roles
@@ -41,6 +52,7 @@ local ROW_H      = 64
 local ACTION_W   = 124
 local SLOT_W     = 88
 local SUMMARY_H  = 44
+local STATUS_H   = 24   -- §AGX/X10b: Use feedback line
 
 local SLOT_LABELS = {
 	Trinket = "Trinket",
@@ -48,10 +60,72 @@ local SLOT_LABELS = {
 	Ring2   = "Ring 2",
 }
 
+-- §AGX/X10b: one consumable row. Use button for IsDirectUse items (inert
+-- while a use is in flight); a hint label for the rest.
+local function consumableRow(i, item, consDef, useReq)
+	local canUse = ConsumableConfig.IsDirectUse(item.itemId)
+	local effType = consDef.effect and consDef.effect.type
+	local hint = nil
+	if not canUse then
+		hint = (effType == "RespecToken") and "Used in Respec"
+			or (effType == "None") and "Collectible"
+			or "Coming soon"
+	end
+	local textW = -(ACTION_W + SP.sm)
+	local title = (consDef.icon and (consDef.icon .. " ") or "") .. tostring(consDef.name or item.itemId)
+
+	return e(Panel, {
+		name        = "Item_" .. tostring(item.itemId),
+		elevation   = "raised",
+		padding     = "sm",
+		size        = UDim2.new(1, 0, 0, ROW_H),
+		layoutOrder = i,
+	}, {
+		nameLbl = e(Text, {
+			style = "heading",
+			text  = title,
+			size  = UDim2.new(1, textW, 0, 24),
+		}),
+		qtyLbl = e(Text, {
+			style    = "caption",
+			text     = "×" .. tostring(item.quantity or 1) .. "  ·  " .. tostring(consDef.desc or ""),
+			color    = "text.secondary",
+			position = UDim2.fromOffset(0, 26),
+			size     = UDim2.new(1, textW, 0, 18),
+		}),
+		hintLbl = hint and e(Text, {
+			style       = "label",
+			text        = hint,
+			color       = "text.secondary",
+			align       = "center",
+			anchorPoint = Vector2.new(1, 0.5),
+			position    = UDim2.fromScale(1, 0.5),
+			size        = UDim2.fromOffset(ACTION_W, 24),
+		}) or nil,
+		useBtn = canUse and e(Button, {
+			variant     = "primary",
+			label       = "Use",
+			width       = ACTION_W,
+			loading     = useReq.pending,
+			anchorPoint = Vector2.new(1, 0.5),
+			position    = UDim2.fromScale(1, 0.5),
+			onActivated = function()
+				useReq.send({ itemId = item.itemId })
+			end,
+		}) or nil,
+	})
+end
+
 local function InventoryUI(props)
 	local onClose = props.onClose or function() end
 
 	local invData, setInvData = React.useState(nil)
+
+	-- §AGX/X10b: Use feedback (server answers with NotifyService.Inline).
+	local useReq = useRequest("UseConsumable", {
+		pendingText = "Using…",
+		holdFor     = 3,
+	})
 
 	React.useEffect(function()
 		local mounted = true
@@ -80,7 +154,7 @@ local function InventoryUI(props)
 	if #items == 0 then
 		rows["empty"] = e(Text, {
 			style       = "body",
-			text        = invData and "No accessories owned." or "Loading…",
+			text        = invData and "No items owned." or "Loading…",
 			color       = "text.secondary",
 			align       = "center",
 			size        = UDim2.new(1, 0, 0, 40),
@@ -88,6 +162,13 @@ local function InventoryUI(props)
 		})
 	else
 		for i, item in ipairs(items) do
+			-- §AGX/X10b: consumables get a Use row, not the accessory Equip row.
+			local consDef = ConsumableConfig.GetById(item.itemId)
+			if consDef then
+				rows["item_" .. i] = consumableRow(i, item, consDef, useReq)
+				continue
+			end
+
 			-- Find which slot this item is equipped in (if any)
 			local equippedSlot = nil
 			for slot, id in pairs(equipped) do
@@ -192,10 +273,20 @@ local function InventoryUI(props)
 					size  = UDim2.fromScale(1, 1),
 				}),
 			}),
+			-- §AGX/X10b: Use feedback line (useRequest inline state).
+			useStatus = e(Text, {
+				style    = "caption",
+				text     = useReq.message or "",
+				color    = (useReq.state == "err") and "state.danger"
+					or (useReq.state == "pending") and "text.secondary"
+					or "state.success",
+				position = UDim2.fromOffset(0, SUMMARY_H + SP.xs),
+				size     = UDim2.new(1, 0, 0, STATUS_H),
+			}),
 			listFrame = e("ScrollingFrame", {
 				Name                   = "List",
-				Position               = UDim2.fromOffset(0, SUMMARY_H + SP.md),
-				Size                   = UDim2.new(1, 0, 1, -(SUMMARY_H + SP.md)),
+				Position               = UDim2.fromOffset(0, SUMMARY_H + STATUS_H + SP.md),
+				Size                   = UDim2.new(1, 0, 1, -(SUMMARY_H + STATUS_H + SP.md)),
 				BackgroundTransparency = 1,
 				BorderSizePixel        = 0,
 				ScrollBarThickness     = Theme.Metrics.scrollBar,

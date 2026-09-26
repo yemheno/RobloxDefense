@@ -126,7 +126,12 @@ Studio can't test reserved servers. Check what it can:
   - Locked in combat places.
   - The gamepad radial shows all 7 Character entries.
 - [ ] Respec costs 25 Essence everywhere (UI labels too); the respec scroll costs 25.
-- [ ] Only the Respec Scroll is buyable under Consumables; the others show "Coming soon" (`X10`).
+- [ ] **Consumables** (`§AGX/X10b`): the 8 potions/buffs are buyable; Swiftness shows "Coming soon".
+  - Inventory → Use on a potion: refused at full HP (count unchanged); when hurt, HP rises over ~2 s and the count drops. Reuse within the cooldown says "on cooldown".
+  - Mana Crystal refused when the bar is full. Power Scroll / Crit Oil refresh their timer instead of stacking, and the Feed says "… wore off." after 45 s.
+  - Fortune Incense: kill Merits +15%. Ironskin: Armor +~12%, no compounding on refresh.
+  - Knocked down or Horde paused: Use refused.
+  - Leave mid-buff and rejoin: the buff is gone, and MeritBonus in Stats is back to gear/talent only.
 - [ ] Daily login: the calendar day advances per claim, and the spree resets after a missed day (`X47`).
 - [ ] Leaderboards: Highest Wave and Play Time have entries after a run (`X27`).
 - [ ] **Premium:** everything is disabled until you create the real products. When you do, follow `docs/BALANCE_NUMBERS.md` §48 and the steps in commit `1c6e333`.

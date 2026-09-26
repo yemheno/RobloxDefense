@@ -35,6 +35,9 @@
         "acc_ring2"   — equipped ring 2                   — InventoryManager
         "other"       — ad-hoc / debug                    — PlayerBonusSystem
         "timed_<tag>" — temporary card buffs (auto-expire) — AddTimedBonus
+        "timed_consumable_<itemId>" — §AGX/X10b: consumable buffs
+                        (Power Scroll, Fortune Incense, …) — ConsumableEffects.
+                        Same AddTimedBonus path: re-use refreshes, leave clears.
 
     Write-time validation  (§T1.3/B1)
     ─────────────────────────────────
@@ -65,6 +68,7 @@
 
       -- Temporary buff with auto-cancel + refresh-on-reapply (§T1.3/B8)
       BonusManager.AddTimedBonus(player, tagName, statName, value, durationSec)
+      BonusManager.GetTimedBonus(player, tagName, statName) → number  (§AGX/X10b)
 
       -- Reads
       BonusManager.GetAggregatedBonus(player, stat) → number
@@ -291,6 +295,15 @@ end
 -- ═══════════════════════════════════════════════════════════
 -- READ HELPERS
 -- ═══════════════════════════════════════════════════════════
+
+--- §AGX/X10b: current value of one stat in a timed source (0 when absent
+--- or expired). ConsumableEffects reads its own Ironskin contribution so a
+--- refresh re-derives the bonus from armor WITHOUT the previous buff.
+function BonusManager.GetTimedBonus(player, tagName, statName)
+    local sources = playerBonuses[player]
+    local src = sources and sources["timed_" .. tostring(tagName)]
+    return (src and src[statName]) or 0
+end
 
 --- Sum a single stat across ALL sources (without going through data.Bonus).
 function BonusManager.GetAggregatedBonus(player, stat)

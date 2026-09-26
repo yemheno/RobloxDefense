@@ -11,6 +11,7 @@
       Client → Server    "GetInventory"        → triggers InventoryUpdate
       Client → Server    "EquipAccessory"      → { itemId, slot }
       Client → Server    "UnequipAccessory"    → { slot }
+      Client → Server    "UseConsumable"       → { itemId }  (§AGX/X10b: ConsumableEffects)
       Server → Client    "InventoryUpdate"     → { items = {...}, equipped = {...} }
 
     Public API (for other server modules):
@@ -133,6 +134,15 @@ function InventoryManager.Init()
         InventoryManager.SendInventory(player)
     end)
 
+    -- §AGX/X10b: consumable use path ("UseConsumable"). Started from here so
+    -- every place that loads InventoryManager gets it with no Main change.
+    -- pcall'd: a broken effects module must not take inventory down.
+    local okCE, errCE = pcall(function()
+        require(Modules:WaitForChild("ConsumableEffects")).Init()
+    end)
+    if not okCE then
+        warn("[InventoryManager] ConsumableEffects.Init failed:", errCE)
+    end
 end
 
 -- ═══════════════════════════════════════════════════════════

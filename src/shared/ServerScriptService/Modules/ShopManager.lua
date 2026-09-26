@@ -231,7 +231,8 @@ function ShopManager.PurchaseConsumable(player, itemId, quantity)
             return false, "Item not in consumable shop."
         end
         -- §AGX/X10: only consumables with a server-side use handler are
-        -- sold (today: respec_scroll). ShopConfig derives `enabled` from
+        -- sold (§AGX/X10b: 8 potions/buffs via ConsumableEffects, plus
+        -- respec_scroll; swiftness is still off). ShopConfig derives `enabled` from
         -- ConsumableConfig.usable; both are checked so a hand-set
         -- `enabled = true` on an unusable item still can't be bought. This
         -- covers the global shop AND the NPC ShopHandler path, which both

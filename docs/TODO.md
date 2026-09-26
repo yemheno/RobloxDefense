@@ -852,7 +852,10 @@ New open items created by the agency-checks session (`git log
   `TalentTreeConfig.IMPLEMENTED_RULES = {}` (`TalentTreeConfig.lua:735`,
   tagging at `:741-751`). Implement the rules one at a time and add each
   name to the set. Belongs with the talent pass (§3).
-- `[P1]` **§AGX/X10-CONSUMABLES — only the respec scroll can be used.**
+- ✅ *(Done 2026-09-26, §AGX/X10b: `ConsumableEffects.lua` + InventoryUI Use
+  button; 8 of 9 items on. Remaining: Swiftness Elixir needs a move-speed
+  hook in the X13 `BaseWalkSpeed` owners. Ironskin is flat Armor = 12% of
+  current until an `ArmorPercent` bonus stat exists.)* **§AGX/X10-CONSUMABLES — only the respec scroll can be used.**
   Consumables with no server use handler are unbuyable and show "Coming
   soon" (`ConsumableConfig.lua:13,174-176`; `ShopManager.lua:233-239`).
   Write the use handlers (potions, buffs), then set `usable = true` per
