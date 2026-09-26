@@ -10,7 +10,8 @@
               max 560 }) in SCREEN px (like the emote wheel), converted to
               design px; buttons >= 64 design px.
     Input (ContextActionService at High+2, Sink while open *(verify in
-    Studio)*):
+    Studio)*; §AGX/UI-FIX: 5 — bound only while the radial is the VISIBLE
+    top entry, so a vote / death presence gets the stick, A and the DPad):
         Left stick     highlight by direction (deadzone 0.5); the sink also
                        keeps the character from walking
         DPad L / R     step the highlight
@@ -233,8 +234,18 @@ local function MenuRadial(props)
 		end)
 	end
 
+	-- §AGX/UI-FIX: 5 — only hold the CAS binds while this radial is the
+	-- VISIBLE top entry. Under a modal / system presence (vote, death) it is
+	-- suspended (hidden, still mounted) and must not sink the stick, A or the
+	-- DPad. Outside a PanelHost (no entry context) it is always active.
+	local stackState = Model.useStack()
+	local suspendedMap = type(stackState.suspended) == "table" and stackState.suspended or nil
+	local inputActive = entryCtx == nil
+		or (entryCtx.top == true and not (suspendedMap and suspendedMap[entryCtx.id]))
+
 	-- Gamepad input while open.
 	React.useEffect(function()
+		if not inputActive then return nil end   -- §AGX/UI-FIX: 5
 		local stickMoved = false
 		local openedAt = os.clock()
 		local dpadHeld = false
@@ -288,7 +299,7 @@ local function MenuRadial(props)
 			ContextActionService:UnbindAction(CAS_NAME)
 			endedConn:Disconnect()
 		end
-	end, {})
+	end, { inputActive })   -- §AGX/UI-FIX: 5
 
 	-- Geometry (design px).
 	local target = scale.target

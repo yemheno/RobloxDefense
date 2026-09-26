@@ -179,9 +179,14 @@ function InputSystem.Init()
 		local actions = keyToActions[key]
 		if not actions then return end
 
+		-- §AGX/UI-FIX: 1 — gate every action of this press on the context it
+		-- arrived in. A callback (UIBack -> PanelStack.back) can drop the "UI"
+		-- override mid-loop; re-reading the live context let the same B press
+		-- also fire Dash.
+		local ctx = activeContext
 		for _, actionName in ipairs(actions) do
 			local def = InputActions.Definitions[actionName]
-			if def and def.contexts[activeContext] then
+			if def and def.contexts[ctx] then
 				FireCallbacks(actionName, "Began", input)
 			end
 		end
@@ -198,9 +203,10 @@ function InputSystem.Init()
 		local actions = keyToActions[key]
 		if not actions then return end
 
+		local ctx = activeContext   -- §AGX/UI-FIX: 1 — same snapshot as InputBegan
 		for _, actionName in ipairs(actions) do
 			local def = InputActions.Definitions[actionName]
-			if def and def.contexts[activeContext] then
+			if def and def.contexts[ctx] then
 				FireCallbacks(actionName, "Ended", input)
 			end
 		end
@@ -225,6 +231,8 @@ function InputSystem.FireAction(actionName, inputState)
 		return false
 	end
 	inputState = inputState or "Began"
+	-- §AGX/UI-FIX: 1 — read the context once (same snapshot rule as InputBegan).
+	local ctx = activeContext
 
 	if inputState == "Ended" then
 		-- Always close a hold we opened, whatever the context is now.
@@ -233,14 +241,14 @@ function InputSystem.FireAction(actionName, inputState)
 			FireCallbacks(actionName, "Ended", nil)
 			return true
 		end
-		if not def.contexts[activeContext] then return false end
+		if not def.contexts[ctx] then return false end
 		FireCallbacks(actionName, "Ended", nil)
 		return true
 	end
 
 	-- Same gate as InputBegan: suppressed outside the action's contexts,
 	-- which includes the "UI" context (D6: no skills behind menus).
-	if not def.contexts[activeContext] then return false end
+	if not def.contexts[ctx] then return false end
 	firedHeld[actionName] = true
 	FireCallbacks(actionName, inputState, nil)
 	return true

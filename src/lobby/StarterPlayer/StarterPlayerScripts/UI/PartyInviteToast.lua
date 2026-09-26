@@ -33,6 +33,13 @@ local Button      = require(Common:WaitForChild("Button"))
 local IconButton  = require(Common:WaitForChild("IconButton"))
 local Panel       = require(Common:WaitForChild("Panel"))
 local Bar         = require(Common:WaitForChild("Bar"))
+-- §AGX/UI-FIX: R6 — gamepad first focus on Accept.
+local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))
+local ReactRoblox  = require(ReplicatedStorage.Packages.ReactRoblox)   -- §AGX/UI-FIX: 8
+
+-- §AGX/UI-FIX: 8 — own ScreenGui ABOVE PanelGui (20) and below NotifyGui
+-- (30): inside AppGui (0) the toast drew under any open panel.
+local DISPLAY_ORDER = 25
 
 local e  = React.createElement
 local SP = Theme.Space
@@ -103,6 +110,12 @@ local function PartyInviteToast()
 		end
 	end, {})
 
+	-- §AGX/UI-FIX: R6 — on a pad, select Accept while an invite is shown
+	-- (a new invite table re-selects); steal = false leaves an open panel's
+	-- selection alone. Unconditional: before the early return.
+	local rootRef = React.useRef(nil)
+	GamepadFocus.useAutoSelect(rootRef, invite, { steal = false, prefer = { "Accept", "Decline" } })
+
 	-- Nothing to render when not visible
 	if not invite then
 		return e("Frame", {
@@ -115,7 +128,7 @@ local function PartyInviteToast()
 	local urgent = timeLeft <= 10
 	local z = Theme.Z.toast
 
-	return e(UIScaleRoot.Local, { name = "PartyInviteToast", zIndex = z }, {
+	local toastTree = e(UIScaleRoot.Local, { name = "PartyInviteToast", zIndex = z }, {
 		toast = e(Panel, {
 			name        = "Toast",
 			elevation   = "raised",
@@ -208,6 +221,29 @@ local function PartyInviteToast()
 			}),
 		}),
 	})
+
+	-- §AGX/UI-FIX: R6 — non-interactive full-size root for useAutoSelect.
+	local rooted = e("Frame", {
+		Name                   = "PartyInviteToastRoot",
+		Size                   = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		ref                    = rootRef,
+	}, { toast = toastTree })
+
+	-- §AGX/UI-FIX: 8 — portal into its own ScreenGui (same insets as AppGui /
+	-- PanelGui). No ancestor UIScale applies there, so the UIScale context is
+	-- reset to 1 and UIScaleRoot.Local adds the full scale.
+	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	if not playerGui then return rooted end
+	return ReactRoblox.createPortal(e("ScreenGui", {
+		Name           = "PartyInviteGui",
+		ResetOnSpawn   = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder   = DISPLAY_ORDER,
+		ScreenInsets   = Enum.ScreenInsets.DeviceSafeInsets,
+	}, {
+		scaleCtx = e(UIScaleRoot.Context.Provider, { value = 1 }, rooted),
+	}), playerGui)
 end
 
 return PartyInviteToast

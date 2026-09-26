@@ -38,6 +38,13 @@ local Common      = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChi
 local Theme       = require(Common:WaitForChild("Theme"))
 local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
 local Button      = require(Common:WaitForChild("Button"))
+-- §AGX/UI-FIX: R6 — gamepad first focus on Retry / Cancel / Close.
+local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))
+local ReactRoblox  = require(ReplicatedStorage.Packages.ReactRoblox)   -- §AGX/UI-FIX: 8
+
+-- §AGX/UI-FIX: 8 — own ScreenGui ABOVE PanelGui (20) and below NotifyGui (30):
+-- inside AppGui (0) the controls drew under any open panel.
+local DISPLAY_ORDER = 25
 
 local e = React.createElement
 local R = Theme.Roles
@@ -141,16 +148,29 @@ local function MatchmakingUI()
 		return function() Notify.clearBanner("matchmaking") end
 	end, {})
 
-	if not mmState then
-		return nil
-	end
-
-	local showCancel = (status == "Queued" or status == "Countdown")
+	local showCancel = mmState ~= nil and (status == "Queued" or status == "Countdown")
 	-- §AGX/X14: errors that carry a mode came from a failed/timed-out
 	-- launch → offer Retry (re-queue same mode + tier). Every error gets a
 	-- Close button; before this an Error banner could never be dismissed.
-	local isError  = (status == "Error")
+	local isError  = mmState ~= nil and (status == "Error")
 	local showRetry = isError and mmState.mode ~= nil
+
+	-- §AGX/UI-FIX: R6 — on a pad, focus Retry (else Close) while an Error
+	-- row is shown. Not while Queued / Countdown: a GUI selection takes the
+	-- left stick from the character, and the queue can last minutes of
+	-- walking around the lobby (Cancel stays reachable by the pad's
+	-- selection toggle). steal = false: an open panel's selection is left
+	-- alone. Hook is unconditional (before any return).
+	local rootRef = React.useRef(nil)
+	local focusKey = isError and ((mmState and mmState.message) or status) or nil
+	GamepadFocus.useAutoSelect(rootRef, focusKey, {
+		steal  = false,
+		prefer = { "RetryBtn", "CloseBtn" },
+	})
+
+	if not mmState then
+		return nil
+	end
 	if not (showCancel or isError) then
 		return nil  -- §AGX/UI-P4: nothing to press; the banner says it all
 	end
@@ -159,8 +179,11 @@ local function MatchmakingUI()
 	-- §AGX/UI-P6: the row is placed from Notify's SCREEN px (converted to
 	-- this tree's units); the Buttons inside are design px (44 tall) under
 	-- UIScaleRoot.Local, so the row is 44 x uiScale tall like Notify's taps.
-	local applied = scale.applied
-	local rowH = Theme.Metrics.button.sm * scale.remaining
+	-- §AGX/UI-FIX: 8 — portalled into an unscaled ScreenGui: this tree's
+	-- units are screen px there (applied 1), and Local adds the full target.
+	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
+	local applied = playerGui and 1 or scale.applied
+	local rowH = Theme.Metrics.button.sm * (playerGui and scale.target or scale.remaining)
 	local function controlBtn(order, text, variant, onActivated)
 		return e(Button, {
 			name        = text .. "Btn",
@@ -173,13 +196,14 @@ local function MatchmakingUI()
 		})
 	end
 
-	return e("Frame", {
+	local row = e("Frame", {
 		Name                   = "MatchmakingUI",
 		AnchorPoint            = Vector2.new(0.5, 0),
 		Position               = UDim2.new(0.5, 0, 0, UIScaleRoot.toLocal(L.bannerY + L.bannerH + 8, applied)),
 		Size                   = UDim2.fromOffset(UIScaleRoot.toLocal(L.bannerW, applied), rowH),
 		BackgroundTransparency = 1,
 		ZIndex                 = 25,
+		ref                    = rootRef,   -- §AGX/UI-FIX: R6
 	}, {
 		scaled = e(UIScaleRoot.Local, { name = "Controls", zIndex = 25 }, {
 			layout = e("UIListLayout", {
@@ -213,6 +237,21 @@ local function MatchmakingUI()
 			end) or nil,
 		}),
 	})
+
+	-- §AGX/UI-FIX: 8 — portal into an unscaled DeviceSafeInsets ScreenGui
+	-- (same geometry as NotifyGui, whose screen-px layout L places the row).
+	-- The UIScale context is reset to 1 because no ancestor UIScale applies
+	-- inside the new ScreenGui; UIScaleRoot.Local then adds the full scale.
+	if not playerGui then return row end
+	return ReactRoblox.createPortal(e("ScreenGui", {
+		Name           = "MatchmakingGui",
+		ResetOnSpawn   = false,
+		ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+		DisplayOrder   = DISPLAY_ORDER,
+		ScreenInsets   = Enum.ScreenInsets.DeviceSafeInsets,
+	}, {
+		scaleCtx = e(UIScaleRoot.Context.Provider, { value = 1 }, row),
+	}), playerGui)
 end
 
 return MatchmakingUI

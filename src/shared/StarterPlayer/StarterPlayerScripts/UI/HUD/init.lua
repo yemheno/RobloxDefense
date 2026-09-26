@@ -75,11 +75,22 @@ local e = React.createElement
 
 -- BattleClassUI is only needed when the HUD owns the class badge (Wave 2);
 -- required lazily and without yielding, so the Lobby never loads it.
+-- §AGX/UI-FIX: 9 — pcall'd (a require error no longer throws out of the
+-- HUD's render), and Shell.preload("Combat") warms the require so this
+-- render-time call does not yield. A missing module is not cached (it may
+-- replicate later); a failed require is cached as false.
 local battleClassUI = nil
 local function getBattleClassUI()
 	if battleClassUI == nil then
 		local mod = UI:FindFirstChild("BattleClassUI")
-		battleClassUI = mod and require(mod) or false
+		if not mod then return nil end
+		local ok, res = pcall(require, mod)
+		if not ok then
+			warn("[HUD] BattleClassUI require failed:", res)
+			battleClassUI = false
+		else
+			battleClassUI = res or false
+		end
 	end
 	return battleClassUI or nil
 end
@@ -142,7 +153,14 @@ local function HUD(props)
 		runControls = (place == "Combat") and e(RunControlsRegion, {
 			layout = L, run = run, visible = show.topCentre,
 		}) or nil,
-		party = e(PartyRegion, { layout = L, visible = show.party }),
+		-- §AGX/UI-FIX: 7 — mounted whenever the HUD owns the party (combat +
+		-- partyInHud) and only hidden otherwise, so opening a panel no longer
+		-- unmounts TeammateVitals (and drops its VitalsUpdate state).
+		party = e(PartyRegion, {
+			layout  = L,
+			mounted = place == "Combat" and props.partyInHud == true,
+			visible = show.party,
+		}),
 		play = e(PlayCta, { layout = L, onPlay = props.onPlay, visible = show.play }),
 		quick = e(QuickButtons, {
 			layout = L, onEmote = props.onEmote, onWardrobe = props.onWardrobe, visible = show.quick,
@@ -182,15 +200,26 @@ local function HUD(props)
 	end
 
 	-- ── Screen-px legacy pieces (outside the scale layer) ────────────────
+	-- §AGX/UI-FIX: 7 — the badge stays mounted wherever the layout has one
+	-- (L.classBadge) and is hidden with Visible when show.classBadge is off
+	-- (panel open), instead of being unmounted and remounted.
 	local classBadge = nil
-	local BattleClassUI = show.classBadge and getBattleClassUI() or nil
-	if BattleClassUI and L.classBadge then
+	local BattleClassUI = L.classBadge and getBattleClassUI() or nil
+	if BattleClassUI then
 		-- design -> this frame's units (screen px / scale already applied above)
 		local k = sc.remaining
-		classBadge = e(BattleClassUI, {
-			showBadge   = true,
-			anchorPoint = Vector2.new(0, 0),
-			position    = UDim2.fromOffset(L.classBadge.x * k, L.classBadge.y * k),
+		classBadge = e("Frame", {
+			Name                   = "ClassBadgeHost",
+			Size                   = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			ZIndex                 = 3,   -- BattleClassUI's own default root ZIndex
+			Visible                = show.classBadge == true,
+		}, {
+			badge = e(BattleClassUI, {
+				showBadge   = true,
+				anchorPoint = Vector2.new(0, 0),
+				position    = UDim2.fromOffset(L.classBadge.x * k, L.classBadge.y * k),
+			}),
 		})
 	end
 

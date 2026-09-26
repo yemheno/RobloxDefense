@@ -12,8 +12,9 @@
     Tablet 96x72): icon + label (>= 12) + a second line with the lock
     reason. A tile runs PanelStack.replace(id) (the flyout gives way); an
     action entry runs closeAll("self") then the action (PanelStack.open).
-    Outside click: PanelHost's scrim (menu entries are dismissOnBackdrop);
-    outside a PanelHost the flyout draws its own transparent scrim.
+    Outside click: §AGX/UI-FIX: 10 — the flyout always draws its own
+    transparent scrim (PanelHost skips its D8 one for "menuFlyout") with a
+    hole over props.rail, so a rail tap switches groups in one tap.
     *(verify in Studio)* AbsolutePosition of the HUD (AppGui) and PanelGui
     share one space; if not, the clamp still keeps the card on screen.
 ]]
@@ -111,6 +112,57 @@ local function MenuFlyout(props)
 		if props.onClose then props.onClose(reason) end
 	end
 
+	-- §AGX/UI-FIX: 10 — the flyout draws its own outside-tap scrim (in or
+	-- out of a PanelHost; PanelHost skips its D8 scrim for "menuFlyout"),
+	-- leaving a hole over the rail (props.rail, GUI px), so a tap on another
+	-- rail group reaches the rail at once (it replaces / toggles the flyout)
+	-- instead of first being eaten by the scrim.
+	local onOutside = function()
+		if entryCtx and entryCtx.onBackdrop then
+			entryCtx.onBackdrop()
+		else
+			close("backdrop")
+		end
+	end
+	local function scrimPiece(name, px, py, w, h)
+		if w <= 0 or h <= 0 then return nil end
+		return e("TextButton", {
+			Name                   = name,
+			Position               = UDim2.fromOffset(px, py),
+			Size                   = UDim2.fromOffset(w, h),
+			BackgroundTransparency = 1,
+			AutoButtonColor        = false,
+			Selectable             = false,
+			Text                   = "",
+			ZIndex                 = 2,
+			[React.Event.Activated] = onOutside,
+		})
+	end
+	local scrim = {}
+	local rail = props.rail
+	if layer and type(rail) == "table" and typeof(rail.pos) == "Vector2" and typeof(rail.size) == "Vector2" then
+		-- Hole in this layer's design px.
+		local hx = math.clamp((rail.pos.X - layer.pos.X) / target, 0, layerW)
+		local hy = math.clamp((rail.pos.Y - layer.pos.Y) / target, 0, layerH)
+		local hr = math.clamp(hx + rail.size.X / target, hx, layerW)
+		local hb = math.clamp(hy + rail.size.Y / target, hy, layerH)
+		scrim.scrimL = scrimPiece("ScrimL", 0, 0, hx, layerH)
+		scrim.scrimR = scrimPiece("ScrimR", hr, 0, layerW - hr, layerH)
+		scrim.scrimT = scrimPiece("ScrimT", hx, 0, hr - hx, hy)
+		scrim.scrimB = scrimPiece("ScrimB", hx, hb, hr - hx, layerH - hb)
+	else
+		scrim.scrim = e("TextButton", {
+			Name                   = "Scrim",
+			Size                   = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			AutoButtonColor        = false,
+			Selectable             = false,
+			Text                   = "",
+			ZIndex                 = 2,
+			[React.Event.Activated] = onOutside,
+		})
+	end
+
 	return e(UIScaleRoot.Local, { name = "MenuFlyout", zIndex = 2 }, {
 		root = e("Frame", {
 			Name                   = "Layer",
@@ -124,17 +176,13 @@ local function MenuFlyout(props)
 				setLayer({ pos = rbx.AbsolutePosition, size = rbx.AbsoluteSize })
 			end,
 		}, {
-			-- Own scrim only outside a PanelHost (PanelHost draws the D8 one).
-			scrim = (entryCtx == nil) and e("TextButton", {
+			-- §AGX/UI-FIX: 10 — own scrim always, with a hole over the rail.
+			scrim = e("Frame", {
 				Name                   = "Scrim",
 				Size                   = UDim2.fromScale(1, 1),
 				BackgroundTransparency = 1,
-				AutoButtonColor        = false,
-				Selectable             = false,
-				Text                   = "",
 				ZIndex                 = 2,
-				[React.Event.Activated] = function() close("backdrop") end,
-			}) or nil,
+			}, scrim),
 			card = e("Frame", {
 				Name             = "Flyout_" .. tostring(props.group),
 				AnchorPoint      = Vector2.new(1, 0.5),

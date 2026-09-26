@@ -145,7 +145,9 @@ local function EntryWrapper(props)
 			ZIndex                 = 0,
 		}) or nil,
 		-- D8 scrim: only dialogs / flyouts / menu sheets.
-		scrim = (props.inStack and entry.dismissOnBackdrop) and e("TextButton", {
+		-- §AGX/UI-FIX: 10 — not for the rail flyout: MenuFlyout draws its own
+		-- scrim with a hole over the rail, so a rail tap reaches the rail.
+		scrim = (props.inStack and entry.dismissOnBackdrop and id ~= "menuFlyout") and e("TextButton", {
 			Name                   = "Scrim",
 			Size                   = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
@@ -192,19 +194,38 @@ local function PanelHost(props)
 
 	-- Late loads (a module that was missing at preload, e.g. another agent's
 	-- Shell file): load it off-render and re-render.
+	-- §AGX/UI-FIX: 6 — a stacked record whose module still fails to load
+	-- (missing after Registry.load's wait, or require error) is force-removed:
+	-- an empty wrapper would keep the "UI" context and hudMode "none", with
+	-- no exit on touch. `loadingRef` dedupes loads across effect re-runs, so
+	-- the re-render is gated on the host being mounted, not on this run.
+	local loadingRef = React.useRef({})
+	local mountedRef = React.useRef(false)
 	React.useEffect(function()
-		local alive = true
+		mountedRef.current = true
+		return function() mountedRef.current = false end
+	end, {})
+	React.useEffect(function()
 		for _, rec in ipairs(state.stack) do
-			if rec.entry and not Registry.resolve(rec.entry, place) then
+			if rec.entry and not Registry.resolve(rec.entry, place)
+				and not loadingRef.current[rec.key] then
+				loadingRef.current[rec.key] = true
 				task.spawn(function()
-					if Registry.load(rec.entry, place) and alive then
-						setLoadedVersion(function(v) return v + 1 end)
+					local comp = Registry.load(rec.entry, place)
+					loadingRef.current[rec.key] = nil
+					if comp then
+						if mountedRef.current then setLoadedVersion(function(v) return v + 1 end) end
+					elseif Registry.spec(rec.entry, place) ~= nil
+						-- a mount="always" external this host does not render
+						-- may be mounted by a legacy tree: leave it alone
+						and (rec.entry.mount ~= "always" or mountExternals)
+						and PanelStack.forceRemove(rec.key) then
+						warn("[PanelHost] entry module failed to load; closed:", rec.id)
 					end
 				end)
 			end
 		end
-		return function() alive = false end
-	end, { state, place } :: { any })
+	end, { state, place, mountExternals } :: { any })
 
 	local panelChildren = {}
 	local modalChildren = {}

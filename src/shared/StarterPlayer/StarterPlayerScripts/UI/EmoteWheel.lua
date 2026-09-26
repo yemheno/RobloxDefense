@@ -95,6 +95,8 @@ local Common        = script.Parent:WaitForChild("Common")
 local Theme         = require(Common:WaitForChild("Theme"))
 local useFormFactor = require(Common:WaitForChild("useFormFactor"))
 local IconButton    = require(Common:WaitForChild("IconButton"))
+-- §AGX/UI-FIX: R6 — gamepad first focus while the wheel is open.
+local GamepadFocus  = require(Common:WaitForChild("GamepadFocus"))
 local R = Theme.Roles
 
 -- Text style scaled for this unscaled (screen px) tree.
@@ -283,6 +285,14 @@ local function EmoteWheel()
 		end)
 	end
 
+	-- §AGX/UI-FIX: R6 — on a pad, select the first emote while open
+	-- (steal = false: an existing selection is left alone). Unconditional.
+	local rootRef = useRef(nil)
+	GamepadFocus.useAutoSelect(rootRef, visible, {
+		steal  = false,
+		prefer = EMOTES[1] and { "Emote_" .. tostring(EMOTES[1].id) } or nil,
+	})
+
 	if not visible then
 		return nil
 	end
@@ -336,6 +346,7 @@ local function EmoteWheel()
 		Size                   = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		ZIndex                 = Theme.Z.windowOver,   -- §AGX/UI-P6: was a literal 30
+		ref                    = rootRef,   -- §AGX/UI-FIX: R6
 	}, {
 		-- §AGX/UI-P2: M3 — the dim overlay is now a button: tap/click outside
 		-- the wheel closes it.
@@ -346,6 +357,7 @@ local function EmoteWheel()
 			BorderSizePixel        = 0,
 			AutoButtonColor        = false,
 			Text                   = "",
+			Selectable             = false,   -- §AGX/UI-FIX: R6 — never a pad target
 			ZIndex                 = 1,
 			[React.Event.Activated] = function() setVisible(false) end,
 		}),

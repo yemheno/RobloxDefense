@@ -22,7 +22,8 @@
                      plus NPCDialog / ShopUI / WeaponSmithUI in the Lobby
       notifyHost     Notify.Host (exactly once per place: CentralBossApp wraps
                      CombatApp, which renders this Shell once)
-      tooltipLayer   Theme v2 TooltipHost in a UIScaleRoot.Root (2e3fdf5)
+      tooltipLayer   Theme v2 TooltipHost in a UIScaleRoot.Root (2e3fdf5), in its
+                     own ScreenGui "TooltipGui" (DisplayOrder.tooltip = 50)
       Lobby + Combat achievementToast, testingPanel
       Lobby + Plaza  emoteWheel (closed by PanelStack.onOpen)
       Combat         skillPad (touch) | actionBar, deathOverlay, voteOverlay.
@@ -35,7 +36,9 @@
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players           = game:GetService("Players")   -- §AGX/UI-FIX: 3
 local React             = require(ReplicatedStorage.Packages.React)
+local ReactRoblox       = require(ReplicatedStorage.Packages.ReactRoblox)   -- §AGX/UI-FIX: 3
 
 local ShellFolder = script.Parent
 local UI          = ShellFolder.Parent
@@ -120,6 +123,10 @@ local function Shell(props)
 		PanelStack.open("wardrobe")
 	end, {})
 
+	-- §AGX/UI-FIX: 3 — PlayerGui for the tooltip ScreenGui portal.
+	local lp = Players.LocalPlayer
+	local tooltipGuiParent = lp and lp:FindFirstChildOfClass("PlayerGui") or nil
+
 	local children = {
 		hud = e(HUD, {
 			place         = place,
@@ -141,12 +148,23 @@ local function Shell(props)
 		notifyHost = e(Notify.Host),
 
 		-- §AGX/UI-P1v2: UIScale layer at the tooltip band (above every window)
-		tooltipLayer = e(UIScaleRoot.Root, {
-			name   = "TooltipLayer",
-			zIndex = Theme.Z.tooltip,
+		-- §AGX/UI-FIX: 3 — in its own ScreenGui at Theme.DisplayOrder.tooltip
+		-- (50): inside AppGui (0) it drew UNDER PanelGui (20), so tooltips of
+		-- panel buttons were hidden. Same insets as PanelGui / NotifyGui.
+		tooltipLayer = tooltipGuiParent and ReactRoblox.createPortal(e("ScreenGui", {
+			Name           = "TooltipGui",
+			ResetOnSpawn   = false,
+			ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+			DisplayOrder   = (Theme.DisplayOrder and Theme.DisplayOrder.tooltip) or 50,
+			ScreenInsets   = Enum.ScreenInsets.DeviceSafeInsets,
 		}, {
-			host = e(Tooltip.Host),
-		}),
+			layer = e(UIScaleRoot.Root, {
+				name   = "TooltipLayer",
+				zIndex = Theme.Z.tooltip,
+			}, {
+				host = e(Tooltip.Host),
+			}),
+		}), tooltipGuiParent) or nil,
 	}
 
 	if place ~= "Plaza" then
@@ -192,7 +210,16 @@ ShellExport.Component = Shell
 
 --- May yield. Call from a place App's module scope, never from render.
 function ShellExport.preload(place)
-	if place == "Combat" then combatParts(true) end
+	if place == "Combat" then
+		combatParts(true)
+		-- §AGX/UI-FIX: 9 — warm the HUD's class-badge require here (may
+		-- yield), so HUD's render-time pcall(require) returns at once.
+		local mod = UI:WaitForChild("BattleClassUI", 10)
+		if mod then
+			local ok, err = pcall(require, mod)
+			if not ok then warn("[Shell] BattleClassUI preload failed:", err) end
+		end
+	end
 end
 
 return ShellExport

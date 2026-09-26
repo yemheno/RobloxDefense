@@ -15,6 +15,11 @@
         -- tip.wrapActivated(fn) -> swallows the tap that ends a long-press
     3) Host (App roots, inside a UIScaleRoot.Root at Theme.Z.tooltip):
         e(Tooltip.Host)
+       §AGX/UI-FIX: 3 — mount it in its OWN ScreenGui at
+       Theme.DisplayOrder.tooltip (50), as Shell.lua does ("TooltipGui"):
+       inside AppGui (0) the bubble renders under PanelGui (20). Target and
+       host positions are both AbsolutePosition, so any ScreenGui with the
+       same ScreenInsets as the targets' works.
 
     Imperative: Tooltip.show(rbx, text, opts) -> token; Tooltip.hide(token).
 ]]

@@ -18,7 +18,8 @@
         • Tooltip = label (hover on PC, long-press on touch).
         Tap:
           Character / Progress (flyout groups, D3)  -> open("menuFlyout",
-              { group, place, anchor = the button's left-centre in GUI px });
+              { group, place, anchor = the button's left-centre in GUI px,
+                rail = { pos, size } of this rail in GUI px (§AGX/UI-FIX: 10) });
               tap again -> closeAll("toggle")
           any other group -> its first available entry (open / toggle close)
 ]]
@@ -132,7 +133,12 @@ local function MenuRail(props)
 				return
 			end
 			local anchor = rbx.AbsolutePosition + Vector2.new(0, rbx.AbsoluteSize.Y / 2)
-			PS.open("menuFlyout", { group = g.id, place = place, anchor = anchor })
+			-- §AGX/UI-FIX: 10 — the rail's own rect (GUI px), so the flyout's
+			-- scrim leaves it uncovered: one tap on another group switches.
+			local railFrame = rbx.Parent
+			local railRect = (railFrame and railFrame:IsA("GuiObject"))
+				and { pos = railFrame.AbsolutePosition, size = railFrame.AbsoluteSize } or nil
+			PS.open("menuFlyout", { group = g.id, place = place, anchor = anchor, rail = railRect })
 			return
 		end
 		for _, item in ipairs(g.items) do

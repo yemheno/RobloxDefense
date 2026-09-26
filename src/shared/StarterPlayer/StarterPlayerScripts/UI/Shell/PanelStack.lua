@@ -16,6 +16,9 @@
     PanelStack.replace(id, props?) -> ok  swap the top entry only (menu -> panel)
     PanelStack.close(id, reason?) -> ok   close id and everything above it
     PanelStack.closeAll(reason?) -> ok    "system" ignores vetoes
+    PanelStack.forceRemove(key) -> ok     §AGX/UI-FIX: 6 — drop a record by key
+                                          (ignores closable / vetoes; PanelHost
+                                          uses it when a module fails to load)
     PanelStack.back(reason?) -> ok        pop(reason or "back"), debounced 0.15 s
     PanelStack.openWhenIdle(id, props?)   fires when the stack is empty and no
                                           modal/system presence exists (D14)
@@ -57,6 +60,7 @@ local ReplicatedStorage    = game:GetService("ReplicatedStorage")
 local Players              = game:GetService("Players")
 local ContextActionService = game:GetService("ContextActionService")
 local GuiService           = game:GetService("GuiService")
+local RunService           = game:GetService("RunService")   -- §AGX/UI-FIX: 1
 
 local React = require(ReplicatedStorage.Packages.React)
 
@@ -132,6 +136,10 @@ local uiRelease = nil         -- InputSystem.PushUIContext() release
 local casBound = false
 local uiBackBound = false
 local flushScheduled = false
+-- §AGX/UI-FIX: 1 — generation of the pending deferred UI-token release
+-- (0 = none pending). Bumped to cancel.
+local releaseGen = 0
+local releaseSeq = 0
 
 -- ═══════════════════════════════════════════════════════════
 -- HELPERS
@@ -271,15 +279,36 @@ end
 
 local function syncSideEffects(snap)
 	-- 1. "UI" input context (D6). Presence entries never hold one.
+	-- §AGX/UI-FIX: 1 — the token is released on the NEXT Heartbeat, not in
+	-- this call stack: when B closes the last panel (CAS handler or UIBack),
+	-- the rest of that same press (InputBegan's ButtonB -> Dash) still sees
+	-- "UI" and is suppressed. Re-wanting before then cancels the release (no
+	-- flicker); the deferred callback re-checks wantUIContext(), and every
+	-- change to backHandlers / hosted / stack goes through publish(), so a
+	-- token that is no longer wanted is always released within one frame.
 	local IS = getInputSystem()
 	if wantUIContext() then
+		releaseGen = 0
 		if not uiRelease and IS and IS.PushUIContext then
 			uiRelease = IS.PushUIContext()
 		end
-	elseif uiRelease then
-		local release = uiRelease
-		uiRelease = nil
-		release()
+	elseif uiRelease and releaseGen == 0 then
+		releaseSeq += 1
+		local gen = releaseSeq
+		releaseGen = gen
+		RunService.Heartbeat:Once(function()
+			if releaseGen ~= gen then return end   -- cancelled / superseded
+			releaseGen = 0
+			if wantUIContext() then return end     -- wanted again: keep it
+			local release = uiRelease
+			uiRelease = nil
+			if release then release() end
+			-- The CAS B-sink follows the token (step 3).
+			if casBound then
+				casBound = false
+				ContextActionService:UnbindAction(CAS_BACK)
+			end
+		end)
 	end
 
 	-- 2. UIBack action (Backspace + B through InputSystem, context "UI").
@@ -292,7 +321,10 @@ local function syncSideEffects(snap)
 
 	-- 3. CAS B-sink: gamepad selection may consume B before InputBegan
 	--    (verify in Studio); the debounce in back() prevents a double pop.
-	local wantCas = wantUIContext()
+	-- §AGX/UI-FIX: 1 — bound while the token is held (incl. its deferred
+	-- release frame) so a B arriving in that frame is still sunk; the
+	-- Heartbeat callback above unbinds it together with the token.
+	local wantCas = wantUIContext() or uiRelease ~= nil
 	if wantCas and not casBound then
 		casBound = true
 		local keys = gamepadBackKeys()
@@ -548,6 +580,40 @@ function PanelStack.closeAll(reason)
 	local ok = closeFrom(from, r)
 	publish()
 	return ok
+end
+
+--- §AGX/UI-FIX: 6 — remove the record with this `key` (and everything above
+--- it) unconditionally: closable = false and vetoes are ignored. For a
+--- stacked entry whose module failed to load (PanelHost): it would otherwise
+--- keep the "UI" context and hudMode "none" with no way out on touch.
+--- Handlers of the records above still run (reason "system") for cleanup.
+--- Returns true when something was removed.
+function PanelStack.forceRemove(key)
+	local idx = nil
+	for i = #stack, 1, -1 do
+		if stack[i].key == key then idx = i; break end
+	end
+	if not idx then return false end
+	for i = #stack, idx, -1 do
+		runHandlers(stack[i], "system")   -- result ignored: "system" can't veto
+	end
+	for i = #stack, idx, -1 do
+		local rec = table.remove(stack, i)
+		local ext = externals[rec.id]
+		if ext and ext.closeFn then
+			local ok, err = pcall(ext.closeFn, "system")
+			if not ok then warn("[PanelStack] external close error:", rec.id, err) end
+		end
+		if rec.restoreSelection then
+			pcall(function()
+				if rec.restoreSelection.Parent then
+					GuiService.SelectedObject = rec.restoreSelection
+				end
+			end)
+		end
+	end
+	publish()
+	return true
 end
 
 function PanelStack.back(reason)
