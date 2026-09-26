@@ -159,10 +159,6 @@ local EVENTS = {
     DamageNumber           = { rateLimit = nil,  readyGated = false },
     -- §PERF/F5: Tibia-style 0.1 s damage-number batching (array payload).
     DamageNumberBatch      = { rateLimit = nil,  readyGated = false },
-    -- §AGX/SEC: §T0P2-ORPHANS — nothing on the server fires this (heals
-    -- ride HealNumberBatch), but DamageNumbers.lua:289 still listens, so it
-    -- stays until that client listener is removed; then delete both.
-    HealNumber             = { rateLimit = nil,  readyGated = false },
     -- §SCALE/S5: batched DoT/HoT number windows (array payloads).
     HealNumberBatch        = { rateLimit = nil,  readyGated = false },
 
@@ -298,8 +294,8 @@ local EVENTS = {
 
 -- §T0P2/X10 → §T0P2-ORPHANS (§AGX/SEC): the four equipment events are
 -- NOT orphans — fired by name (EquipmentRefinement / EquipmentTierSystem
--- `eventName`). HealNumber: server never fires it, one dead client
--- listener remains (see its manifest line).
+-- `eventName`). HealNumber (never fired; heals use HealNumberBatch) and
+-- its dead client listener were removed.
 
 -- ─────────────────────────────────────────────────────────────────────
 -- RATE LIMITER (per-event)

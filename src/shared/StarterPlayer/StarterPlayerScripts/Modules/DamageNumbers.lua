@@ -286,9 +286,8 @@ function DamageNumbers.Init()
 			DamageNumbers.ShowDamageNumber(data)
 		end
 	end)
-	NetworkManager.OnServerEvent("HealNumber", function(data)
-		DamageNumbers.ShowHealNumber(data)
-	end)
+	-- §AGX/SEC (§T0P2-ORPHANS): the single "HealNumber" event was never
+	-- fired server-side (heals go through HealNumberBatch); listener removed.
 	-- §SCALE/S5: batched DoT/HoT/heal windows from SkillEffects.
 	NetworkManager.OnServerEvent("HealNumberBatch", function(batch)
 		for _, data in ipairs(batch) do

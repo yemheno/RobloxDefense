@@ -400,10 +400,10 @@ PlayerDataConfig.ClassUnlockRequirements = nil  -- populated below
 
 --============================================
 -- ADMIN ALLOWLIST
--- Server-side guard: player.UserId must match one of these OR game.CreatorId.
--- Add / remove developer UserIds here. This is the SINGLE SOURCE OF TRUTH used
--- by LaneDefenseMain, LobbyMain, and AdminTesting. Do NOT maintain a separate
--- copy in any other file.
+-- Read by PlaceBootstrap.IsAdmin (the single admin check, §AGX/SEC), which
+-- only grants admin inside Studio: allowlisted UserIds, the owner of a
+-- user-owned game, or Studio test accounts. Live servers have no admin
+-- surface at all. Add / remove developer UserIds here.
 --============================================
 PlayerDataConfig.AdminUserIds = {
 	[4700259512] = true,  -- AstralitoCL (developer)

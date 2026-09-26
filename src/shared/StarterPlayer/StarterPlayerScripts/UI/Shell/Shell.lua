@@ -170,7 +170,7 @@ local function Shell(props)
 	if place ~= "Plaza" then
 		-- Self-managed via AchievementClient
 		children.achievementToast = e(AchievementsUI.Toast)
-		-- Admin testing panel (renders nothing for non-creator players)
+		-- Admin testing panel: Studio-only; renders nothing in live servers (§AGX/SEC)
 		children.testingPanel = e(TestingUI)
 	end
 
