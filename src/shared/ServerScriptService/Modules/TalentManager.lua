@@ -65,6 +65,21 @@ local function getCurrencyManager()
 	return _CurrencyManager
 end
 
+-- §AGX/UI-P4: player-facing rejections used to be silent (return value
+-- dropped by the caller / warn only). NotifyService pushes a toast; it
+-- never throws, and a missing module is skipped, so logic is unchanged.
+local NotifyService = nil
+local function notifyReject(player, text)
+	if not NotifyService then
+		local mod = script.Parent:FindFirstChild("NotifyService")
+		if mod then
+			local ok, svc = pcall(require, mod)
+			if ok then NotifyService = svc end
+		end
+	end
+	if NotifyService then NotifyService.Toast(player, "error", text) end
+end
+
 local function getNetworkManager()
 	if not NetworkManager then NetworkManager = require(Modules:WaitForChild("NetworkManager")) end
 	return NetworkManager
@@ -202,6 +217,11 @@ function TalentManager.Init()
 		local success, msg = TalentManager.AllocateNode(player, nodeId)
 		if not success then
 			warn("[TalentManager] Allocate failed for", player.Name, ":", msg)
+			-- §AGX/UI-P4: the warn was the only trace; tell the player why
+			-- (not for the double-click lock, which isn't a real rejection).
+			if msg ~= "Concurrent allocation request" then
+				notifyReject(player, msg or "Can't allocate that talent.")
+			end
 		end
 		-- Always send fresh state back
 		TalentManager.SendState(player)

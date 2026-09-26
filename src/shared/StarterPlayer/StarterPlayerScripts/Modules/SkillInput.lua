@@ -3,7 +3,21 @@
 local SkillInput = {}
 
 local Players      = game:GetService("Players")
-local StarterGui   = game:GetService("StarterGui")
+-- §AGX/UI-P4: StarterGui (SetCore chat message) no longer needed; M6.
+
+-- §AGX/UI-P4: Notify (UI/Common) is required lazily on first failure so
+-- this module's load order is unaffected (SkillPad requires SkillInput).
+local Notify = nil
+local function getNotify()
+	if not Notify then
+		local ok, mod = pcall(function()
+			return require(Players.LocalPlayer:WaitForChild("PlayerScripts")
+				:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("Notify"))
+		end)
+		if ok then Notify = mod end
+	end
+	return Notify
+end
 
 local player = Players.LocalPlayer
 
@@ -196,14 +210,14 @@ function SkillInput.Init()
 			warn("[SkillInput] Skill failed:", data.skillId, "-", data.reason)
 			-- §AGX/UI-P2: a failure also answers the oldest pending request.
 			SkillInput._LearnFromFailure(data)
-			-- Show a brief chat notification so it's visible in-game during testing
-			pcall(function()
-				StarterGui:SetCore("ChatMakeSystemMessage", {
-					Text  = "[Skill] " .. tostring(data.reason or "Failed"),
-					Color = Color3.fromRGB(255, 120, 80),
-					Font  = Enum.Font.GothamBold,
-				})
-			end)
+			-- §AGX/UI-P4: M6: was a SetCore("ChatMakeSystemMessage") line,
+			-- invisible on phones where chat is collapsed. Now a warning
+			-- toast; one key so spamming a skill on cooldown updates a
+			-- single toast (×N) instead of stacking.
+			local notify = getNotify()
+			if notify then
+				notify.toast("warning", tostring(data.reason or "Skill failed"), { key = "skillFailed" })
+			end
 		end)
 	end)
 

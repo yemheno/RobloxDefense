@@ -15,6 +15,21 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
     local NetworkManager  = require(Modules:WaitForChild("NetworkManager"))
     local ChapterConfig   = require(Modules:WaitForChild("ChapterConfig"))
     local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
+
+    -- §AGX/UI-P4: player-facing rejections used to be silent (return value
+    -- dropped by the caller / warn only). NotifyService pushes a toast; it
+    -- never throws, and a missing module is skipped, so logic is unchanged.
+    local NotifyService = nil
+    local function notifyReject(player, text)
+        if not NotifyService then
+            local mod = Modules:FindFirstChild("NotifyService")
+            if mod then
+                local ok, svc = pcall(require, mod)
+                if ok then NotifyService = svc end
+            end
+        end
+        if NotifyService then NotifyService.Toast(player, "error", text) end
+    end
     local Registry        = require(RegistryModule)
 
     -- Will be set by the manager
@@ -73,11 +88,13 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
 
         local instance = System.Manager[getEquippedMethod](player)
         if not instance then
+            notifyReject(player, "No " .. equipmentType .. " equipped")  -- §AGX/UI-P4
             return false, "No " .. equipmentType .. " equipped"
         end
 
         local currentTier = instance.tier
         if currentTier >= Config.TIER_MAX then
+            notifyReject(player, "Already at max tier")  -- §AGX/UI-P4
             return false, "Already at max tier"
         end
 
@@ -85,12 +102,14 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
         local playerLevel = PlayerDataManager.GetAccountData(player, "Level") or 1
         local chapterMaxTier = ChapterConfig.GetMaxTier(playerLevel)
         if currentTier >= chapterMaxTier then
+            notifyReject(player, "Tier capped at " .. chapterMaxTier .. " for your chapter")  -- §AGX/UI-P4
             return false, "Tier capped at " .. chapterMaxTier .. " for your chapter"
         end
 
         -- Check minimum refinement requirement (§12)
         local minRefine = Config.TIER_MIN_REFINE and Config.TIER_MIN_REFINE[currentTier]
         if minRefine and (instance.refinement or 0) < minRefine then
+            notifyReject(player, equipmentType:sub(1, 1):upper() .. equipmentType:sub(2) .. " must be +" .. minRefine .. " refinement to tier up")  -- §AGX/UI-P4
             return false, equipmentType:sub(1, 1):upper() .. equipmentType:sub(2) .. " must be +" .. minRefine .. " refinement to tier up"
         end
 
@@ -110,6 +129,7 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
             end
             if not canAfford then
                 upgradeLock[player] = nil
+                notifyReject(player, "Not enough " .. currency)  -- §AGX/UI-P4
                 return false, "Not enough " .. currency
             end
             local spendOk
@@ -120,6 +140,7 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
             end
             if not spendOk then
                 upgradeLock[player] = nil
+                notifyReject(player, "Not enough " .. currency)  -- §AGX/UI-P4
                 return false, "Not enough " .. currency
             end
         end

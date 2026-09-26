@@ -20,6 +20,7 @@ local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 local useNpcDistanceClose = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useNpcDistanceClose"))  -- §DISC/D8
+local useRequest = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useRequest"))  -- §AGX/UI-P4
 
 -- ── Palette ───────────────────────────────────────────────
 local C = {
@@ -78,20 +79,54 @@ local function NPCDialog(props)
 	local currentNode, setCurrentNode = React.useState(nil)    -- current node key in tree
 	local questData, setQuestData = React.useState(nil)        -- quest offer data
 	local teleportData, setTeleportData = React.useState(nil)  -- teleport destinations
-	-- §AGX/UX-03: inline result line for quest actions ({ text, ok } or nil)
-	local statusMsg, setStatusMsg = React.useState(nil)
-	local pendingQuestRef = React.useRef(nil)  -- questId of the last Accept/Turn In
-	local statusTimerRef  = React.useRef(nil)
-	-- Uses only refs + state setters, so the first-render copy captured by
-	-- the listener effect below stays valid.
-	local function showStatus(text, ok)
-		setStatusMsg({ text = text, ok = ok })
-		if statusTimerRef.current then task.cancel(statusTimerRef.current) end
-		statusTimerRef.current = task.delay(4, function()
-			statusTimerRef.current = nil
-			setStatusMsg(nil)
-		end)
-	end
+	-- §AGX/UI-P4: the quest action's inline result is useRequest (was a
+	-- statusMsg + showStatus 4 s timer + pendingQuestRef, fed from the
+	-- NPCDialogue listener below). Same behaviour: "Working…" while
+	-- pending, the QuestAccepted/QuestCompleted/QuestError message for
+	-- 4 s, and on success the open quest list is patched for the questId
+	-- that was sent. New: no reply within 4 s shows an error.
+	local questReq = useRequest("NPCResponse", {
+		reply       = "NPCDialogue",
+		pendingText = "Working…",
+		holdFor     = 4,
+		timeout     = 4,
+		match       = function(data)
+			if type(data) ~= "table" then return nil end
+			local kind = data.type
+			if kind ~= "QuestAccepted" and kind ~= "QuestCompleted" and kind ~= "QuestError" then
+				return nil
+			end
+			local ok = kind ~= "QuestError"
+			return ok, data.message or (ok and "Done." or "Failed.")
+		end,
+		onResult    = function(ok, data, payload)
+			-- Patch the open quest list so its button reflects the result.
+			local qid = type(payload) == "table" and payload.questId or nil
+			if not (ok and qid and type(data) == "table") then return end
+			local kind = data.type
+			setQuestData(function(prev)
+				if not prev or not prev.quests then return prev end
+				local nextQuests = {}
+				for i, q in ipairs(prev.quests) do
+					if (q.questId or q.id) == qid then
+						local copy = table.clone(q)
+						copy.status = (kind == "QuestAccepted") and "InProgress" or "Completed"
+						nextQuests[i] = copy
+					else
+						nextQuests[i] = q
+					end
+				end
+				local nextData = table.clone(prev)
+				nextData.quests = nextQuests
+				return nextData
+			end)
+		end,
+	})
+	local resetQuestStatus = questReq.reset  -- stable (useCallback), safe in the {} effect
+	local statusMsg = (questReq.state ~= "idle") and {
+		text = questReq.message or "",
+		ok   = questReq.state ~= "err",
+	} or nil
 
 	-- ── Event listeners ──────────────────────────────────
 	React.useEffect(function()
@@ -107,35 +142,12 @@ local function NPCDialog(props)
 			if type(data) ~= "table" then return end
 			local kind = data.type
 			if kind ~= nil and kind ~= "Dialogue" and kind ~= "Lore" then
-				if kind == "QuestAccepted" or kind == "QuestCompleted" or kind == "QuestError" then
-					local ok = kind ~= "QuestError"
-					-- Patch the open quest list so its button reflects the result.
-					local qid = pendingQuestRef.current
-					pendingQuestRef.current = nil
-					if ok and qid then
-						setQuestData(function(prev)
-							if not prev or not prev.quests then return prev end
-							local nextQuests = {}
-							for i, q in ipairs(prev.quests) do
-								if (q.questId or q.id) == qid then
-									local copy = table.clone(q)
-									copy.status = (kind == "QuestAccepted") and "InProgress" or "Completed"
-									nextQuests[i] = copy
-								else
-									nextQuests[i] = q
-								end
-							end
-							local nextData = table.clone(prev)
-							nextData.quests = nextQuests
-							return nextData
-						end)
-					end
-					showStatus(data.message or (ok and "Done." or "Failed."), ok)
-				end
-				-- Shop* results are shown by ShopUI; TeleportComplete needs no UI.
+				-- §AGX/UI-P4: Quest* results are consumed by questReq
+				-- (useRequest), Shop* by ShopUI's cards; TeleportComplete
+				-- needs no UI. None of them is a dialogue tree.
 				return
 			end
-			setStatusMsg(nil)
+			resetQuestStatus()  -- §AGX/UI-P4
 			setDialogData({
 				npcId    = data.npcId,
 				npcName  = data.npcName,
@@ -156,7 +168,7 @@ local function NPCDialog(props)
 			setQuestData(data)
 			setDialogData(nil)
 			setTeleportData(nil)
-			setStatusMsg(nil)  -- §AGX/UX-03
+			resetQuestStatus()  -- §AGX/UX-03, §AGX/UI-P4
 		end)
 
 		conns[3] = NetworkManager.OnServerEvent("NPCTeleportOffer", function(data)
@@ -164,14 +176,14 @@ local function NPCDialog(props)
 			setTeleportData(data)
 			setDialogData(nil)
 			setQuestData(nil)
-			setStatusMsg(nil)  -- §AGX/UX-03
+			resetQuestStatus()  -- §AGX/UX-03, §AGX/UI-P4
 		end)
 
 		return function()
 			for _, c in conns do
 				if c then c:Disconnect() end
 			end
-			if statusTimerRef.current then task.cancel(statusTimerRef.current) end  -- §AGX/UX-03
+			-- §AGX/UI-P4: useRequest cancels its own timers on unmount.
 		end
 	end, {})
 
@@ -190,8 +202,7 @@ local function NPCDialog(props)
 		setQuestData(nil)
 		setTeleportData(nil)
 		setCurrentNode(nil)
-		setStatusMsg(nil)  -- §AGX/UX-03
-		pendingQuestRef.current = nil
+		questReq.reset()  -- §AGX/UX-03, §AGX/UI-P4 (a late result is then ignored)
 		onClose()
 	end
 
@@ -423,15 +434,15 @@ local function NPCDialog(props)
 					TextScaled = true,
 					[React.Event.Activated] = function()
 						local act = quest.status == "Available" and "AcceptQuest" or "TurnInQuest"
-						NetworkManager.FireServer("NPCResponse", {
+						-- §AGX/UX-03: stay open so the QuestAccepted/QuestError
+						-- result can show inline (it was closed before it arrived).
+						-- §AGX/UI-P4: questReq fires NPCResponse and owns the
+						-- pending/ok/err state; onResult patches the list.
+						questReq.send({
 							npcId = questData.npcId,
 							action = act,
 							questId = quest.questId or quest.id,
 						})
-						-- §AGX/UX-03: stay open so the QuestAccepted/QuestError
-						-- result can show inline (it was closed before it arrived).
-						pendingQuestRef.current = quest.questId or quest.id
-						showStatus("Working…", true)
 					end,
 				}, {
 					corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),

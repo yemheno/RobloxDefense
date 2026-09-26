@@ -37,6 +37,8 @@ local AchievementsUI    = require(SharedUI:WaitForChild("AchievementsUI"))
 local TestingUI         = require(SharedUI:WaitForChild("TestingUI"))
 local SettingsUI        = require(SharedUI:WaitForChild("SettingsUI"))
 local GlobalShopUI      = require(SharedUI:WaitForChild("GlobalShopUI"))
+-- §AGX/UI-P4: Notify host (toasts / banner / feed)
+local Notify            = require(SharedUI:WaitForChild("Common"):WaitForChild("Notify"))
 
 local EmoteWheel        = require(LobbyUI:WaitForChild("EmoteWheel"))
 local SocialPanel       = require(LobbyUI:WaitForChild("SocialPanel"))
@@ -205,6 +207,9 @@ local function LobbyApp()
 
 		-- Admin testing panel (renders nothing for non-creator players)
 		testingPanel = React.createElement(TestingUI),
+
+		-- §AGX/UI-P4: Notify host (own ScreenGui above AppGui, below modals)
+		notifyHost = React.createElement(Notify.Host),
 	})
 end
 

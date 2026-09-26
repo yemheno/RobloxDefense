@@ -13,6 +13,21 @@ local function CreateRefinementSystem(Config, equipmentType)
     local ChapterConfig   = require(Modules:WaitForChild("ChapterConfig"))
     local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 
+    -- §AGX/UI-P4: player-facing rejections used to be silent (return value
+    -- dropped by the caller / warn only). NotifyService pushes a toast; it
+    -- never throws, and a missing module is skipped, so logic is unchanged.
+    local NotifyService = nil
+    local function notifyReject(player, text)
+        if not NotifyService then
+            local mod = Modules:FindFirstChild("NotifyService")
+            if mod then
+                local ok, svc = pcall(require, mod)
+                if ok then NotifyService = svc end
+            end
+        end
+        if NotifyService then NotifyService.Toast(player, "error", text) end
+    end
+
     -- Will be set by the manager
     System.Manager = nil
 
@@ -62,12 +77,14 @@ local function CreateRefinementSystem(Config, equipmentType)
 
         local instance = System.Manager[getEquippedMethod](player)
         if not instance then
+            notifyReject(player, "No " .. equipmentType .. " equipped")  -- §AGX/UI-P4
             return false, 0, "No " .. equipmentType .. " equipped"
         end
 
         local currentRefinement = instance.refinement
 
         if currentRefinement >= Config.REFINEMENT_MAX then
+            notifyReject(player, "Already at max refinement")  -- §AGX/UI-P4
             return false, currentRefinement, "Already at max refinement"
         end
 
@@ -75,6 +92,7 @@ local function CreateRefinementSystem(Config, equipmentType)
         local playerLevel = PlayerDataManager.GetAccountData(player, "Level") or 1
         local chapterMax = ChapterConfig.GetMaxRefine(playerLevel)
         if currentRefinement >= chapterMax then
+            notifyReject(player, "Refinement capped at +" .. chapterMax .. " for your chapter")  -- §AGX/UI-P4
             return false, currentRefinement, "Refinement capped at +" .. chapterMax .. " for your chapter"
         end
 
@@ -95,6 +113,7 @@ local function CreateRefinementSystem(Config, equipmentType)
             end
             if not canAfford then
                 attemptLock[player] = nil
+                notifyReject(player, "Not enough " .. currency)  -- §AGX/UI-P4
                 return false, currentRefinement, "Not enough " .. currency
             end
             local spendOk
@@ -105,6 +124,7 @@ local function CreateRefinementSystem(Config, equipmentType)
             end
             if not spendOk then
                 attemptLock[player] = nil
+                notifyReject(player, "Not enough " .. currency)  -- §AGX/UI-P4
                 return false, currentRefinement, "Not enough " .. currency
             end
         end

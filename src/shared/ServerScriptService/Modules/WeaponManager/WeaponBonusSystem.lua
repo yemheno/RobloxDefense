@@ -10,6 +10,20 @@ local GearUpgradeConfig = require(Modules:WaitForChild("GearUpgradeConfig"))
 local WeaponRegistry = require(Modules:WaitForChild("WeaponRegistry"))
 local CurrencyManager = require(Modules:WaitForChild("CurrencyManager"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
+-- §AGX/UI-P4: player-facing rejections used to be silent (return value
+-- dropped by the caller / warn only). NotifyService pushes a toast; it
+-- never throws, and a missing module is skipped, so logic is unchanged.
+local NotifyService = nil
+local function notifyReject(player, text)
+	if not NotifyService then
+		local mod = Modules:FindFirstChild("NotifyService")
+		if mod then
+			local ok, svc = pcall(require, mod)
+			if ok then NotifyService = svc end
+		end
+	end
+	if NotifyService then NotifyService.Toast(player, "error", text) end
+end
 
 -- Set by WeaponManager
 WeaponBonusSystem.WeaponManager = nil
@@ -89,6 +103,7 @@ function WeaponBonusSystem.Reroll(player)
 
 	local weaponInstance = WeaponBonusSystem.WeaponManager.GetEquippedWeapon(player)
 	if not weaponInstance then
+		notifyReject(player, "No weapon equipped")  -- §AGX/UI-P4
 		return false, "No weapon equipped"
 	end
 
@@ -97,6 +112,7 @@ function WeaponBonusSystem.Reroll(player)
 
 	-- Check currency
 	if not CurrencyManager.CanAffordMerits(player, cost) then
+		notifyReject(player, "Not enough Merits (need " .. cost .. ")")  -- §AGX/UI-P4
 		return false, "Not enough Merits (need " .. cost .. ")"
 	end
 
@@ -106,6 +122,7 @@ function WeaponBonusSystem.Reroll(player)
 	local success = CurrencyManager.SpendMerits(player, cost)
 	if not success then
 		rerollLock[player] = nil
+		notifyReject(player, "Not enough Merits")  -- §AGX/UI-P4
 		return false, "Failed to deduct Merits"
 	end
 

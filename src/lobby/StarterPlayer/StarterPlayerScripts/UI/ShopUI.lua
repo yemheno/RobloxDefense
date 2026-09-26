@@ -13,6 +13,8 @@ local React             = require(ReplicatedStorage.Packages.React)
 local SharedModules  = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
 local useNpcDistanceClose = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useNpcDistanceClose"))  -- §AGX/X29
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
+-- §AGX/UI-P4: inline request feedback (pending/ok/err + 4 s timeout)
+local useRequest = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useRequest"))
 
 -- ── Palette ───────────────────────────────────────────────
 local C = {
@@ -32,35 +34,33 @@ local C = {
 local function ItemCard(props)
 	local item = props.item
 	local npcId = props.npcId
-	local statusMsg, setStatusMsg = React.useState(nil)
-	local statusOk, setStatusOk   = React.useState(true)  -- §AGX/UX-03
-	local mountedRef = React.useRef(true)
-	local clearTimerRef = React.useRef(nil)  -- §AGX/UX-03
-	React.useEffect(function()
-		return function()
-			mountedRef.current = false
-			if clearTimerRef.current then task.cancel(clearTimerRef.current) end
-		end
-	end, {})
-
-	local function flashStatus(text, ok, seconds)
-		setStatusMsg(text)
-		setStatusOk(ok)
-		if clearTimerRef.current then task.cancel(clearTimerRef.current) end
-		clearTimerRef.current = task.delay(seconds, function()
-			clearTimerRef.current = nil
-			if mountedRef.current then setStatusMsg(nil) end
-		end)
-	end
-
-	-- §AGX/UX-03: server result for THIS card (ShopUI routes it by itemId).
-	-- A fresh table per result, so repeat purchases re-trigger the effect.
-	local result = props.result
-	React.useEffect(function()
-		if result then
-			flashStatus(result.text, result.ok, 3)
-		end
-	end, { result })
+	-- §AGX/UI-P4: the card's inline status is useRequest (was a local
+	-- statusMsg + flashStatus timer fed by a ShopUI-level listener).
+	-- Same behaviour: "Purchasing…" while pending, the server's
+	-- ShopSuccess/ShopError message for 3 s. Results still arrive as
+	-- NPCDialogue { type = "ShopSuccess"|"ShopError", npcId, message,
+	-- itemId? } (ShopHandler.lua); ShopError has no itemId, so it goes
+	-- to the card the player last clicked (props.getPendingItem), as
+	-- before (§AGX/UX-03). New: no reply within 4 s shows an error
+	-- instead of silently clearing (out of range / dropped request).
+	local getPendingItem = props.getPendingItem
+	local buy = useRequest("NPCResponse", {
+		reply       = "NPCDialogue",
+		pendingText = "Purchasing…",
+		holdFor     = 3,
+		timeout     = 4,
+		match       = function(data, payload)
+			if type(data) ~= "table" or type(payload) ~= "table" then return nil end
+			if data.type ~= "ShopSuccess" and data.type ~= "ShopError" then return nil end
+			if data.npcId ~= payload.npcId then return nil end
+			local target = data.itemId or (getPendingItem and getPendingItem())
+			if target ~= payload.itemId then return nil end
+			local ok = data.type == "ShopSuccess"
+			return ok, data.message or (ok and "Purchased!" or "Purchase failed.")
+		end,
+	})
+	local statusMsg = (buy.state ~= "idle") and buy.message or nil
+	local statusOk  = buy.state ~= "err"
 
 	return React.createElement("Frame", {
 		Size             = UDim2.fromScale(1, 1),
@@ -137,14 +137,13 @@ local function ItemCard(props)
 			Font = Enum.Font.GothamBold,
 			TextScaled = true,
 			[React.Event.Activated] = function()
-				NetworkManager.FireServer("NPCResponse", {
+				if props.onBuy then props.onBuy(item.id) end  -- §AGX/UX-03
+				-- §AGX/UI-P4: fires NPCResponse and owns pending/timeout.
+				buy.send({
 					npcId  = npcId,
 					action = "Buy",
 					itemId = item.id,
 				})
-				if props.onBuy then props.onBuy(item.id) end  -- §AGX/UX-03
-				-- Fallback clear if no result ever arrives (e.g. out of range).
-				flashStatus("Purchasing…", true, 4)
 			end,
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
@@ -157,11 +156,10 @@ local function ShopUI(props)
 	local onClose = props.onClose or function() end
 
 	local shopData, setShopData = React.useState(nil)
-	-- §AGX/UX-03: last purchase result { itemId, text, ok } for the cards
-	local result, setResult = React.useState(nil)
+	-- §AGX/UI-P4: result routing moved into each card's useRequest; only
+	-- the last-clicked item is kept here (ShopError carries no itemId).
 	local pendingItemRef = React.useRef(nil)   -- item.id of the last Buy click
-	local shopNpcRef     = React.useRef(nil)   -- npcId of the open shop (for the listener)
-	shopNpcRef.current = shopData and shopData.npcId or nil
+	local getPendingItem = React.useCallback(function() return pendingItemRef.current end, {})
 
 	React.useEffect(function()
 		local conns = {}
@@ -169,23 +167,6 @@ local function ShopUI(props)
 		conns[1] = NetworkManager.OnServerEvent("NPCShopOpen", function(data)
 			-- data = { npcId, npcName, items = { { id, name, description, price, currency } } }
 			setShopData(data)
-			setResult(nil)  -- §AGX/UX-03
-		end)
-
-		-- §AGX/UX-03: purchase results arrive as NPCDialogue
-		-- { type = "ShopSuccess"|"ShopError", npcId, message, itemId? }
-		-- (ShopHandler.lua). The old listener was on NPCResponse, which the
-		-- server never sends to clients. ShopError has no itemId, so fall
-		-- back to the card the player last clicked.
-		conns[2] = NetworkManager.OnServerEvent("NPCDialogue", function(data)
-			if type(data) ~= "table" then return end
-			if data.type ~= "ShopSuccess" and data.type ~= "ShopError" then return end
-			if shopNpcRef.current == nil or data.npcId ~= shopNpcRef.current then return end
-			setResult({
-				itemId = data.itemId or pendingItemRef.current,
-				text   = data.message or (data.type == "ShopSuccess" and "Purchased!" or "Purchase failed."),
-				ok     = data.type == "ShopSuccess",
-			})
 		end)
 
 		return function()
@@ -226,8 +207,8 @@ local function ShopUI(props)
 				item   = item,
 				npcId  = shopData.npcId,
 				order  = i,
-				-- §AGX/UX-03: route the server result to the card it belongs to
-				result = (result and result.itemId == item.id) and result or nil,
+				-- §AGX/UI-P4: each card matches its own result (useRequest)
+				getPendingItem = getPendingItem,
 				onBuy  = function(itemId) pendingItemRef.current = itemId end,
 			}),
 		})

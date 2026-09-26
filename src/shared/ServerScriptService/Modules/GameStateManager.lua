@@ -217,6 +217,9 @@ function GameStateManager.RequestStart(player)
 	-- Validate state
 	if currentState ~= STATES.IDLE then
 		warn("[GameStateManager] Cannot start - not in Idle state (current:", currentState .. ")")
+		-- §AGX/UI-P4 (§DISC/D8): tell the player, not just the server log.
+		local ns = Modules:FindFirstChild("NotifyService")
+		if ns and player then pcall(function() require(ns).Toast(player, "warning", "Game already in progress") end) end
 		return false, "Game already in progress"
 	end
 
@@ -224,6 +227,8 @@ function GameStateManager.RequestStart(player)
 	local playerCount = #Players:GetPlayers()
 	if playerCount < CONFIG.MinPlayersToStart then
 		warn("[GameStateManager] Cannot start - not enough players:", playerCount, "/", CONFIG.MinPlayersToStart)
+		local ns = Modules:FindFirstChild("NotifyService")
+		if ns and player then pcall(function() require(ns).Toast(player, "warning", "Not enough players") end) end
 		return false, "Not enough players"
 	end
 

@@ -275,6 +275,13 @@ local EVENTS = {
     WipeReviveAccept       = { rateLimit = 4,    readyGated = false }, -- §DISC/D3b: client buys the revive
     HordePaused            = { rateLimit = nil,  readyGated = false }, -- HordePauseManager broadcast
     NPCProximity           = { rateLimit = nil,  readyGated = false }, -- NPCManager proximity push
+
+    -- ── Notify ───────────────────────────────────────────────────────
+    -- §AGX/UI-P4: the one server→client feedback push (NotifyService:
+    -- toast / banner / feed / inline). No server listener, so rateLimit
+    -- only caps a spoofed client fire; NotifyService throttles outgoing
+    -- sends per player. Not ready-gated: producers answer client actions.
+    Notify                 = { rateLimit = 1,    readyGated = false },
 }
 
 -- §T0P2/X10: manifest entries with NO server-side reference today —

@@ -14,6 +14,20 @@ local GearUpgradeConfig = require(Modules:WaitForChild("GearUpgradeConfig"))
 local ArmorRegistry   = require(Modules:WaitForChild("ArmorRegistry"))
 local CurrencyManager = require(Modules:WaitForChild("CurrencyManager"))
 local NetworkManager  = require(Modules:WaitForChild("NetworkManager"))
+-- §AGX/UI-P4: player-facing rejections used to be silent (return value
+-- dropped by the caller / warn only). NotifyService pushes a toast; it
+-- never throws, and a missing module is skipped, so logic is unchanged.
+local NotifyService = nil
+local function notifyReject(player, text)
+	if not NotifyService then
+		local mod = Modules:FindFirstChild("NotifyService")
+		if mod then
+			local ok, svc = pcall(require, mod)
+			if ok then NotifyService = svc end
+		end
+	end
+	if NotifyService then NotifyService.Toast(player, "error", text) end
+end
 local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 
 ArmorBonusSystem.ArmorManager = nil
@@ -86,6 +100,7 @@ function ArmorBonusSystem.Reroll(player)
 
 	local armorInstance = ArmorBonusSystem.ArmorManager.GetEquippedArmor(player)
 	if not armorInstance then
+		notifyReject(player, "No armor equipped")  -- §AGX/UI-P4
 		return false, "No armor equipped"
 	end
 
@@ -93,6 +108,7 @@ function ArmorBonusSystem.Reroll(player)
 	local cost = GearUpgradeConfig.GetRerollCost(tier)
 
 	if cost > 0 and not CurrencyManager.CanAffordMerits(player, cost) then
+		notifyReject(player, "Not enough Merits (need " .. cost .. ")")  -- §AGX/UI-P4
 		return false, "Not enough Merits (need " .. cost .. ")"
 	end
 
@@ -102,7 +118,8 @@ function ArmorBonusSystem.Reroll(player)
 		local success = CurrencyManager.SpendMerits(player, cost)
 		if not success then
 			rerollLock[player] = nil
-			return false, "Failed to deduct Merits"
+			notifyReject(player, "Not enough Merits")  -- §AGX/UI-P4
+		return false, "Failed to deduct Merits"
 		end
 	end
 

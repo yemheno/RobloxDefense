@@ -45,6 +45,9 @@ local SharedCommon  = SharedUI:WaitForChild("Common")
 local useFormFactor = require(SharedCommon:WaitForChild("useFormFactor"))
 local SkillPad      = require(SharedCommon:WaitForChild("SkillPad"))
 local ActionBar     = require(SharedCommon:WaitForChild("ActionBar"))
+-- §AGX/UI-P4: Notify host (toasts / banner / feed) for every combat place;
+-- CentralBossApp wraps this component, so it is mounted here only.
+local Notify        = require(SharedCommon:WaitForChild("Notify"))
 
 local function CombatApp()
 	local showCharCreate, setShowCharCreate = React.useState(false)
@@ -200,6 +203,9 @@ local function CombatApp()
 
 		-- Card vote overlay (auto-shows when server starts a vote)
 		voteOverlay = React.createElement(VoteUI),
+
+		-- §AGX/UI-P4: Notify host (own ScreenGui above AppGui, below modals)
+		notifyHost = React.createElement(Notify.Host),
 	})
 end
 

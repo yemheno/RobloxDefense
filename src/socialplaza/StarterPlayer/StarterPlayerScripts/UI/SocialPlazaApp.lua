@@ -26,6 +26,8 @@ local EmoteWheel        = require(SocialPlazaUI:WaitForChild("EmoteWheel"))
 -- §AGX/UX-01: AppearanceBar existed but was never mounted, so setShowWardrobe
 -- was never called with true and the Wardrobe was unreachable in the Plaza.
 local AppearanceBar     = require(SocialPlazaUI:WaitForChild("AppearanceBar"))
+-- §AGX/UI-P4: Notify host (toasts / banner / feed)
+local Notify            = require(SharedUI:WaitForChild("Common"):WaitForChild("Notify"))
 
 local function SocialPlazaApp()
 	local showCharCreate, setShowCharCreate = React.useState(false)
@@ -64,6 +66,9 @@ local function SocialPlazaApp()
 
 		-- EmoteWheel manages its own visibility via the Q key
 		EmoteWheel = React.createElement(EmoteWheel),
+
+		-- §AGX/UI-P4: Notify host (own ScreenGui above AppGui, below modals)
+		NotifyHost = React.createElement(Notify.Host),
 	})
 end
 
