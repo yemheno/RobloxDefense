@@ -144,6 +144,10 @@ function ShopManager.PurchaseCosmetic(player, itemId)
         if not entry or entry.tab ~= "Cosmetics" then
             return false, "Item not in cosmetic shop."
         end
+        -- §AGX/X34: `enabled = false` is enforced here, not only in the UI.
+        if entry.enabled == false then
+            return false, "Coming soon!"
+        end
 
         -- Level check
         if entry.levelReq and getPlayerLevel(player) < entry.levelReq then
@@ -197,7 +201,8 @@ function ShopManager.PurchaseCosmetic(player, itemId)
             warn("[ShopManager] PurchaseCosmetic grant failed for", itemId, "-", grantErr,
                 "— refunding", entry.price, entry.currency)
             local cm = getCurrencyManager()
-            if entry.currency == "Merits" then cm.AddMerits(player, entry.price)
+            -- §AGX/X32: refund the exact price; MeritBonus must not multiply it.
+            if entry.currency == "Merits" then cm.AddMerits(player, entry.price, { raw = true })
             elseif entry.currency == "Essence" then cm.AddEssence(player, entry.price) end
             return false, "Internal error — refunded."
         end
@@ -223,6 +228,15 @@ function ShopManager.PurchaseConsumable(player, itemId, quantity)
         local entry   = shopCfg.FindByItemId(itemId)
         if not entry or entry.tab ~= "Consumables" then
             return false, "Item not in consumable shop."
+        end
+        -- §AGX/X10: only consumables with a server-side use handler are
+        -- sold (today: respec_scroll). ShopConfig derives `enabled` from
+        -- ConsumableConfig.usable; both are checked so a hand-set
+        -- `enabled = true` on an unusable item still can't be bought. This
+        -- covers the global shop AND the NPC ShopHandler path, which both
+        -- land here.
+        if entry.enabled == false or not getConsumableConfig().IsUsable(itemId) then
+            return false, "Coming soon!"
         end
 
         -- Level check
@@ -261,7 +275,8 @@ function ShopManager.PurchaseConsumable(player, itemId, quantity)
             warn("[ShopManager] PurchaseConsumable grant failed for", itemId, "-", grantErr,
                 "— refunding", totalCost, entry.currency)
             local cm = getCurrencyManager()
-            if entry.currency == "Merits" then cm.AddMerits(player, totalCost)
+            -- §AGX/X32: refund the exact cost; MeritBonus must not multiply it.
+            if entry.currency == "Merits" then cm.AddMerits(player, totalCost, { raw = true })
             elseif entry.currency == "Essence" then cm.AddEssence(player, totalCost) end
             return false, "Internal error — refunded."
         end
@@ -280,6 +295,12 @@ function ShopManager.PurchasePremium(player, itemId)
     local entry   = shopCfg.FindByItemId(itemId)
     if not entry or entry.tab ~= "Premium" then
         return false, "Item not in premium shop."
+    end
+
+    -- §AGX/X34: honour `enabled = false` server-side (the UI hiding it is
+    -- not a gate; a client can fire ShopPurchase for any itemId).
+    if entry.enabled == false then
+        return false, "Coming soon!"
     end
 
     if entry.devProductId == 0 then

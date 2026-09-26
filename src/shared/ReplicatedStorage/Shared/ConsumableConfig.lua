@@ -10,6 +10,9 @@
       maxStack   number   Maximum quantity per inventory slot (default 99)
       cooldown   number   Seconds between uses (0 = no cooldown)
       effect     { type, ... }  Server-side effect definition
+      usable     boolean? §AGX/X10: true only when server code actually consumes
+                          the item (a use handler exists). Anything else is
+                          not purchasable and is hidden from the shops.
 
     Effect types:
       HealHP      { type = "HealHP",     amount = 50 }
@@ -139,6 +142,9 @@ ConsumableConfig.Consumables = {
         maxStack = 99,
         cooldown = 0,
         effect   = { type = "RespecToken" },
+        -- §AGX/X10: the only consumable with a use path today
+        -- (TalentManager respec / SharedEventHandlers consume it).
+        usable   = true,
     },
 }
 
@@ -160,6 +166,14 @@ end
 
 function ConsumableConfig.IsConsumable(id)
     return ConsumableConfig.ById[id] ~= nil
+end
+
+--- §AGX/X10: true only for consumables with a server-side use handler.
+-- ShopManager rejects purchases of anything else; ShopConfig derives
+-- `enabled = false` from this so the shops hide them.
+function ConsumableConfig.IsUsable(id)
+    local def = ConsumableConfig.ById[id]
+    return def ~= nil and def.usable == true
 end
 
 return ConsumableConfig

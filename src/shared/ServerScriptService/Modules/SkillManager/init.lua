@@ -20,6 +20,10 @@ local PlayerDataManager = nil
 local BaseSkills = nil
 local SkillEffects = nil
 
+-- §AGX/X7: Horde vote-pause check, bound in Init from AttackHandler so the
+-- rule lives in one place. Default is "never paused" until Init runs.
+local isWorldPaused = function(_player) return false end
+
 -- Player tracking
 local playerCooldowns = {}    -- [player] = { [skillId] = endTime }
 local activeBuffs = {}        -- [player] = { [buffId] = buffData }
@@ -62,6 +66,8 @@ function SkillManager.Init()
 	-- DamageHandler must exist before SkillManager initializes
 	local AttackHandler = require(Modules:WaitForChild("AttackHandler"))
 	local DamageHandler = AttackHandler.GetSystems().Damage
+	-- §AGX/X7: share AttackHandler's pause check (attribute read only).
+	if AttackHandler.IsWorldPaused then isWorldPaused = AttackHandler.IsWorldPaused end
 	assert(DamageHandler, "[SkillManager] AttackHandler.Init() must run before SkillManager")
 
 	local dependencies = {
@@ -346,6 +352,13 @@ end
 local skillRequestLock = setmetatable({}, { __mode = "k" })
 
 function SkillManager.TryUseSkill(player, skillId, inputData)
+	-- §AGX/X7: no skills while the Horde vote pause is active. Checked
+	-- before the §S1 lock so a paused request never touches state.
+	if isWorldPaused(player) then
+		SkillManager.SendFailure(player, skillId, "Game paused")
+		return false
+	end
+
 	-- §S1: atomic gate. The check-then-mutate sequence below is the
 	-- critical section; reject reentrant calls outright.
 	if skillRequestLock[player] then

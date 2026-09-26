@@ -18,6 +18,9 @@
       price      number   Cost in currency
       currency   string   "Merits" | "Essence" (or "Robux" for premium)
       levelReq   number?  Minimum player level to purchase (nil = no req)
+      enabled    boolean? false = hidden from shop UIs and rejected server-side.
+                          §AGX/X10: Consumables derive it from
+                          ConsumableConfig.IsUsable at load (see bottom).
 
     The shop pulls display info (name, desc, icon, rarity) from the
     underlying config module, not duplicated here.
@@ -247,6 +250,28 @@ end
 --- Get all tab names.
 function ShopConfig.GetTabNames()
     return { "Cosmetics", "Consumables", "Premium" }
+end
+
+-- §AGX/X10: consumables without a server-side use handler can't be bought.
+-- Derive `enabled = false` from ConsumableConfig (single source of truth,
+-- Audit §5.6) so GlobalShopUI hides them with no client change and
+-- ShopManager rejects them. Flip `usable = true` in ConsumableConfig when a
+-- use handler lands and the item reappears. An explicit `enabled` here wins.
+do
+    local consMod = script.Parent:WaitForChild("ConsumableConfig", 10)
+    local ok, ConsumableConfig = false, nil
+    if consMod then ok, ConsumableConfig = pcall(require, consMod) end
+    for _, entry in ipairs(ShopConfig.Consumables) do
+        if entry.enabled == nil then
+            -- Fail closed: if ConsumableConfig can't load, nothing is sold.
+            entry.enabled = (ok and ConsumableConfig and ConsumableConfig.IsUsable(entry.itemId)) or false
+        end
+    end
+end
+
+--- §AGX/X10/X34: server-side purchasability of a shop entry.
+function ShopConfig.IsEnabled(entry)
+    return entry ~= nil and entry.enabled ~= false
 end
 
 return ShopConfig

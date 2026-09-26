@@ -717,6 +717,42 @@ addEdges({
 TalentTreeConfig.StartNodeId = "start"
 
 -- ═══════════════════════════════════════════════════════════
+-- §AGX/X11: KEYSTONE RULE IMPLEMENTATION STATUS
+-- ═══════════════════════════════════════════════════════════
+-- No `rule=true` keystone effect has code behind it yet
+-- (TalentEffectAggregator.HasRule has no callers), but the keystones'
+-- stat PENALTIES were still applied, so 7 of 15 keystones were pure nerfs.
+-- Balance call (delegated): until a rule is implemented, its node's
+-- negative `value` effects are skipped by TalentEffectAggregator, and the
+-- node is tagged `unimplemented = true` with a "(coming soon)" suffix on
+-- its description (TalentTreeUI already renders `description`; no client
+-- change). Nodes stay allocatable; nobody's spent points are touched.
+--
+-- When a rule's gameplay code lands, add its name here, e.g.
+--   IMPLEMENTED_RULES = { Overwhelm = true }
+-- and its penalties + normal description come back automatically.
+-- Shared (client + server) so the UI tag and the server skip can't drift.
+TalentTreeConfig.IMPLEMENTED_RULES = {}
+
+--- §AGX/X11: true when the node carries a keystone rule with no code yet.
+function TalentTreeConfig.HasUnimplementedRule(node)
+	if not node or not node.effects then return false end
+	for _, eff in ipairs(node.effects) do
+		if eff.rule and not TalentTreeConfig.IMPLEMENTED_RULES[eff.stat] then
+			return true
+		end
+	end
+	return false
+end
+
+for _, node in ipairs(TalentTreeConfig.Nodes) do
+	if TalentTreeConfig.HasUnimplementedRule(node) then
+		node.unimplemented = true
+		node.description = (node.description or "") .. " (coming soon)"
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
 -- HELPERS  (cached — data is static; tables built once on first call)
 -- ═══════════════════════════════════════════════════════════
 

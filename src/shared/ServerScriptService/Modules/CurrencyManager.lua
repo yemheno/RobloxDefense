@@ -65,7 +65,11 @@ end
 
 
 -- ADD CURRENCIES
-function CurrencyManager.AddMerits(player, amount)
+-- §AGX/X32: optional `opts` table. `{ raw = true }` credits the exact
+-- amount: no MeritBonus multiplier and no merit-earned callbacks. Use it
+-- for money the player already owned (shop refunds), which is not income.
+-- Every existing caller passes no opts and keeps the old behaviour.
+function CurrencyManager.AddMerits(player, amount, opts)
 	local data = DataManager.GetData(player)
 	if not data then return end
 
@@ -85,10 +89,16 @@ function CurrencyManager.AddMerits(player, amount)
 		return
 	end
 
+	-- §AGX/X32: refunds (opts.raw) return the exact amount spent.
+	local raw = type(opts) == "table" and opts.raw == true
+
 	-- Apply MeritBonus from talents / equipment (stored as percentage, e.g. 10 = +10%)
-	local meritBonus = DataManager.GetBonus(player, "MeritBonus") or 0
-	local finalAmount = math.floor(amount * (1 + meritBonus / 100) + 0.5)
-	if finalAmount < 1 and amount > 0 then finalAmount = 1 end
+	local finalAmount = amount
+	if not raw then
+		local meritBonus = DataManager.GetBonus(player, "MeritBonus") or 0
+		finalAmount = math.floor(amount * (1 + meritBonus / 100) + 0.5)
+		if finalAmount < 1 and amount > 0 then finalAmount = 1 end
+	end
 
 	data.Account.Merits = data.Account.Merits + finalAmount
 	UpdateLeaderstat(player, "Merits", data.Account.Merits)
@@ -96,11 +106,14 @@ function CurrencyManager.AddMerits(player, amount)
 
 	-- Notify merit listeners (AchievementManager, etc.)
 	-- Pass finalAmount (after bonus), not the raw pre-bonus amount
-	for _, cb in ipairs(meritCallbacks) do
-		task.spawn(cb, player, finalAmount)
+	-- §AGX/X32: a raw credit (refund) is not "earned", so listeners skip it.
+	if not raw then
+		for _, cb in ipairs(meritCallbacks) do
+			task.spawn(cb, player, finalAmount)
+		end
 	end
 
-	print("[CurrencyManager]", player.Name, "+", finalAmount, "Merits (raw:", amount, ")")
+	print("[CurrencyManager]", player.Name, "+", finalAmount, "Merits (raw:", amount, raw and ", refund)" or ")")
 end
 
 function CurrencyManager.AddEssence(player, amount)

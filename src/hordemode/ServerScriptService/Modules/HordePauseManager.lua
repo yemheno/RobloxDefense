@@ -53,6 +53,11 @@ function HordePauseManager.Pause()
 		MobAI.SetPaused(true)
 	end
 
+	-- §AGX/X7: world-level flag read by AttackHandler/SkillManager
+	-- isWorldPaused(); unlike the per-player attribute it also covers
+	-- players who join while the pause is active.
+	workspace:SetAttribute("HordePaused", true)
+
 	-- Mark every player as paused (server attribute — blocks server-side actions)
 	for _, player in ipairs(Players:GetPlayers()) do
 		player:SetAttribute("HordePaused", true)
@@ -80,6 +85,8 @@ function HordePauseManager.Resume()
 	if MobAI then
 		MobAI.SetPaused(false)
 	end
+
+	workspace:SetAttribute("HordePaused", false) -- §AGX/X7: world flag
 
 	-- Clear paused attribute on all players
 	for _, player in ipairs(Players:GetPlayers()) do

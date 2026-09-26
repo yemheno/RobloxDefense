@@ -12,6 +12,49 @@
 local Vector3  = Vector3
 local BrickColor = BrickColor
 
+-- §AGX/X24: NPC shop listings are BUILT from ShopConfig (single source of
+-- truth, Audit §5.6). The registry names only itemIds; price, currency,
+-- tab, level requirement and `enabled` come from ShopConfig, display text
+-- from ConsumableConfig. The old hand-written prices (10/15 Essence) did
+-- not match what ShopManager charges (25/30 Merits).
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Shared            = ReplicatedStorage:WaitForChild("Shared")
+local ShopConfig        = require(Shared:WaitForChild("ShopConfig"))
+local ConsumableConfig  = require(Shared:WaitForChild("ConsumableConfig"))
+
+local function buildShopItems(npcId, itemIds)
+	local items = {}
+	for _, itemId in ipairs(itemIds) do
+		local entry = ShopConfig.FindByItemId(itemId)
+		if not entry then
+			-- Not sold anywhere: ShopManager would reject every purchase.
+			warn("[LobbyNPCRegistry] " .. npcId .. " lists '" .. itemId ..
+				"', which is not in ShopConfig — skipped (§AGX/X24)")
+		else
+			local info = ConsumableConfig.GetById(itemId)
+			local desc = (info and info.desc) or entry.desc or ""
+			-- §AGX/X10: unusable consumables stay listed but are marked; the
+			-- server (ShopManager.PurchaseConsumable) rejects the purchase.
+			if entry.enabled == false then
+				desc = desc .. " (Coming soon)"
+			end
+			table.insert(items, {
+				id          = itemId,   -- ShopUI.lua sends `item.id` on Buy
+				itemId      = itemId,   -- ShopHandler matches on `itemId`
+				name        = (info and info.name) or entry.name or itemId,
+				description = desc,
+				price       = entry.price,
+				currency    = entry.currency,
+				tab         = entry.tab,
+				levelReq    = entry.levelReq,
+				enabled     = entry.enabled ~= false,
+				category    = (entry.tab == "Consumables") and "Consumable" or entry.tab,
+			})
+		end
+	end
+	return items
+end
+
 return {
 
 	-- ── SHOP NPCs ───────────────────────────────────────────────────────────
@@ -24,32 +67,12 @@ return {
 		position = Vector3.new(20, 0.5, 10),
 		color    = BrickColor.new("Dark stone grey"),
 
-		shopItems = {
-			{
-				itemId      = "iron_sword",
-				name        = "Iron Sword",
-				description = "A sturdy blade forged in fire.",
-				price       = 50,
-				currency    = "Essence",
-				category    = "Weapon",
-			},
-			{
-				itemId      = "steel_shield",
-				name        = "Steel Shield",
-				description = "Blocks incoming blows.",
-				price       = 75,
-				currency    = "Essence",
-				category    = "Weapon",
-			},
-			{
-				itemId      = "health_potion",
-				name        = "Health Potion",
-				description = "Restores 50 HP.",
-				price       = 10,
-				currency    = "Essence",
-				category    = "Consumable",
-			},
-		},
+		-- §AGX/X24: dropped `iron_sword` (50 Essence) and `steel_shield`
+		-- (75 Essence): they exist only here, never in ShopConfig, so every
+		-- purchase failed. Re-add them to ShopConfig first if wanted (Pablo).
+		shopItems = buildShopItems("blacksmith", {
+			"health_potion",
+		}),
 	},
 
 	{
@@ -61,24 +84,11 @@ return {
 		position = Vector3.new(30, 0.5, -5),
 		color    = BrickColor.new("Bright violet"),
 
-		shopItems = {
-			{
-				itemId      = "arcane_focus",
-				name        = "Arcane Focus",
-				description = "Amplifies magical energy.",
-				price       = 100,
-				currency    = "Essence",
-				category    = "Accessory",
-			},
-			{
-				itemId      = "mana_crystal",
-				name        = "Mana Crystal",
-				description = "Restores 30 Aether.",
-				price       = 15,
-				currency    = "Essence",
-				category    = "Consumable",
-			},
-		},
+		-- §AGX/X24: dropped `arcane_focus` (100 Essence), which exists only
+		-- here, never in ShopConfig. Re-add via ShopConfig if wanted (Pablo).
+		shopItems = buildShopItems("enchantress", {
+			"mana_crystal",
+		}),
 	},
 
 	-- ── QUEST NPCs ──────────────────────────────────────────────────────────

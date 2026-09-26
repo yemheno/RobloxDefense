@@ -42,6 +42,39 @@ local function getTreeConfig()
 	return TreeConfig
 end
 
+-- ── §AGX/X11: unimplemented keystone penalties ─────────────
+-- IMPLEMENTED_RULES is the set of keystone rule names with gameplay code
+-- behind them. It is empty today. The canonical table lives in
+-- TalentTreeConfig (shared, so the "(coming soon)" UI tag derives from
+-- the same set); this is the same table, not a copy — add rule names
+-- there. A node whose rule is NOT implemented has its negative `value`
+-- effects skipped (positive ones, if any, still apply), so a keystone is a
+-- neutral pick until its rule ships instead of a pure nerf. Skips are
+-- applied identically in Rebuild / OnNodeAllocated / OnNodeRefunded so
+-- incremental add/remove stays symmetric.
+local IMPLEMENTED_RULES = nil
+local function getImplementedRules()
+	if not IMPLEMENTED_RULES then
+		IMPLEMENTED_RULES = getTreeConfig().IMPLEMENTED_RULES or {}
+	end
+	return IMPLEMENTED_RULES
+end
+
+local function nodeRuleUnimplemented(nodeDef)
+	local implemented = getImplementedRules()
+	for _, eff in ipairs(nodeDef.effects) do
+		if eff.rule and not implemented[eff.stat] then
+			return true
+		end
+	end
+	return false
+end
+
+--- §AGX/X11: should this value effect be skipped for this node?
+local function isNeutralisedPenalty(eff, ruleUnimplemented)
+	return ruleUnimplemented and type(eff.value) == "number" and eff.value < 0
+end
+
 -- ── Per-player rule set ───────────────────────────────────
 -- playerRules[player] = { [ruleName] = true, ... }
 local playerRules = {}
@@ -60,10 +93,13 @@ function TalentEffectAggregator.Rebuild(player, allocatedSet)
 	for nodeId, _ in pairs(allocatedSet) do
 		local node = nodeMap[nodeId]
 		if node and node.effects then
+			local ruleUnimplemented = nodeRuleUnimplemented(node) -- §AGX/X11
 			for _, eff in ipairs(node.effects) do
 				if eff.rule then
 					-- Keystone boolean flag
 					rules[eff.stat] = true
+				elseif isNeutralisedPenalty(eff, ruleUnimplemented) then
+					-- §AGX/X11: penalty of a no-op keystone: skip it.
 				elseif eff.primary then
 					-- Primary stat bonus (e.g. { primary = "MIG", value = 1 })
 					-- Stored as BonusMIG / BonusVIT / etc. so StatsManager can read them
@@ -91,9 +127,12 @@ function TalentEffectAggregator.OnNodeAllocated(player, nodeDef, _allocatedSet)
 	local bm = getBonusManager()
 	if not playerRules[player] then playerRules[player] = {} end
 
+	local ruleUnimplemented = nodeRuleUnimplemented(nodeDef) -- §AGX/X11
 	for _, eff in ipairs(nodeDef.effects) do
 		if eff.rule then
 			playerRules[player][eff.stat] = true
+		elseif isNeutralisedPenalty(eff, ruleUnimplemented) then
+			-- §AGX/X11: penalty of a no-op keystone: never applied.
 		elseif eff.primary then
 			bm.ModifySourceBonus(player, "talent", "Bonus" .. eff.primary, eff.value)
 		elseif eff.value then
@@ -108,9 +147,12 @@ function TalentEffectAggregator.OnNodeRefunded(player, nodeDef, _allocatedSet)
 	local bm = getBonusManager()
 	if not playerRules[player] then playerRules[player] = {} end
 
+	local ruleUnimplemented = nodeRuleUnimplemented(nodeDef) -- §AGX/X11
 	for _, eff in ipairs(nodeDef.effects) do
 		if eff.rule then
 			playerRules[player][eff.stat] = nil
+		elseif isNeutralisedPenalty(eff, ruleUnimplemented) then
+			-- §AGX/X11: was never applied, so nothing to remove.
 		elseif eff.primary then
 			bm.ModifySourceBonus(player, "talent", "Bonus" .. eff.primary, -eff.value)
 		elseif eff.value then

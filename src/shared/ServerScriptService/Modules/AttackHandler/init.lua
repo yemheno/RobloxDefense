@@ -45,6 +45,17 @@ local MELEE_AOE_HIT_CAP = 20       -- generous cap for melee / AoE splash shapes
 local MELEE_RANGE_BUFFER = 10
 local RANGED_RANGE_BUFFER = 15
 
+-- §AGX/X7: server-side enforcement of the Horde vote pause. HordePauseManager
+-- sets the `HordePaused` attribute on workspace (world flag, covers players
+-- who join mid-pause) and on every Player. Two attribute reads, no requires,
+-- so it is safe on the hit hot path and a no-op in places without
+-- HordePauseManager (the attribute is simply never set there).
+local function isWorldPaused(player)
+	if workspace:GetAttribute("HordePaused") == true then return true end
+	return player ~= nil and player:GetAttribute("HordePaused") == true
+end
+AttackHandler.IsWorldPaused = isWorldPaused
+
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
 -- ═══════════════════════════════════════════════════════════
@@ -227,6 +238,9 @@ function AttackHandler.HandleAttack(player, data)
 	-- Block attacks from knocked-down or dead players
 	if player:GetAttribute("DeathState") ~= "Alive" then return end
 
+	-- §AGX/X7: no attacks while the Horde vote pause is active.
+	if isWorldPaused(player) then return end
+
 	-- Casting lock
 	if player:GetAttribute("CastingLockAttack") then return end
 
@@ -312,6 +326,10 @@ end
 function AttackHandler.HandleHitReport(player, data)
 	-- Block hit reports from knocked-down or dead players
 	if player:GetAttribute("DeathState") ~= "Alive" then return end
+
+	-- §AGX/X7: drop hit reports while the Horde vote pause is active
+	-- (a modified client could otherwise keep hitting frozen mobs).
+	if isWorldPaused(player) then return end
 
 	-- Must have attacked recently
 	if not playerCooldowns[player] then return end
