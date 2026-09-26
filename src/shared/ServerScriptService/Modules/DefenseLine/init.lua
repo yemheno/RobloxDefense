@@ -152,7 +152,7 @@ function DefenseLine.OnMobReachedLine(mob, mobData)
 	})
 	local finalDamage = baseDamage * comboMultiplier
 
-	-- Play animation, then apply damage
+	-- Play animation (client-side, §AGX/X35), then apply damage + Destroy
 	DefenseAnimation.PlayHitAnimation(mob, function()
 		-- Apply damage
 		DefenseHealth.TakeDamage(finalDamage, {
@@ -164,9 +164,7 @@ function DefenseLine.OnMobReachedLine(mob, mobData)
 			baseDamage = baseDamage,
 		})
 
-		-- Log
-		local comboText = comboMultiplier > 1 and " [COMBO x" .. math.floor(comboLevel) .. "]" or ""
-		print("[DefenseLine] 💥", mobTypeName, "[" .. mobTier .. "]", math.floor(finalDamage), "dmg" .. comboText)
+		-- §AGX/X35 (G21): per-breach print removed (log noise under load).
 
 		-- Destroy mob
 		DefenseDetection.ClearMob(mob)

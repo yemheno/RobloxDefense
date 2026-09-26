@@ -89,6 +89,54 @@ local function getRole(player)
 	return (class and class.weaponXPRole) or "dps"
 end
 
+-- §AGX/X22: WeaponXPGained is coalesced (SCALING_AUDIT §SCALE/S5 pattern).
+-- It used to fire once per kill (dps) / per hit taken (tank). Gains are now
+-- summed per player and weapon and flushed once per WEAPON_XP_WINDOW with
+-- the weapon's CURRENT xp/level (a snapshot, so the summed xpGained plus
+-- the latest totals is all the client needs — EquipmentUI only refreshes).
+-- WeaponLevelUp stays immediate (rare, and it drives the level-up toast).
+local WEAPON_XP_WINDOW = 0.25
+local pendingWeaponXP = {}  -- [player] = { [weapon] = { xp = sum, maxLevel = n } }
+local weaponXPScheduled = false
+
+local function flushWeaponXP()
+	weaponXPScheduled = false
+	local batch = pendingWeaponXP
+	pendingWeaponXP = {}
+	for player, byWeapon in pairs(batch) do
+		if player.Parent then
+			for weapon, entry in pairs(byWeapon) do
+				NetworkManager.FireClient(player, "WeaponXPGained", {
+					xpGained   = entry.xp,
+					currentXP  = weapon.xp,
+					requiredXP = WeaponConfig.GetXPRequired(weapon.level),
+					level      = weapon.level,
+					maxLevel   = entry.maxLevel,
+				})
+			end
+		end
+	end
+end
+
+local function queueWeaponXP(player, weapon, xpGained, maxLevel)
+	local byWeapon = pendingWeaponXP[player]
+	if not byWeapon then
+		byWeapon = {}
+		pendingWeaponXP[player] = byWeapon
+	end
+	local entry = byWeapon[weapon]
+	if entry then
+		entry.xp += xpGained
+		entry.maxLevel = maxLevel
+	else
+		byWeapon[weapon] = { xp = xpGained, maxLevel = maxLevel }
+	end
+	if not weaponXPScheduled then
+		weaponXPScheduled = true
+		task.delay(WEAPON_XP_WINDOW, flushWeaponXP)
+	end
+end
+
 --- Core XP processor — adds XP, runs the level-up loop, fires client events.
 local function processXP(player, xpToAdd)
 	local wm = WeaponXPSystem.WeaponManager
@@ -148,15 +196,8 @@ local function processXP(player, xpToAdd)
 		print(string.format("[WeaponXPSystem] %s weapon %d → %d (talent pts: %d)",
 			player.Name, weapon.level - levelsGained, weapon.level, weapon.level))
 	else
-		-- Incremental XP gain (no level-up)
-		local required = WeaponConfig.GetXPRequired(weapon.level)
-		NetworkManager.FireClient(player, "WeaponXPGained", {
-			xpGained   = finalXP,
-			currentXP  = weapon.xp,
-			requiredXP = required,
-			level      = weapon.level,
-			maxLevel   = maxLevel,
-		})
+		-- Incremental XP gain (no level-up) — batched (§AGX/X22).
+		queueWeaponXP(player, weapon, finalXP, maxLevel)
 	end
 end
 

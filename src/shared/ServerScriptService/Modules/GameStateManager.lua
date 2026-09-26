@@ -319,6 +319,29 @@ function GameStateManager.OnReturnToLobby(callback)
 end
 
 -- ═══════════════════════════════════════════════════════════
+-- §AGX/X27: HIGHEST WAVE RECORD
+-- ═══════════════════════════════════════════════════════════
+-- Account.HighestWaveReached was never written, so the HighestWave board
+-- and the wave part of Power's prestige bonus (GearRating) were always 0.
+-- The mode Mains call this on each wave/level completion (Lane: MobSpawner
+-- OnWaveCompleted; Horde: its level watcher) — no MobSpawner edit needed.
+-- Stores max(current, wave) for every player in the server. In-memory only;
+-- it rides the normal PlayerDataManager saves, and LeaderboardManager
+-- persists it on leave.
+function GameStateManager.RecordWaveReached(wave)
+	wave = tonumber(wave)
+	if not wave or wave <= 0 then return end
+	wave = math.floor(wave)
+	local DataManager = require(Modules:WaitForChild("PlayerDataManager"))
+	for _, player in ipairs(Players:GetPlayers()) do
+		local account = DataManager.GetAccountData(player)
+		if account and wave > (tonumber(account.HighestWaveReached) or 0) then
+			account.HighestWaveReached = wave
+		end
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
 -- HELPERS
 -- ═══════════════════════════════════════════════════════════
 

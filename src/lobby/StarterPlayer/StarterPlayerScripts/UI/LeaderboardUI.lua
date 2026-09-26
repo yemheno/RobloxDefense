@@ -31,6 +31,18 @@ local C = {
 }
 
 local BOARDS = { "GearScore", "HighestWave", "TotalPlayTime" }
+
+-- §AGX/X27: TotalPlayTime is stored in seconds — show it as hours/minutes.
+local BOARD_LABELS = { GearScore = "Gear Score", HighestWave = "Highest Wave", TotalPlayTime = "Play Time" }
+local function formatScore(board, score)
+	score = tonumber(score) or 0
+	if board == "TotalPlayTime" then
+		local h = math.floor(score / 3600)
+		local m = math.floor((score % 3600) / 60)
+		return h > 0 and string.format("%dh %02dm", h, m) or string.format("%dm", m)
+	end
+	return tostring(score)
+end
 local localUserId = Players.LocalPlayer.UserId
 
 local function LeaderboardUI(props)
@@ -147,7 +159,7 @@ local function LeaderboardUI(props)
 					Position               = UDim2.fromScale(0.76, 0),
 					Size                   = UDim2.fromScale(0.22, 1),
 					BackgroundTransparency = 1,
-					Text                   = tostring(entry.score or 0),
+					Text                   = formatScore(activeBoard, entry.score),
 					TextColor3             = C.text,
 					Font                   = Enum.Font.Gotham,
 					TextScaled             = true,
@@ -171,7 +183,7 @@ local function LeaderboardUI(props)
 				Position               = UDim2.fromScale(0.04, 0.91),
 				Size                   = UDim2.fromScale(0.92, 0.06),
 				BackgroundTransparency = 1,
-				Text                   = "Your Gear Score: " .. tostring(myScore),
+				Text                   = "Your " .. (BOARD_LABELS[activeBoard] or activeBoard) .. ": " .. formatScore(activeBoard, myScore),
 				TextColor3             = C.blue,
 				Font                   = Enum.Font.GothamBold,
 				TextScaled             = true,

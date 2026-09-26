@@ -216,8 +216,12 @@ function SkillManager.StartCasting(player, skill, inputData)
 		skillData = skill,
 	})
 
-	-- Notify all clients for animation
-	NetworkManager.FireAllClients("SkillActivated", {
+	-- Notify the caster for the cast-time animation.
+	-- §AGX/X21: was FireAllClients with the full skill table; every
+	-- non-caster dropped it (SkillVisuals.OnSkillActivated filters on
+	-- playerId, and Roblox replicates the caster's animation itself).
+	-- Still the ONLY event that plays cast-time animations — don't remove.
+	NetworkManager.FireClient(player, "SkillActivated", {
 		skillId = skill.id,
 		playerId = player.UserId,
 		skillData = skill,

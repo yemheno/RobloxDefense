@@ -319,6 +319,9 @@ if MobSpawner and VoteManager then
 end
 
 MobSpawner.OnWaveCompleted(function(waveNumber)
+    -- §AGX/X27: record the wave for the HighestWave leaderboard.
+    GameStateManager.RecordWaveReached(waveNumber)
+
     -- Wave completion XP bonus: 15 + (15 × wave) to every active player.
     local waveXP = 15 + (15 * waveNumber)
     if RunModifiers then

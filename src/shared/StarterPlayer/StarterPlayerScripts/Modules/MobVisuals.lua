@@ -7,7 +7,13 @@ local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local CollectionService = game:GetService("CollectionService")
+
 local LocalPlayer = Players.LocalPlayer
+
+-- §AGX/X35: must match DefenseAnimation.BREACH_TAG on the server.
+local BREACH_TAG = "DefenseBreach"
+local breachPlayed = setmetatable({}, { __mode = "k" })  -- [mob] = true
 
 local Modules = script.Parent
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
@@ -51,6 +57,16 @@ function MobVisuals.Init()
 	NetworkManager.OnServerEvent("MobDeath", function(data)
 		MobVisuals.OnMobDeath(data)
 	end)
+
+	-- §AGX/X35: defense-line breach visual (was a server-side per-part
+	-- tween). The server freezes the mob, sets BreachStyle/BreachDuration
+	-- and tags it; we play the style on our local copy of the parts.
+	CollectionService:GetInstanceAddedSignal(BREACH_TAG):Connect(function(mob)
+		MobVisuals.PlayBreachVisual(mob)
+	end)
+	for _, mob in ipairs(CollectionService:GetTagged(BREACH_TAG)) do
+		MobVisuals.PlayBreachVisual(mob)
+	end
 
 end
 
@@ -411,6 +427,61 @@ function MobVisuals.OnMobDeath(data)
 	expandTween.Completed:Connect(function()
 		sphere:Destroy()
 	end)
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- §AGX/X35: DEFENSE-LINE BREACH (client-side dissolve)
+-- ═══════════════════════════════════════════════════════════
+-- Ported from the old server DefenseAnimation styles. Local-only writes:
+-- the server Destroys the mob after BreachDuration, which also ends the
+-- tweens. "Explode" can't fling server-owned parts from the client, so it
+-- breaks the joints locally and tweens each part outward instead.
+
+function MobVisuals.PlayBreachVisual(mob)
+	if not mob or not mob.Parent or breachPlayed[mob] then return end
+	breachPlayed[mob] = true
+
+	local style    = mob:GetAttribute("BreachStyle") or "Fade"
+	local duration = mob:GetAttribute("BreachDuration") or 0.5
+
+	local center
+	if style == "Explode" then
+		local root = mob:FindFirstChild("HumanoidRootPart")
+		center = root and root.Position or mob:GetPivot().Position
+		-- Local-only joint break so each part can be tweened on its own
+		-- (the server used BreakJoints + velocities).
+		for _, d in ipairs(mob:GetDescendants()) do
+			if d:IsA("JointInstance") or d:IsA("WeldConstraint") then
+				d:Destroy()
+			end
+		end
+	end
+
+	for _, part in ipairs(mob:GetDescendants()) do
+		if part:IsA("BasePart") then
+			local goal
+			local info
+			if style == "Dissolve" then
+				info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+				goal = { Transparency = 1, Color = Color3.fromRGB(255, 50, 50) }
+			elseif style == "Shrink" then
+				info = TweenInfo.new(duration, Enum.EasingStyle.Back, Enum.EasingDirection.In)
+				goal = { Size = part.Size * 0.01, Transparency = 1 }
+			elseif style == "Explode" then
+				info = TweenInfo.new(duration, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+				local dir = part.Position - center
+				if dir.Magnitude < 0.1 then
+					dir = Vector3.new(math.random() - 0.5, 1, math.random() - 0.5)
+				end
+				local offset = dir.Unit * (30 * duration) + Vector3.new(0, 20 * duration, 0)
+				goal = { Transparency = 1, CFrame = part.CFrame + offset }
+			else -- "Fade" and unknown styles
+				info = TweenInfo.new(duration, Enum.EasingStyle.Linear)
+				goal = { Transparency = 1 }
+			end
+			TweenService:Create(part, info, goal):Play()
+		end
+	end
 end
 
 return MobVisuals

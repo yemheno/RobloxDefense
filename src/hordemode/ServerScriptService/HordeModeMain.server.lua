@@ -317,16 +317,24 @@ HordePauseManager.Setup({
 -- §EASY/E4 (§AM4): HordeMode has no MobSpawner waves, so wavesSurvived /
 -- highestWave never advanced for horde players. Watch the horde level
 -- and feed each increment into the SAME public hook the wave system uses.
+-- §AGX/X27: the same watcher also records HighestWaveReached (same level
+-- number the achievement hook gets), so it no longer bails when
+-- AchievementManager is missing.
 task.spawn(function()
     local amMod = ctx.loaded["AchievementManager"]
-    if not amMod or not amMod.OnWaveCompleted then return end
+    if amMod and not amMod.OnWaveCompleted then amMod = nil end
     local lastLevel = HordeModeSpawner.GetLevel() or 1
     while hordeRunActive do
         task.wait(2)
         local lv = HordeModeSpawner.GetLevel() or lastLevel
+        local advanced = false
         while lv > lastLevel do
             lastLevel += 1
-            amMod.OnWaveCompleted(lastLevel)
+            advanced = true
+            if amMod then amMod.OnWaveCompleted(lastLevel) end
+        end
+        if advanced then
+            GameStateManager.RecordWaveReached(lastLevel)
         end
     end
 end)

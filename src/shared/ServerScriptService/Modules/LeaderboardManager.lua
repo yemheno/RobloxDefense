@@ -5,7 +5,9 @@
     Maintains three leaderboards:
       PowerLevel      — computed via GearRating.GetDisplayPower() (unified Power Rating)
       HighestWave     — from data.Account.HighestWaveReached
-      TotalPlayTime   — from data.Account.TotalPlayTime
+                        (§AGX/X27: written by GameStateManager.RecordWaveReached)
+      TotalPlayTime   — from data.Account.TotalPlayTime, whole seconds
+                        (§AGX/X27: PlayerDataManager.AccruePlayTime)
 
     Each leaderboard is an OrderedDataStore. Scores are persisted periodically
     (every UPDATE_INTERVAL seconds) and on player removal.
@@ -139,6 +141,13 @@ end
 
 --- Recalculate and persist scores for a player.
 function LeaderboardManager.UpdatePlayer(player)
+    -- §AGX/X27: fold the live session's play time in first, so the
+    -- leave-persist (PlayerRemoving order vs PlayerDataManager's is not
+    -- guaranteed) and the periodic persist see up-to-date seconds.
+    local dm0 = getDataManager()
+    if dm0.AccruePlayTime then
+        dm0.AccruePlayTime(player)
+    end
     local scores = getScores(player)
     if scores then
         -- Persist PowerLevel into player data for reference

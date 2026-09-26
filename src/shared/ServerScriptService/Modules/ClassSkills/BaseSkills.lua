@@ -113,9 +113,43 @@ end
 -- VISUAL HELPERS
 -- ═══════════════════════════════════════════════════════════
 
+-- §AGX/X21: range-scoped (extends SCALING_AUDIT Deferred #3, same shape as
+-- §SCALE/S2 MobAI.FireNearbyClients). Was FireAllClients per cast = O(casts·P).
+-- 250 studs from the visual's origin: covers the longest-travelling visual
+-- (Hunter Projectile, 60 studs/s × 3 s = 180 from startPos) plus margin.
+-- The caster and the heal/revive target (data.targetId) always receive it;
+-- characterless players (mid-respawn) get it too — cheap & safe. The name is
+-- kept so the 19 call sites don't change.
+local SKILL_VISUAL_RANGE = 250
+
 function BaseSkills.SendVisualToAll(visualType, data)
 	data.visualType = visualType
-	BaseSkills.NetworkManager.FireAllClients("SkillVisual", data)
+
+	local caster = data.playerId and Players:GetPlayerByUserId(data.playerId) or nil
+	local target = data.targetId and Players:GetPlayerByUserId(data.targetId) or nil
+
+	-- Origin: explicit origin → startPos → caster's root (e.g. EagleEye).
+	local origin = data.origin or data.startPos
+	if typeof(origin) ~= "Vector3" then
+		origin = caster and BaseSkills.GetPlayerPosition(caster) or nil
+	end
+	if not origin then
+		-- No position to scope by — keep the old behaviour.
+		BaseSkills.NetworkManager.FireAllClients("SkillVisual", data)
+		return
+	end
+
+	for _, plr in ipairs(Players:GetPlayers()) do
+		if plr == caster or plr == target then
+			BaseSkills.NetworkManager.FireClient(plr, "SkillVisual", data)
+		else
+			local char = plr.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if not root or (root.Position - origin).Magnitude <= SKILL_VISUAL_RANGE then
+				BaseSkills.NetworkManager.FireClient(plr, "SkillVisual", data)
+			end
+		end
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════

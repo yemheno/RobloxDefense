@@ -53,11 +53,7 @@ function SkillInput.Init()
 	-- Use task.spawn + infinite WaitForChild to avoid the 3s timeout race.
 	local Events = game:GetService("ReplicatedStorage"):WaitForChild("Events")
 
-	task.spawn(function()
-		Events:WaitForChild("SkillActivated").OnClientEvent:Connect(function(data)
-			print("[SkillInput] Skill activated:", data.skillId)
-		end)
-	end)
+	-- §AGX/X21 (G21): removed the per-cast debug print on SkillActivated.
 
 	task.spawn(function()
 		Events:WaitForChild("SkillFailed").OnClientEvent:Connect(function(data)

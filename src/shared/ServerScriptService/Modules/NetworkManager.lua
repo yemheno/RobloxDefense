@@ -126,7 +126,7 @@ local EVENTS = {
 
     -- ── Talents & Skills ─────────────────────────────────────────────
     TalentStateUpdate      = { rateLimit = nil,  readyGated = true  }, -- TalentManager.SendState already migrated
-    SkillActivated         = { rateLimit = nil,  readyGated = false }, -- broadcast, fast-path
+    SkillActivated         = { rateLimit = nil,  readyGated = false }, -- caster-only since §AGX/X21, fast-path
     SkillVisual            = { rateLimit = nil,  readyGated = false },
     SkillCooldownUpdate    = { rateLimit = nil,  readyGated = false },
     SkillFailed            = { rateLimit = nil,  readyGated = false },

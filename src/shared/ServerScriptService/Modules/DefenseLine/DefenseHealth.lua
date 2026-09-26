@@ -30,6 +30,23 @@ local onHealedCallbacks = {}
 -- so we pre-declare the upvalue here and assign the function body below.
 local handleDestroyed
 
+-- §AGX/X35 (SCALING_AUDIT Deferred #5): DefenseLineDamaged was one
+-- FireAllClients per breach. Now leading-edge throttled to one send per
+-- BROADCAST_WINDOW (≤ 5 Hz): an isolated breach still sends at once; hits
+-- inside the window are summed and flushed at the window's end with the
+-- HP read AT FLUSH TIME (the HUD only reads currentHealth/maxHealth/percent).
+local BROADCAST_WINDOW = 0.2
+local lastDamagedSend = -math.huge
+local pendingDamage = 0          -- summed damage not yet broadcast
+local pendingDamageSource = nil  -- last source in the window
+local damagedFlushScheduled = false
+
+-- §AGX/X37: regen heal accumulator (same window). Regen used to run
+-- UpdateVisuals (a replicated part.Color write) every Heartbeat and
+-- broadcast whenever one frame healed ≥ 1 HP.
+local lastRegenFlush = 0
+local regenDirty = false
+
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
 -- ═══════════════════════════════════════════════════════════
@@ -81,16 +98,8 @@ function DefenseHealth.TakeDamage(amount, source)
 	-- Flash effect
 	DefenseHealth.FlashOnHit()
 
-	-- Notify clients
-	if DefenseHealth.NetworkManager then
-		DefenseHealth.NetworkManager.FireAllClients("DefenseLineDamaged", {
-			damage = amount,
-			currentHealth = currentHealth,
-			maxHealth = maxHealth,
-			percent = DefenseHealth.GetHealthPercent(),
-			source = source,
-		})
-	end
+	-- Notify clients (§AGX/X35: throttled to ≤ 5 Hz, see BROADCAST_WINDOW)
+	DefenseHealth.QueueDamagedBroadcast(amount, source)
 
 	-- Fire callbacks
 	for _, callback in ipairs(onDamagedCallbacks) do
@@ -148,6 +157,10 @@ handleDestroyed = function()
 
 	isDestroyed = true
 	currentHealth = 0
+
+	-- §AGX/X35: deliver the killing blow's DefenseLineDamaged before
+	-- DefenseLineDestroyed so clients see them in the old order.
+	DefenseHealth.FlushDamagedBroadcast()
 
 	print("[DefenseHealth] ═══════════════════════════════════")
 	print("[DefenseHealth] 💀 DEFENSE LINE DESTROYED!")
@@ -231,9 +244,56 @@ function DefenseHealth.UpdateRegen(dt)
 	if regen.PerSecond <= 0 then return end
 	if isDestroyed then return end
 
-	local timeSinceDamage = os.clock() - lastDamageTime
-	if timeSinceDamage >= regen.Delay then
-		DefenseHealth.Heal(regen.PerSecond * dt)
+	local now = os.clock()
+	local timeSinceDamage = now - lastDamageTime
+	if timeSinceDamage >= regen.Delay and currentHealth < maxHealth then
+		-- §AGX/X37: heal silently every frame; visuals + DefenseLineUpdate
+		-- go out at most once per BROADCAST_WINDOW (≤ 5 Hz).
+		currentHealth = math.min(maxHealth, currentHealth + regen.PerSecond * dt)
+		regenDirty = true
+	end
+
+	if regenDirty and now - lastRegenFlush >= BROADCAST_WINDOW then
+		regenDirty = false
+		lastRegenFlush = now
+		DefenseHealth.UpdateVisuals()
+		DefenseHealth.BroadcastHealth()
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- §AGX/X35: DefenseLineDamaged throttle (SCALING_AUDIT Deferred #5)
+-- ═══════════════════════════════════════════════════════════
+
+function DefenseHealth.FlushDamagedBroadcast()
+	damagedFlushScheduled = false
+	if pendingDamage <= 0 then return end
+	local amount, source = pendingDamage, pendingDamageSource
+	pendingDamage = 0
+	pendingDamageSource = nil
+	lastDamagedSend = os.clock()
+
+	if DefenseHealth.NetworkManager then
+		DefenseHealth.NetworkManager.FireAllClients("DefenseLineDamaged", {
+			damage = amount,  -- summed over the window
+			currentHealth = currentHealth,
+			maxHealth = maxHealth,
+			percent = DefenseHealth.GetHealthPercent(),
+			source = source,
+		})
+	end
+end
+
+function DefenseHealth.QueueDamagedBroadcast(amount, source)
+	pendingDamage += amount
+	pendingDamageSource = source
+
+	local remaining = BROADCAST_WINDOW - (os.clock() - lastDamagedSend)
+	if remaining <= 0 then
+		DefenseHealth.FlushDamagedBroadcast()  -- leading edge: no added latency
+	elseif not damagedFlushScheduled then
+		damagedFlushScheduled = true
+		task.delay(remaining, DefenseHealth.FlushDamagedBroadcast)
 	end
 end
 
@@ -296,6 +356,11 @@ function DefenseHealth.Reset()
 	currentHealth = maxHealth
 	isDestroyed = false
 	lastDamageTime = 0
+
+	-- §AGX/X35/X37: drop anything still queued from the previous run.
+	pendingDamage = 0
+	pendingDamageSource = nil
+	regenDirty = false
 
 	DefenseHealth.UpdateVisuals()
 

@@ -71,10 +71,9 @@ end
 
 function SkillVisuals.OnSkillActivated(data)
 	-- Only play cast animation for the LOCAL player.
-	-- When a cast-time skill fires FireAllClients("SkillActivated"), every
-	-- client would otherwise play the animation on their own character.
-	-- Roblox auto-replicates the caster's animation to all other clients,
-	-- so we simply skip it for non-local casters.
+	-- §AGX/X21: the server now sends SkillActivated to the caster only
+	-- (FireClient); Roblox auto-replicates the caster's animation to all
+	-- other clients. The playerId guard stays as a cheap safety net.
 	if data.playerId and data.playerId ~= player.UserId then return end
 
 	local skillData = data.skillData

@@ -115,6 +115,31 @@ local playerDataStore = {}
 -- Registered via PlayerDataManager.OnPlayerDataReady(callback).
 local dataReadyCallbacks = {}
 
+-- §AGX/X27: session play-time accumulator. Account.TotalPlayTime (whole
+-- SECONDS — LeaderboardManager floors it and stores it as an integer) was
+-- never written, so the TotalPlayTime board was always empty. The mark is
+-- set when data is ready; AccruePlayTime folds the elapsed time into the
+-- account and moves the mark forward, so it is idempotent and can run on
+-- every save (heartbeat, leave, shutdown) and before a leaderboard persist.
+-- Weak keys: a rejoin gets a new Player object and a fresh mark.
+local playTimeMark = setmetatable({}, { __mode = "k" })  -- [player] = os.clock() of last accrual
+
+table.insert(dataReadyCallbacks, function(player)
+	playTimeMark[player] = os.clock()
+end)
+
+function PlayerDataManager.AccruePlayTime(player)
+	local mark = playTimeMark[player]
+	if not mark then return end
+	local data = playerDataStore[player]
+	if not data or not data.Account then return end
+	local whole = math.floor(os.clock() - mark)
+	if whole <= 0 then return end
+	-- Keep the fractional remainder in the mark so nothing is lost to flooring.
+	playTimeMark[player] = mark + whole
+	data.Account.TotalPlayTime = (tonumber(data.Account.TotalPlayTime) or 0) + whole
+end
+
 -- §T0-FOLLOWUP/L2: per-player Janitor tracks the CharacterAdded conn
 -- registered inside SetupPlayer so we can tear it down on PlayerRemoving.
 local Janitor = require(script.Parent:WaitForChild("Janitor"))
@@ -862,6 +887,8 @@ function PlayerDataManager.SavePlayer(player, force, release)
 		end
 		releaseInFlight[releaseKey] = true
 	end
+	-- §AGX/X27: fold session play time into the snapshot (sync, no yield).
+	PlayerDataManager.AccruePlayTime(player)
 	pendingSaves += 1
 	local ok, result = pcall(SavePlayerImpl, player, force, release)
 	pendingSaves -= 1
@@ -1219,23 +1246,44 @@ function PlayerDataManager.RefreshArmorStats(player)
 	return BonusSystem.RefreshArmorStats(player)
 end
 
--- Level System
-function PlayerDataManager.AddExperience(player, amount)
-	LevelSystem.AddExperience(player, amount)
+-- §AGX/X22: XP HUD pushes are coalesced (SCALING_AUDIT §SCALE/S5 pattern).
+-- Every kill used to fire one PlayerInfoUpdate per recipient (≤ 5 party
+-- members), so a 15-kill Horde burst was up to 75 sends in one frame.
+-- Now AddExperience only marks the player dirty; one flush per
+-- XP_PUSH_WINDOW sends the LATEST level/xp once per dirty player. The
+-- payload is a snapshot, so dropping the intermediate ones loses nothing.
+local XP_PUSH_WINDOW = 0.25
+local xpPushDirty = {}  -- [player] = true
+local xpPushScheduled = false
 
-	-- Push updated XP / level to the player's HUD immediately.
-	-- This central notification covers ALL XP sources: kill rewards, wave bonuses,
-	-- admin commands, etc. — so every caller gets the HUD update for free.
-	local account = PlayerDataManager.GetAccountData(player)
-	if account then
-		local net = getNetworkManager()
-		if net then
+local function flushXPPushes()
+	xpPushScheduled = false
+	local net = getNetworkManager()
+	for player in pairs(xpPushDirty) do
+		xpPushDirty[player] = nil
+		local account = player.Parent and PlayerDataManager.GetAccountData(player)
+		if net and account then
 			net.FireClient(player, "PlayerInfoUpdate", {
 				level    = account.Level,
 				xp       = account.Experience,
 				xpNeeded = Config.GetXPForLevel(account.Level),
 			})
 		end
+	end
+end
+
+-- Level System
+function PlayerDataManager.AddExperience(player, amount)
+	LevelSystem.AddExperience(player, amount)
+
+	-- Push updated XP / level to the player's HUD (batched — §AGX/X22).
+	-- This central notification covers ALL XP sources: kill rewards, wave bonuses,
+	-- admin commands, etc. — so every caller gets the HUD update for free.
+	if not player then return end
+	xpPushDirty[player] = true
+	if not xpPushScheduled then
+		xpPushScheduled = true
+		task.delay(XP_PUSH_WINDOW, flushXPPushes)
 	end
 end
 
