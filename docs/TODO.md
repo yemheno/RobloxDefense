@@ -293,7 +293,9 @@
   damage reports, etc.) and not too generous on cheap-to-replay events
   (votes, equips). [Closed by §NM-D1 in T0.1 sweep — per-event limits
   introduced; revisit if a new event surfaces a drop-bug.]
-- `[P1]` **§NM-D6 — Hang-recovery UI when client `WaitForChild` stalls** —
+- ✅ *(Done 2026-09-26, §AGX/UI-FREE: 15 s ServerReady watchdog in client
+  NetworkManager raises a sticky Notify banner with a Rejoin action; clears
+  with a "Connected." toast.)* **§NM-D6 — Hang-recovery UI when client `WaitForChild` stalls** —
   the boot-race fix in client `NetworkManager` waits indefinitely for
   events. If the server is genuinely broken (crashed, bad deploy) the
   client just sits there. Add a threshold-based "Connection issue —
@@ -697,7 +699,8 @@ tags in code).
   shell's "party" entry (`UI/Shell/Registry.lua:245-247`). MatchmakingUI is
   a banner and not a window, but it does use Theme/Button (582dff1).
   CharacterCreation's 12 literals are skin swatches (`:51-54`), not
-  chrome. Still to do: SocialPanel only.
+  chrome. ~~Still to do: SocialPanel only.~~ SocialPanel re-skinned
+  (AppWindow, Tabs, Theme v2, 44 px buttons; §AGX/UI-FREE). **U3 closed.**
 - `[Done]` **§PERF/BP — Boot profiler (2026-07-16).** Shared
   `ReplicatedStorage/Shared/BootProfiler` (Mark/Begin spans). Hooks:
   PlaceBootstrap.Load (every require + Init, all 5 places),
@@ -854,11 +857,13 @@ New open items created by the agency-checks session (`git log
   soon" (`ConsumableConfig.lua:13,174-176`; `ShopManager.lua:233-239`).
   Write the use handlers (potions, buffs), then set `usable = true` per
   item.
-- `[P2]` **§AGX/X4-REASON — the return reason is never shown.**
+- ✅ *(Done, §AGX/UI-FREE: LobbyClient shows it as a toast after the loading
+  screen.)* **§AGX/X4-REASON — the return reason is never shown.**
   `ReturnTeleporter.lua:86-105` sends `returnReason` in TeleportData on a
   public-server bounce or a failure, but nothing in the Lobby reads it.
   Show it as a Notify toast on Lobby arrival.
-- `[P2]` **§AGX/X40-VIP — the VIP GamePass has no effect.** It sets a
+- ✅ *(Chat half done, §AGX/UI-FREE: `Modules/VipTag.lua` adds a blue `[VIP]`
+  chat prefix in every place. No nameplate exists to tag.)* **§AGX/X40-VIP — the VIP GamePass has no effect.** It sets a
   `VIP` player attribute that nothing reads (`ShopConfig.lua:268-271`).
   Add the nameplate/chat tag before enabling the pass. Social perks only.
 - `[📝]` **§AGX/X46-GUARD — the PolicyService tripwire.** Before

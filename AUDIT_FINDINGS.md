@@ -206,7 +206,7 @@ fix.
 13 MB local venv currently untracked only by luck. One line.
 
 ### G25. Client NetworkManager deferred-listener can hang forever — *(known)*
-**Status (2026-09-26):** ⏳ **Open (known).** Same as TODO §11 §NM-D6, which is still open.
+**Status (2026-09-26):** ✅ **Mitigated** (§AGX/UI-FREE): a 15 s watchdog now prompts Rejoin; a listener still waiting after the handshake is logged once. See TODO §NM-D6.
 If an awaited remote never materializes, the defer thread never exits.
 Already covered by parked §NM-D6 hang-recovery; no new action, listed
 for completeness.

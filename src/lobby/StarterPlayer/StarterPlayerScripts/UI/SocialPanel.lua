@@ -1,6 +1,6 @@
 -- UI/SocialPanel.lua
 --
--- Full-screen Social window (Party + Guild tabs).
+-- Social window (Party + Guild tabs).
 -- Replaces the old compact PartyPanel.
 --
 -- Layout (Party tab):
@@ -13,7 +13,7 @@
 --   mount          → FireServer("PlayerListRequest"), FireServer("GetPlayerInfo")
 --   PlayerListUpdate → rebuild playerList state
 --   PartyUpdate      → rebuild party state
---   PartyError       → show transient error toast
+--   PartyError       → error toast (§AGX/UI-P6: via Notify, was an inline label)
 --
 -- Party actions fired to server via PartyRequest event:
 --   InviteById   { userId }
@@ -22,45 +22,66 @@
 --   Disband
 --   KickMember   { userId }
 --   PromoteMember { userId }
+--
+-- §AGX/UI-P6 (UI-FREE): §T10/U3 Theme v2 re-skin, the one screen the revamp
+-- missed. Mounted by Shell/Registry entry "party" (module Lobby/SocialPanel,
+-- windowed / phone sheet); props unchanged ({ onClose }). Chrome = AppWindow
+-- variant "auto" (sheet on phone), body = design px inside UIScaleRoot.Local:
+-- Common Tabs, two flat Panel columns of raised Panel rows, Common Buttons
+-- (44 px, sm). "+ Create Party" is the screen's one primary (orange) CTA;
+-- everything else is blue-accent secondary / danger. Removed: the private
+-- `C` palette, the hand-rolled fullscreen backdrop, title, ✕ close button,
+-- TabButton, every Scale-sized TextScaled label and the inline error toast
+-- (PartyError now raises a Notify error toast, the one rejection channel).
+-- Events, payloads, friend pre-fetch and sorting are unchanged.
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
-local SharedModules  = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
+local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
+local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
+
+-- §AGX/UI-P6: shared components
+local Common      = PlayerScripts:WaitForChild("UI"):WaitForChild("Common")
+local AppWindow   = require(Common:WaitForChild("AppWindow"))  -- §T10/U3
+local Theme       = require(Common:WaitForChild("Theme"))
+local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
+local Text        = require(Common:WaitForChild("Text"))
+local Tabs        = require(Common:WaitForChild("Tabs"))
+local Panel       = require(Common:WaitForChild("Panel"))
+local Button      = require(Common:WaitForChild("Button"))
+local Notify      = require(Common:WaitForChild("Notify"))
 
 local LocalPlayer = Players.LocalPlayer
 
--- ── Colours ──────────────────────────────────────────────────────────────────
-local C = {
-	bg_dark    = Color3.fromRGB( 18,  18,  24),
-	bg_panel   = Color3.fromRGB( 24,  24,  33),
-	bg_row     = Color3.fromRGB( 30,  30,  44),
-	bg_row_alt = Color3.fromRGB( 34,  34,  50),
-	accent     = Color3.fromRGB(105, 190, 255),
-	friend     = Color3.fromRGB( 90, 210, 140),   -- friend name colour
-	text       = Color3.fromRGB(225, 225, 230),
-	text_dim   = Color3.fromRGB(140, 140, 160),
-	text_leader= Color3.fromRGB(255, 200,  60),   -- gold for leader tag
-	btn_blue   = Color3.fromRGB( 60, 135, 235),
-	btn_green  = Color3.fromRGB( 45, 175,  95),
-	btn_red    = Color3.fromRGB(185,  60,  60),
-	btn_grey   = Color3.fromRGB( 58,  58,  78),
-	tab_active = Color3.fromRGB( 35,  35,  52),
-	tab_idle   = Color3.fromRGB( 22,  22,  32),
-	close_bg   = Color3.fromRGB( 80,  36,  36),
-	close_text = Color3.fromRGB(245, 100, 100),
-	divider    = Color3.fromRGB( 50,  50,  70),
-	bonus_bg   = Color3.fromRGB( 18,  30,  48),
-}
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
 
 local MAX_PARTY = 5
 
--- ── Tiny helpers ─────────────────────────────────────────────────────────────
-local function UICorner(r)
-	return React.createElement("UICorner", { CornerRadius = UDim.new(r or 0.12, 0) })
-end
+-- §AGX/UI-P6: layout in DESIGN px (phone scale).
+local ROW_H      = 52                          -- row = 44 px button + 2 x 4 px
+local HEAD_H     = 44                          -- column header rows (hold a 44 px button)
+local BTN_W      = 88                          -- Theme.Metrics.button.minWidth
+local REFRESH_W  = 124                         -- "⟳ REFRESH"
+local ACTION_W   = 184                         -- "⚑ DISBAND PARTY" / "← LEAVE PARTY"
+local ROW_INSET  = Theme.Metrics.scrollBar     -- rows stop short of the scroll bar
+local TABS_H     = Theme.Metrics.tabs.height   -- 44
+local LEFT_FRAC  = 0.40
+local COL_GAP    = SP.md
+local BONUS_H    = 2 * Theme.Type.caption.lineHeight + 2 * SP.sm + SP.xxs
+
+-- Roles for the social colours (were friend green / leader gold literals).
+local FRIEND_COLOR = "state.success"     -- + the ♥ glyph, so colour is never the only cue
+local LEADER_COLOR = "rarity.legendary"  -- gold, + the ★ Leader tag
+
+local TAB_ITEMS = {
+	{ id = "party", label = "Party" },
+	{ id = "guild", label = "Guild" },
+}
 
 -- Friend-status cache: populated asynchronously to avoid blocking the first render.
 -- [userId] = true/false | nil (not yet fetched)
@@ -91,71 +112,84 @@ local function prefetchFriend(userId, onDone)
 	end)
 end
 
--- SmallButton removed — was unused. If a small button component is needed
--- in future, define it locally here with the same signature.
-
--- ── TabButton ─────────────────────────────────────────────────────────────────
-local function TabButton(props)
-	local active = props.active
-	return React.createElement("TextButton", {
-		Size             = UDim2.fromScale(0.18, 1),
-		BackgroundColor3 = active and C.tab_active or C.tab_idle,
-		BorderSizePixel  = 0,
-		Text             = props.label,
-		TextColor3       = active and C.accent or C.text_dim,
-		Font             = active and Enum.Font.GothamBold or Enum.Font.Gotham,
-		TextScaled       = true,
-		LayoutOrder      = props.order or 1,
-		[React.Event.Activated] = props.onSelect,
-	}, { UICorner(0.35) })
+-- §AGX/UI-P6: shared scroll list (was two copies with Scale padding).
+local function ScrollList(props, rows)
+	rows.layout = e("UIListLayout", {
+		FillDirection = Enum.FillDirection.Vertical,
+		Padding       = UDim.new(0, SP.xs),
+		SortOrder     = Enum.SortOrder.LayoutOrder,
+	})
+	return e("ScrollingFrame", {
+		Name                   = props.name,
+		Position               = props.position,
+		Size                   = props.size,
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		ScrollBarThickness     = Theme.Metrics.scrollBar,
+		ScrollBarImageColor3   = R.text.secondary,
+		ScrollingDirection     = Enum.ScrollingDirection.Y,
+		CanvasSize             = UDim2.fromScale(0, 0),
+		AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+	}, rows)
 end
 
 -- ── PlayerRow (left panel) ────────────────────────────────────────────────────
--- props: entry {userId, name}, inParty, partyFull, alreadyInMyParty
+-- props: entry {userId, name}, partyFull, alreadyInParty
 local function PlayerRow(props)
 	local entry           = props.entry
 	local partyFull       = props.partyFull
 	local alreadyInParty  = props.alreadyInParty
 	local isSelf          = (entry.userId == LocalPlayer.UserId)
 	local friend          = isFriend(entry.userId)
-	local nameColor       = friend and C.friend or C.text
 
 	local canInvite = not isSelf and not alreadyInParty and not partyFull
+	local actionW = isSelf and 0 or (BTN_W + SP.sm)
 
-	return React.createElement("Frame", {
-		Size             = UDim2.fromScale(1, 0.065),
-		BackgroundColor3 = C.bg_row,
-		BorderSizePixel  = 0,
-		LayoutOrder      = props.order or 1,
+	-- Right-hand control: Invite, a disabled "Full", or an "In party" tag.
+	local control = nil
+	if not isSelf then
+		if alreadyInParty then
+			control = e(Text, {
+				style       = "caption",
+				text        = "In party",
+				color       = "accent.secondary",
+				align       = "right",
+				anchorPoint = Vector2.new(1, 0.5),
+				position    = UDim2.new(1, -SP.sm, 0.5, 0),
+				size        = UDim2.fromOffset(BTN_W, ROW_H),
+			})
+		else
+			control = e(Button, {
+				variant     = "secondary",
+				size        = "sm",
+				label       = partyFull and "Full" or "Invite",
+				disabled    = not canInvite,
+				width       = BTN_W,
+				anchorPoint = Vector2.new(1, 0.5),
+				position    = UDim2.new(1, -SP.xs, 0.5, 0),
+				onActivated = canInvite and function()
+					NetworkManager.FireServer("PartyRequest", { action = "InviteById", userId = entry.userId })
+				end or nil,
+			})
+		end
+	end
+
+	return e(Panel, {
+		name        = "Player_" .. tostring(entry.userId),
+		elevation   = "raised",
+		padding     = "none",
+		accent      = isSelf and "accent.secondary" or nil,   -- you = blue ring
+		size        = UDim2.new(1, -ROW_INSET, 0, ROW_H),
+		layoutOrder = props.order or 1,
 	}, {
-		UICorner(0.2),
-
-		nameLabel = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.03, 0.12),
-			Size                   = UDim2.fromScale(0.62, 0.76),
-			BackgroundTransparency = 1,
-			Text                   = entry.name .. (friend and "  ♥" or "") .. (isSelf and " (you)" or ""),
-			TextColor3             = nameColor,
-			Font                   = Enum.Font.Gotham,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
+		nameLabel = e(Text, {
+			style    = "label",
+			text     = entry.name .. (friend and "  ♥" or "") .. (isSelf and " (you)" or ""),
+			color    = friend and FRIEND_COLOR or "text.primary",
+			position = UDim2.fromOffset(SP.md, 0),
+			size     = UDim2.new(1, -(SP.md + actionW), 1, 0),
 		}),
-
-		inviteBtn = (not isSelf) and React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0.5),
-			Position         = UDim2.fromScale(0.97, 0.5),
-			Size             = UDim2.fromScale(0.30, 0.70),
-			BackgroundColor3 = canInvite and C.btn_blue or C.btn_grey,
-			BorderSizePixel  = 0,
-			Text             = alreadyInParty and "In Party" or (partyFull and "Full" or "Invite"),
-			TextColor3       = C.text,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			Active           = canInvite,
-			[React.Event.Activated] = canInvite and function()
-				NetworkManager.FireServer("PartyRequest", { action = "InviteById", userId = entry.userId })
-			end or nil,
-		}, { UICorner(0.3) }) or nil,
+		control = control,
 	})
 end
 
@@ -167,68 +201,59 @@ local function MemberRow(props)
 	local isLocalLeader = props.isLocalLeader
 	local isLeader      = (member.userId == leaderId)
 	local isSelf        = (member.userId == LocalPlayer.UserId)
+	local showControls  = isLocalLeader and not isSelf
+	local controlsW     = showControls and (2 * BTN_W + 2 * SP.sm) or 0
+	local nameH         = Theme.Type.label.lineHeight
+	local tagH          = Theme.Type.caption.lineHeight
 
-	return React.createElement("Frame", {
-		Size             = UDim2.fromScale(1, 0.085),
-		BackgroundColor3 = C.bg_row_alt,
-		BorderSizePixel  = 0,
-		LayoutOrder      = props.order or 1,
+	return e(Panel, {
+		name        = "Member_" .. tostring(member.userId),
+		elevation   = "raised",
+		padding     = "none",
+		accent      = isSelf and "accent.secondary" or nil,
+		size        = UDim2.new(1, -ROW_INSET, 0, ROW_H),
+		layoutOrder = props.order or 1,
 	}, {
-		UICorner(0.2),
-
-		-- Name + (Leader) tag
-		nameLabel = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.03, 0.12),
-			Size                   = UDim2.fromScale(isLocalLeader and 0.45 or 0.70, 0.76),
-			BackgroundTransparency = 1,
-			Text                   = member.name,
-			TextColor3             = isLeader and C.text_leader or C.text,
-			Font                   = isLeader and Enum.Font.GothamBold or Enum.Font.Gotham,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
+		-- Name (+ ★ Leader tag under it for the leader)
+		nameLabel = e(Text, {
+			style    = "label",
+			text     = member.name,
+			color    = isLeader and LEADER_COLOR or "text.primary",
+			position = isLeader and UDim2.fromOffset(SP.md, (ROW_H - nameH - tagH) / 2)
+				or UDim2.fromOffset(SP.md, 0),
+			size     = UDim2.new(1, -(SP.md + controlsW), 0, isLeader and nameH or ROW_H),
 		}),
-
-		leaderTag = isLeader and React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.03, 0.60),
-			Size                   = UDim2.fromScale(0.30, 0.35),
-			BackgroundTransparency = 1,
-			Text                   = "★ Leader",
-			TextColor3             = C.text_leader,
-			Font                   = Enum.Font.Gotham,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
+		leaderTag = isLeader and e(Text, {
+			style    = "caption",
+			text     = "★ Leader",
+			color    = LEADER_COLOR,
+			position = UDim2.fromOffset(SP.md, (ROW_H - nameH - tagH) / 2 + nameH),
+			size     = UDim2.new(1, -(SP.md + controlsW), 0, tagH),
 		}) or nil,
 
-		-- Kick + Promote buttons (only leader sees, only for others)
-		kickBtn = (isLocalLeader and not isSelf) and React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0.5),
-			Position         = UDim2.fromScale(0.97, 0.5),
-			Size             = UDim2.fromScale(0.16, 0.65),
-			BackgroundColor3 = C.btn_red,
-			BorderSizePixel  = 0,
-			Text             = "Kick",
-			TextColor3       = C.text,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = function()
-					NetworkManager.FireServer("PartyRequest", { action = "KickMember", userId = member.userId })
+		-- Promote + Kick (only the leader sees them, only for others)
+		promoteBtn = showControls and e(Button, {
+			variant     = "secondary",
+			size        = "sm",
+			label       = "▲ Lead",
+			width       = BTN_W,
+			anchorPoint = Vector2.new(1, 0.5),
+			position    = UDim2.new(1, -(SP.xs + BTN_W + SP.sm), 0.5, 0),
+			onActivated = function()
+				NetworkManager.FireServer("PartyRequest", { action = "PromoteMember", userId = member.userId })
 			end,
-		}, { UICorner(0.3) }) or nil,
-
-		promoteBtn = (isLocalLeader and not isSelf) and React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0.5),
-			Position         = UDim2.fromScale(0.79, 0.5),
-			Size             = UDim2.fromScale(0.16, 0.65),
-			BackgroundColor3 = C.btn_blue,
-			BorderSizePixel  = 0,
-			Text             = "▲ Lead",
-			TextColor3       = C.text,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = function()
-					NetworkManager.FireServer("PartyRequest", { action = "PromoteMember", userId = member.userId })
+		}) or nil,
+		kickBtn = showControls and e(Button, {
+			variant     = "danger",
+			size        = "sm",
+			label       = "Kick",
+			width       = BTN_W,
+			anchorPoint = Vector2.new(1, 0.5),
+			position    = UDim2.new(1, -SP.xs, 0.5, 0),
+			onActivated = function()
+				NetworkManager.FireServer("PartyRequest", { action = "KickMember", userId = member.userId })
 			end,
-		}, { UICorner(0.3) }) or nil,
+		}) or nil,
 	})
 end
 
@@ -252,59 +277,32 @@ local function BonusInfoPanel(props)
 	local liveText = (memberCount > 1)
 		and string.format("Current bonus: +%.1f%%", bonusPct)
 		or  "Join or create a party for bonus XP!"
+	local lineH = Theme.Type.caption.lineHeight
 
-	return React.createElement("Frame", {
-		AnchorPoint      = Vector2.new(0, 1),
-		Position         = UDim2.fromScale(0, 1),
-		Size             = UDim2.fromScale(1, 0.22),
-		BackgroundColor3 = C.bonus_bg,
-		BorderSizePixel  = 0,
+	-- §AGX/UI-P6: the two rate rows share one line (phone height budget).
+	return e(Panel, {
+		name        = "BonusInfo",
+		elevation   = "sunken",
+		padding     = "sm",
+		layout      = "vertical",
+		gap         = "xxs",
+		anchorPoint = Vector2.new(0, 1),
+		position    = UDim2.fromScale(0, 1),
+		size        = UDim2.new(1, 0, 0, BONUS_H),
 	}, {
-		UICorner(0.08),
-
-		layout = React.createElement("UIListLayout", {
-			FillDirection  = Enum.FillDirection.Vertical,
-			Padding        = UDim.new(0.01, 0),
-			SortOrder      = Enum.SortOrder.LayoutOrder,
+		rates = e(Text, {
+			style       = "caption",
+			text        = "🎯 +2.5% XP per party ally   ·   ♥ +5.0% per friend ally",
+			color       = "text.secondary",
+			size        = UDim2.new(1, 0, 0, lineH),
+			layoutOrder = 1,
 		}),
-
-		padding = React.createElement("UIPadding", {
-			PaddingLeft   = UDim.new(0.04, 0),
-			PaddingTop    = UDim.new(0.06, 0),
-			PaddingRight  = UDim.new(0.04, 0),
-		}),
-
-		row1 = React.createElement("TextLabel", {
-			Size                   = UDim2.fromScale(1, 0.28),
-			BackgroundTransparency = 1,
-			Text                   = "🎯  +2.5% XP per party ally",
-			TextColor3             = C.text_dim,
-			Font                   = Enum.Font.Gotham,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-			LayoutOrder            = 1,
-		}),
-
-		row2 = React.createElement("TextLabel", {
-			Size                   = UDim2.fromScale(1, 0.28),
-			BackgroundTransparency = 1,
-			Text                   = "💙  +5.0% XP per friend ally",
-			TextColor3             = C.friend,
-			Font                   = Enum.Font.Gotham,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-			LayoutOrder            = 2,
-		}),
-
-		row3 = React.createElement("TextLabel", {
-			Size                   = UDim2.fromScale(1, 0.28),
-			BackgroundTransparency = 1,
-			Text                   = liveText,
-			TextColor3             = (memberCount > 1) and C.accent or C.text_dim,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-			LayoutOrder            = 3,
+		live = e(Text, {
+			style       = "label",
+			text        = liveText,
+			color       = (memberCount > 1) and "accent.secondary" or "text.secondary",
+			size        = UDim2.new(1, 0, 0, lineH),
+			layoutOrder = 2,
 		}),
 	})
 end
@@ -344,76 +342,49 @@ local function LeftPanel(props)
 	end
 	table.sort(friends, function(a, b) return a.name < b.name end)
 	table.sort(others,  function(a, b) return a.name < b.name end)
-	for _, e in ipairs(friends) do table.insert(sortedList, e) end
-	for _, e in ipairs(others)  do table.insert(sortedList, e) end
+	for _, e_ in ipairs(friends) do table.insert(sortedList, e_) end
+	for _, e_ in ipairs(others)  do table.insert(sortedList, e_) end
 
 	-- Build row children
-	local rowChildren = {
-		layout = React.createElement("UIListLayout", {
-			FillDirection  = Enum.FillDirection.Vertical,
-			Padding        = UDim.new(0.008, 0),
-			SortOrder      = Enum.SortOrder.LayoutOrder,
-		}),
-	}
+	local rowChildren = {}
 	for i, entry in ipairs(sortedList) do
-		rowChildren["row_" .. tostring(entry.userId)] = React.createElement(PlayerRow, {
-			entry         = entry,
-			partyFull     = partyFull,
-			alreadyInParty= memberIds[entry.userId] or false,
-			order         = i,
+		rowChildren["row_" .. tostring(entry.userId)] = e(PlayerRow, {
+			entry          = entry,
+			partyFull      = partyFull,
+			alreadyInParty = memberIds[entry.userId] or false,
+			order          = i,
 		})
 	end
 
-	return React.createElement("Frame", {
-		Size             = UDim2.fromScale(0.38, 1),
-		BackgroundColor3 = C.bg_panel,
-		BorderSizePixel  = 0,
+	return e(Panel, {
+		name      = "PlayerBrowser",
+		elevation = "flat",
+		padding   = "sm",
+		size      = UDim2.new(LEFT_FRAC, -COL_GAP / 2, 1, 0),
 	}, {
-		UICorner(0.04),
-
 		-- Header
-		header = React.createElement("Frame", {
-			Size             = UDim2.fromScale(1, 0.07),
-			BackgroundColor3 = C.bg_dark,
-			BorderSizePixel  = 0,
-		}, {
-			UICorner(0.25),
-			title = React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.04, 0),
-				Size                   = UDim2.fromScale(0.65, 1),
-				BackgroundTransparency = 1,
-				Text                   = "Players",
-				TextColor3             = C.text,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
-			}),
-			refreshBtn = React.createElement("TextButton", {
-				AnchorPoint      = Vector2.new(1, 0.5),
-				Position         = UDim2.fromScale(0.97, 0.5),
-				Size             = UDim2.fromScale(0.26, 0.75),
-				BackgroundColor3 = C.btn_grey,
-				BorderSizePixel  = 0,
-				Text             = "⟳ Refresh",
-				TextColor3       = C.text_dim,
-				Font             = Enum.Font.Gotham,
-				TextScaled       = true,
-				[React.Event.Activated] = function()
-					NetworkManager.FireServer("PlayerListRequest")
-				end,
-			}, { UICorner(0.35) }),
+		title = e(Text, {
+			style = "heading",
+			text  = "Players",
+			size  = UDim2.new(1, -(REFRESH_W + SP.sm), 0, HEAD_H),
+		}),
+		refreshBtn = e(Button, {
+			variant     = "ghost",
+			size        = "sm",
+			label       = "⟳ Refresh",
+			width       = REFRESH_W,
+			anchorPoint = Vector2.new(1, 0),
+			position    = UDim2.fromScale(1, 0),
+			onActivated = function()
+				NetworkManager.FireServer("PlayerListRequest")
+			end,
 		}),
 
 		-- Scroll frame for player rows
-		scroll = React.createElement("ScrollingFrame", {
-			Position         = UDim2.fromScale(0, 0.09),
-			Size             = UDim2.fromScale(1, 0.91),
-			BackgroundTransparency = 1,
-			BorderSizePixel  = 0,
-			ScrollBarThickness = 4,
-			ScrollBarImageColor3 = C.accent,
-			CanvasSize       = UDim2.fromScale(1, 0),
-			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+		scroll = ScrollList({
+			name     = "PlayerList",
+			position = UDim2.fromOffset(0, HEAD_H + SP.sm),
+			size     = UDim2.new(1, 0, 1, -(HEAD_H + SP.sm)),
 		}, rowChildren),
 	})
 end
@@ -421,56 +392,52 @@ end
 -- ── RightPanel: Party Roster ──────────────────────────────────────────────────
 local function RightPanel(props)
 	local party    = props.party     -- nil or { id, leaderId, members = [{userId, name}] }
-	local errorMsg = props.errorMsg
 
 	local inParty       = (party ~= nil)
 	local memberCount   = inParty and #party.members or 0
 	local partyFull     = (memberCount >= MAX_PARTY)
 	local isLocalLeader = inParty and (party.leaderId == LocalPlayer.UserId)
 
+	local rosterH = -(BONUS_H + SP.sm)   -- roster fills the column above the bonus panel
+
 	-- ── No-party state ─────────────────────────────────────────────────────
 	local rosterSection
 	if not inParty then
-		rosterSection = React.createElement("Frame", {
-			Size             = UDim2.fromScale(1, 0.70),
+		rosterSection = e("Frame", {
+			Name                   = "Roster",
+			Size                   = UDim2.new(1, 0, 1, rosterH),
 			BackgroundTransparency = 1,
 		}, {
-			label = React.createElement("TextLabel", {
-				AnchorPoint            = Vector2.new(0.5, 0.4),
-				Position               = UDim2.fromScale(0.5, 0.4),
-				Size                   = UDim2.fromScale(0.75, 0.08),
-				BackgroundTransparency = 1,
-				Text                   = "You are not in a party.",
-				TextColor3             = C.text_dim,
-				Font                   = Enum.Font.Gotham,
-				TextScaled             = true,
+			layout = e("UIListLayout", {
+				FillDirection       = Enum.FillDirection.Vertical,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment   = Enum.VerticalAlignment.Center,
+				SortOrder           = Enum.SortOrder.LayoutOrder,
+				Padding             = UDim.new(0, SP.md),
 			}),
-			createBtn = React.createElement("TextButton", {
-				AnchorPoint      = Vector2.new(0.5, 0),
-				Position         = UDim2.fromScale(0.5, 0.52),
-				Size             = UDim2.fromScale(0.55, 0.10),
-				BackgroundColor3 = C.btn_green,
-				BorderSizePixel  = 0,
-				Text             = "+ Create Party",
-				TextColor3       = C.text,
-				Font             = Enum.Font.GothamBold,
-				TextScaled       = true,
-				[React.Event.Activated] = function()
+			label = e(Text, {
+				style       = "body",
+				text        = "You are not in a party.",
+				color       = "text.secondary",
+				align       = "center",
+				layoutOrder = 1,
+			}),
+			-- The screen's ONE primary CTA (orange, D1 Hybrid).
+			createBtn = e(Button, {
+				variant     = "primary",
+				size        = "md",
+				label       = "+ Create Party",
+				layoutOrder = 2,
+				onActivated = function()
 					NetworkManager.FireServer("PartyRequest", { action = "Create" })
 				end,
-			}, { UICorner(0.25) }),
+			}),
 		})
 	else
 		-- ── In-party state ──────────────────────────────────────────────────
-		local memberChildren = {
-			layout = React.createElement("UIListLayout", {
-				FillDirection  = Enum.FillDirection.Vertical,
-				Padding        = UDim.new(0.010, 0),
-				SortOrder      = Enum.SortOrder.LayoutOrder,
-			}),
-		}
+		local memberChildren = {}
 		for i, m in ipairs(party.members) do
-			memberChildren["m_" .. tostring(m.userId)] = React.createElement(MemberRow, {
+			memberChildren["m_" .. tostring(m.userId)] = e(MemberRow, {
 				member        = m,
 				leaderId      = party.leaderId,
 				isLocalLeader = isLocalLeader,
@@ -478,81 +445,53 @@ local function RightPanel(props)
 			})
 		end
 
-		local actionText = isLocalLeader and "⚑ Disband Party" or "← Leave Party"
-		local actionColor = isLocalLeader and C.btn_red or C.btn_grey
-
-		rosterSection = React.createElement("Frame", {
-			Size             = UDim2.fromScale(1, 0.70),
+		rosterSection = e("Frame", {
+			Name                   = "Roster",
+			Size                   = UDim2.new(1, 0, 1, rosterH),
 			BackgroundTransparency = 1,
 		}, {
-			sizeLabel = React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.03, 0.01),
-				Size                   = UDim2.fromScale(0.60, 0.06),
-				BackgroundTransparency = 1,
-				Text                   = string.format("Party  %d / %d", memberCount, MAX_PARTY),
-				TextColor3             = partyFull and C.accent or C.text_dim,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
+			-- Header row: "Party n / 5" + Leave / Disband (was a bottom bar)
+			sizeLabel = e(Text, {
+				style = "heading",
+				text  = string.format("Party  %d / %d", memberCount, MAX_PARTY),
+				color = partyFull and "accent.secondary" or "text.secondary",
+				size  = UDim2.new(1, -(ACTION_W + SP.sm), 0, HEAD_H),
 			}),
-
-			memberScroll = React.createElement("ScrollingFrame", {
-				Position         = UDim2.fromScale(0, 0.09),
-				Size             = UDim2.fromScale(1, 0.78),
-				BackgroundTransparency = 1,
-				BorderSizePixel  = 0,
-				ScrollBarThickness = 4,
-				ScrollBarImageColor3 = C.accent,
-				CanvasSize       = UDim2.fromScale(1, 0),
-				AutomaticCanvasSize = Enum.AutomaticSize.Y,
-			}, memberChildren),
-
-			actionBtn = React.createElement("TextButton", {
-				AnchorPoint      = Vector2.new(0, 1),
-				Position         = UDim2.fromScale(0.03, 1),
-				Size             = UDim2.fromScale(0.94, 0.09),
-				BackgroundColor3 = actionColor,
-				BorderSizePixel  = 0,
-				Text             = actionText,
-				TextColor3       = C.text,
-				Font             = Enum.Font.GothamBold,
-				TextScaled       = true,
-				[React.Event.Activated] = function()
+			actionBtn = e(Button, {
+				variant     = isLocalLeader and "danger" or "secondary",
+				size        = "sm",
+				label       = isLocalLeader and "⚑ Disband Party" or "← Leave Party",
+				width       = ACTION_W,
+				anchorPoint = Vector2.new(1, 0),
+				position    = UDim2.fromScale(1, 0),
+				onActivated = function()
 					local action = isLocalLeader and "Disband" or "Leave"
 					NetworkManager.FireServer("PartyRequest", { action = action })
 				end,
-			}, { UICorner(0.2) }),
+			}),
+
+			memberScroll = ScrollList({
+				name     = "MemberList",
+				position = UDim2.fromOffset(0, HEAD_H + SP.sm),
+				size     = UDim2.new(1, 0, 1, -(HEAD_H + SP.sm)),
+			}, memberChildren),
 		})
 	end
 
-	return React.createElement("Frame", {
-		Size             = UDim2.fromScale(0.59, 1),
-		BackgroundColor3 = C.bg_panel,
-		BorderSizePixel  = 0,
+	return e(Panel, {
+		name      = "PartyRoster",
+		elevation = "flat",
+		padding   = "sm",
+		position  = UDim2.new(LEFT_FRAC, COL_GAP / 2, 0, 0),
+		size      = UDim2.new(1 - LEFT_FRAC, -COL_GAP / 2, 1, 0),
 	}, {
-		UICorner(0.04),
-
 		rosterSection = rosterSection,
 
 		-- Bonus info panel always at bottom
-		bonusInfo = React.createElement(BonusInfoPanel, {
+		bonusInfo = e(BonusInfoPanel, {
 			party       = party,
 			memberCount = memberCount,
 		}),
-
-		-- Transient error toast
-		errorToast = errorMsg and React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(0.5, 0),
-			Position               = UDim2.fromScale(0.5, 0.01),
-			Size                   = UDim2.fromScale(0.90, 0.06),
-			BackgroundColor3       = Color3.fromRGB(90, 30, 30),
-			BackgroundTransparency = 0.15,
-			BorderSizePixel        = 0,
-			Text                   = errorMsg,
-			TextColor3             = Color3.fromRGB(255, 130, 130),
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-		}, { UICorner(0.3) }) or nil,
 	})
 end
 
@@ -563,14 +502,12 @@ local function SocialPanel(props)
 	local activeTab,       setActiveTab       = React.useState("party")
 	local playerList,      setPlayerList      = React.useState({})
 	local party,           setParty           = React.useState(nil)
-	local errorMsg,        setErrorMsg        = React.useState(nil)
 	-- Incremented after async friend-status pre-fetch completes,
 	-- causing LeftPanel to re-render with correct friend indicators.
 	local friendsVersion,  setFriendsVersion  = React.useState(0)
 
 	-- Mount: request current data
 	React.useEffect(function()
-		local mounted = true
 		NetworkManager.FireServer("PlayerListRequest")
 		NetworkManager.FireServer("GetPlayerInfo")
 		NetworkManager.FireServer("GetPartyState")  -- re-sync party roster (may have changed while panel was closed)
@@ -612,16 +549,14 @@ local function SocialPanel(props)
 			end
 		end)
 
+		-- §AGX/UI-P6: rejections go to the one feedback system (Notify
+		-- toast, 3.5 s, same key coalesces) instead of an inline label.
 		local connErr = NetworkManager.OnServerEvent("PartyError", function(data)
 			local msg = (type(data) == "table" and data.message) or tostring(data) or "Something went wrong."
-			setErrorMsg(msg)
-			task.delay(3.5, function()
-				if mounted then setErrorMsg(nil) end
-			end)
+			Notify.toast("error", msg, { key = "party_error" })
 		end)
 
 		return function()
-			mounted = false
 			if connList  then connList:Disconnect()  end
 			if connParty then connParty:Disconnect() end
 			if connErr   then connErr:Disconnect()   end
@@ -629,134 +564,73 @@ local function SocialPanel(props)
 	end, {})
 
 	local partyFull = (party ~= nil) and (#party.members >= MAX_PARTY)
+	local contentTop = TABS_H + SP.sm
 
 	-- ── Tab content ───────────────────────────────────────────────────────────
-	local partyTabContent
+	local tabContent
 	if activeTab == "party" then
-		partyTabContent = React.createElement("Frame", {
-			Position         = UDim2.fromScale(0, 0.11),
-			Size             = UDim2.fromScale(1, 0.89),
+		tabContent = e("Frame", {
+			Name                   = "PartyTab",
+			Position               = UDim2.fromOffset(0, contentTop),
+			Size                   = UDim2.new(1, 0, 1, -contentTop),
 			BackgroundTransparency = 1,
 		}, {
-			layout = React.createElement("UIListLayout", {
-				FillDirection       = Enum.FillDirection.Horizontal,
-				VerticalAlignment   = Enum.VerticalAlignment.Top,
-				HorizontalAlignment = Enum.HorizontalAlignment.Left,
-				SortOrder           = Enum.SortOrder.LayoutOrder,
-				Padding             = UDim.new(0.02, 0),
-			}),
-			padding = React.createElement("UIPadding", {
-				PaddingLeft  = UDim.new(0.015, 0),
-				PaddingRight = UDim.new(0.015, 0),
-				PaddingTop   = UDim.new(0.01, 0),
-			}),
-			leftPanel = React.createElement(LeftPanel, {
+			leftPanel = e(LeftPanel, {
 				playerList = playerList,
 				party      = party,
 				partyFull  = partyFull,
 				-- Passed only to force LeftPanel to re-render after async friend pre-fetch.
 				_fv        = friendsVersion,
 			}),
-			rightPanel = React.createElement(RightPanel, {
-				party    = party,
-				errorMsg = errorMsg,
+			rightPanel = e(RightPanel, {
+				party = party,
 			}),
 		})
 	else
 		-- Guild tab stub
-		partyTabContent = React.createElement("Frame", {
-			Position               = UDim2.fromScale(0, 0.11),
-			Size                   = UDim2.fromScale(1, 0.89),
+		tabContent = e("Frame", {
+			Name                   = "GuildTab",
+			Position               = UDim2.fromOffset(0, contentTop),
+			Size                   = UDim2.new(1, 0, 1, -contentTop),
 			BackgroundTransparency = 1,
 		}, {
-			label = React.createElement("TextLabel", {
-				AnchorPoint            = Vector2.new(0.5, 0.4),
-				Position               = UDim2.fromScale(0.5, 0.4),
-				Size                   = UDim2.fromScale(0.60, 0.08),
-				BackgroundTransparency = 1,
-				Text                   = "Guilds — coming soon!",
-				TextColor3             = C.text_dim,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
+			label = e(Text, {
+				style       = "heading",
+				text        = "Guilds — coming soon!",
+				color       = "text.secondary",
+				align       = "center",
+				anchorPoint = Vector2.new(0.5, 0.5),
+				position    = UDim2.fromScale(0.5, 0.4),
 			}),
 		})
 	end
 
-	-- ── Panel ─────────────────────────────────────────────────────────────────
-	local panelChildren = {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.015, 0) }),
-
-		-- Title
-		title = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.025, 0.015),
-			Size                   = UDim2.fromScale(0.50, 0.065),
-			BackgroundTransparency = 1,
-			Text                   = "Social",
-			TextColor3             = C.text,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-		}),
-
-		-- Close button
-		closeBtn = React.createElement("TextButton", {
-			Position         = UDim2.fromScale(0.915, 0.015),
-			Size             = UDim2.fromScale(0.07, 0.065),
-			BackgroundColor3 = C.close_bg,
-			BorderSizePixel  = 0,
-			Text             = "✕",
-			TextColor3       = C.close_text,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = onClose,
-		}, { UICorner(0.3) }),
-
-		-- Tab bar
-		tabBar = React.createElement("Frame", {
-			Position         = UDim2.fromScale(0.025, 0.088),
-			Size             = UDim2.fromScale(0.40, 0.048),
-			BackgroundTransparency = 1,
-		}, {
-			layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Horizontal,
-				Padding       = UDim.new(0.02, 0),
-				SortOrder     = Enum.SortOrder.LayoutOrder,
-			}),
-			partyTab = React.createElement(TabButton, {
-				label    = "Party",
-				active   = (activeTab == "party"),
-				order    = 1,
-				onSelect = function() setActiveTab("party") end,
-			}),
-			guildTab = React.createElement(TabButton, {
-				label    = "Guild",
-				active   = (activeTab == "guild"),
-				order    = 2,
-				onSelect = function() setActiveTab("guild") end,
-			}),
-		}),
-
-		-- Tab content
-		content = partyTabContent,
-	}
-
-	-- ── Root: fullscreen backdrop ─────────────────────────────────────────────
-	return React.createElement("Frame", {
-		Name                   = "SocialPanelBackdrop",
-		Size                   = UDim2.fromScale(1, 1),
-		BackgroundColor3       = Color3.fromRGB(0, 0, 0),
-		BackgroundTransparency = 0.42,
-		ZIndex                 = 10,
+	-- §T10/U3 / §AGX/UI-P6: chrome owned by AppWindow (the Registry entry
+	-- sets the presentation: windowed, sheet on phone).
+	return e(AppWindow, {
+		variant = "auto",
+		title   = "Social",
+		icon    = "social",
+		onClose = onClose,
+		size    = UDim2.fromScale(0.72, 0.78),
+		zIndex  = Theme.Z.window,
 	}, {
-		panel = React.createElement("Frame", {
-			Name             = "SocialPanel",
-			AnchorPoint      = Vector2.new(0.5, 0.5),
-			Position         = UDim2.fromScale(0.5, 0.5),
-			Size             = UDim2.fromScale(0.88, 0.82),
-			BackgroundColor3 = C.bg_dark,
-			BorderSizePixel  = 0,
-			ZIndex           = 11,
-		}, panelChildren),
+		content = e(UIScaleRoot.Local, { name = "SocialBody", zIndex = Theme.Z.window + 2 }, {
+			pad = e("UIPadding", {
+				PaddingLeft = UDim.new(0, SP.lg), PaddingRight = UDim.new(0, SP.lg),
+				PaddingTop = UDim.new(0, SP.sm), PaddingBottom = UDim.new(0, SP.md),
+			}),
+
+			tabBar = e(Tabs, {
+				items    = TAB_ITEMS,
+				value    = activeTab,
+				onChange = setActiveTab,
+				fill     = false,
+				size     = UDim2.new(1, 0, 0, TABS_H),
+			}),
+
+			content = tabContent,
+		}),
 	})
 end
 

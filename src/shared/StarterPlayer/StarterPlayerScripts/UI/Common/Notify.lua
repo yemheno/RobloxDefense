@@ -27,6 +27,8 @@
             opts.duration  seconds (default 3); opts.sticky = true stays until
                            Notify.clearBanner(key) or a same-key replacement
             opts.staleAfter seconds a queued banner may wait (default 6)
+            opts.action    §AGX/UI-FREE: { label, onActivated } one button on
+                           the banner's right (client-only; e.g. §NM-D6 Rejoin)
           -> id
         Notify.clearBanner(key)
         Notify.feed(text, opts?)
@@ -155,6 +157,7 @@ local GEOMETRY = {
 		width         = 460,
 		maxWidthScale = 0.56,
 		minCorridor   = 240,    -- §AGX/UI-P5: narrowest banner / toast column
+		actionW       = 110,    -- §AGX/UI-FREE: banner action button (design px)
 		pad           = 8,
 		stroke        = 2,
 		bgTransparency = 0.12,
@@ -190,6 +193,7 @@ local TOAST_KINDS = {
 -- 3.5 s), HUD (Wave N / cleared 3 s, all-cleared + defense destroyed
 -- sticky), VoteUI and the old achievement toast (4 s).
 Notify.Priority = {
+	connection  = 60,   -- §AGX/UI-FREE: §NM-D6 "Still connecting…" (Rejoin)
 	bossPhase   = 50,
 	runState    = 40,
 	vote        = 35,
@@ -406,6 +410,11 @@ function Notify.banner(text, opts)
 		priority   = resolvePriority(opts.priority),
 		duration   = tonumber(opts.duration) or GEOMETRY.banner.duration,
 		sticky     = opts.sticky == true,
+		-- §AGX/UI-FREE: optional single action button (functions never come
+		-- from the server push, so only client callers can set one).
+		action     = (type(opts.action) == "table" and type(opts.action.onActivated) == "function")
+			and { label = toText(opts.action.label or "OK"), onActivated = opts.action.onActivated }
+			or nil,
 		-- a sticky banner never goes stale while it waits behind a higher one
 		staleAfter = tonumber(opts.staleAfter)
 			or ((opts.sticky == true) and math.huge or GEOMETRY.banner.staleAfter),
@@ -948,6 +957,12 @@ local function BannerHost(props)
 	local titleH = L.title + pad
 	local subH   = hasSub and (L.small + pad) or 0
 	local height = titleH + subH + pad
+	-- §AGX/UI-FREE: action button on the right, a >= 44 px target
+	-- (L.dismiss); the text column gives up its width.
+	local action = item.action
+	local actionW = action and math.max(2 * L.dismiss, FormFactor.px(GEOMETRY.banner.actionW)) or 0
+	local textInset = action and (actionW + pad) or 0
+	if action then height = math.max(height, L.dismiss + 2 * pad) end
 
 	return e("Frame", {
 		Name             = "Banner",
@@ -962,7 +977,7 @@ local function BannerHost(props)
 		stroke = e("UIStroke", { Color = color, Thickness = L.bannerStroke or G.stroke, Transparency = 0.2 }),
 		title = e("TextLabel", {
 			Position               = UDim2.fromOffset(pad, pad / 2),
-			Size                   = UDim2.new(1, -2 * pad, 0, titleH),
+			Size                   = UDim2.new(1, -2 * pad - textInset, 0, titleH),  -- §AGX/UI-FREE
 			BackgroundTransparency = 1,
 			Text                   = item.text,
 			TextColor3             = color,
@@ -973,7 +988,7 @@ local function BannerHost(props)
 		}),
 		subtitle = hasSub and e("TextLabel", {
 			Position               = UDim2.fromOffset(pad, pad / 2 + titleH),
-			Size                   = UDim2.new(1, -2 * pad, 0, subH),
+			Size                   = UDim2.new(1, -2 * pad - textInset, 0, subH),  -- §AGX/UI-FREE
 			BackgroundTransparency = 1,
 			Text                   = item.subtitle,
 			TextColor3             = C.text,
@@ -981,6 +996,26 @@ local function BannerHost(props)
 			TextSize               = L.small,
 			TextTruncate           = Enum.TextTruncate.AtEnd,
 			RichText               = false,
+		}) or nil,
+		-- §AGX/UI-FREE: the banner's one action (primary CTA: orange + ink).
+		action = action and e("TextButton", {
+			Name                   = "Action",
+			AnchorPoint            = Vector2.new(1, 0.5),
+			Position               = UDim2.new(1, -pad, 0.5, 0),
+			Size                   = UDim2.fromOffset(actionW, L.dismiss),
+			BackgroundColor3       = Theme.Roles.accent.primary,
+			BorderSizePixel        = 0,
+			AutoButtonColor        = true,
+			Text                   = string.upper(action.label),
+			TextColor3             = Theme.Roles.text.onAccent,
+			Font                   = F.title,
+			TextSize               = L.body,
+			TextTruncate           = Enum.TextTruncate.AtEnd,
+			[React.Event.Activated] = function()
+				task.spawn(action.onActivated)
+			end,
+		}, {
+			corner = e("UICorner", { CornerRadius = UDim.new(0, L.radius or GEOMETRY.radius) }),
 		}) or nil,
 	})
 end

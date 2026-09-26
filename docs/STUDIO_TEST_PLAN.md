@@ -43,6 +43,13 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Supply and threat votes still close with the countdown and unpause after 5 s.
 - [ ] Victory → auto-return to the Lobby still fires.
 
+## 2c. Connection, return reason, VIP, Social (`§AGX/UI-FREE`)
+- [ ] Stall `ServerReady` (comment out the PlaceLifecycle fire): the "Still connecting…" banner with **Rejoin** appears once the loading screen drops (~25 s). Let it arrive late: the banner clears and "Connected." shows once.
+- [ ] The action banner fits on a phone (844×390) and at 1080p, with Rejoin ≥44 px.
+- [ ] `player:SetAttribute("VIP", true)` on the server → a blue `[VIP]` before the name in chat, in every place.
+- [ ] Social panel (phone and desktop): orange ribbon header, Party/Guild tabs (LB/RB on pad), member list scrolls, "DISBAND PARTY" and "REFRESH" fit their buttons, leader-only Kick/Lead, and party errors show as a toast.
+- [ ] *Published only:* a public-server bounce shows the return-reason toast in the Lobby.
+
 ## 3. Teleports and matchmaking (`X4`, `X6`, `X14`, `X15`)
 Studio can't test reserved servers. Check what it can:
 - [ ] Kick, leave, join or disband during the countdown → "Party changed — queue cancelled".

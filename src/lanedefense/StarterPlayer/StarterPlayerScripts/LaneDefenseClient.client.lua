@@ -48,6 +48,7 @@ end
 Load(SharedModules, "LoadingScreen")   -- §T10/U1: overlay up FIRST, dismissed on ServerReady
 Load(SharedModules, "NetworkManager")
 Load(SharedModules, "ResourceCache")   -- early listener prevents ResourceUpdate queue exhaustion
+Load(SharedModules, "VipTag")           -- §AGX/UI-FREE: X40-VIP [VIP] chat tag (cosmetic, client-only)
 Load(SharedModules, "AnimationSystem")  -- centralized animation controller (BEFORE PlayerAttack)
 Load(SharedModules, "CosmeticClient")   -- cosmetic cache + wardrobe requests
 Load(SharedModules, "AchievementClient") -- achievement cache + toast events

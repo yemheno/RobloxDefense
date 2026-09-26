@@ -57,6 +57,7 @@ end
 Load(SharedModules, "LoadingScreen")    -- §T10/U1: overlay up FIRST, dismissed on ServerReady
 Load(SharedModules, "NetworkManager")
 Load(SharedModules, "ResourceCache")    -- early listener
+Load(SharedModules, "VipTag")           -- §AGX/UI-FREE: X40-VIP [VIP] chat tag (cosmetic, client-only)
 Load(SharedModules, "AnimationSystem")
 Load(SharedModules, "CosmeticClient")
 Load(SharedModules, "AchievementClient")
