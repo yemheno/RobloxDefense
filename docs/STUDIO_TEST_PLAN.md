@@ -1,0 +1,112 @@
+# Studio Test Plan: Agency-checks round (2026-09-26)
+
+Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile` / `luau-analyze`, agent code review, and headless layout math. None of it has run in Studio. Work top to bottom: the sections are ordered by **risk × blast radius**. Tick each box and note failures with the tag in brackets (e.g. `§AGX/X3`), so a fix can be traced to its commit.
+
+**Setup:**
+- Game Settings → Security → *Enable Studio Access to API Services* ON (the save lock and receipts need DataStores).
+- Run `rojo serve <place>.project.json` for each place you test.
+- **Device Emulator sizes:** iPhone 844×390 (landscape), Android 800×360, iPad 1024×768, 1080p desktop, and an Xbox controller.
+
+---
+
+## 0. Smoke: every Place boots (5 min)
+- [ ] Lobby, LaneDefense, HordeMode, CentralBoss and SocialPlaza each start with **no red errors** in Output, especially `CRITICAL: required module … Init() failed` (`§AGX/X16`, boot now fails hard) and any `attempt to call a nil value`.
+- [ ] Exactly one of each of `NotifyGui`, `PanelGui`, `TooltipLayer` in PlayerGui, and no `LootNotificationGui`.
+
+## 1. Save safety: the highest stakes (`§AGX/X2`, `X3`, `X3r*`, `X8`)
+- [ ] Lobby → queue → the Lane run ends → back in the Lobby: Merits/XP earned in the run are present.
+- [ ] Rejoin the same server quickly after leaving: no data rollback. If a "still being saved" kick appears, it should only happen when the previous save is truly stuck.
+- [ ] Stop the server with 1 player just after a run: no data lost, and no BindToClose timeout warning.
+- [ ] Fire `SaveKeybindings({x={Keyboard="\255"}, Attack={Keyboard="Q"}})` from the command bar: only `Attack=Q` is kept, and the profile still saves.
+- [ ] *Optional:* edit `_session` in the DataStore editor to another jobId with a fresh time. Join: you should be kicked after ~30 s. With an old time (>200 s) the lock should be taken over.
+
+## 2. Core gameplay regressions
+- [ ] **Horde spawns mobs** (`§AGX/X1`).
+- [ ] **Wipe revive** (`X40`, `X50`):
+  - On Normal, the party is wiped → "REVIVE — FREE (3 left)". Use them all.
+  - Then the paid option appears only if you have ≥25 Essence; otherwise "Waiting for your party…".
+  - Nightmare gives 1 free revive.
+- [ ] Roar then GroundSlam (Ogre/Troll): speed returns to normal (`X13`).
+- [ ] Damage-over-time or Thorns kill: the corpse disappears and rewards are granted (`X12`).
+- [ ] **Party drops:** a healer or tank gets `LootDrop` on party kills; a low-level player in a high-level party gets roughly solo-level Merits (`X44`).
+- [ ] Lane: clients can't start waves from Idle; Next Wave works only during a run (`X5`).
+- [ ] Horde vote pause: attacks and skills do nothing server-side (`X7`).
+- [ ] Refine pity never exceeds the chapter cap (`X9`); the Chapter 3+ refine costs are the new values (`X43`).
+- [ ] Mobs are server-owned (Settings → Network → *Are Owners Shown*). Watch server physics in a 72-mob Horde; if it's too expensive, flip `MobSpawnHelper.SERVER_OWNED_TIERS.normal = false` (`X45`).
+
+## 3. Teleports and matchmaking (`X4`, `X6`, `X14`, `X15`)
+Studio can't test reserved servers. Check what it can:
+- [ ] Kick, leave, join or disband during the countdown → "Party changed — queue cancelled".
+- [ ] "Launching" times out after 20 s with Retry / Close.
+- [ ] The countdown number shows (not "?").
+- [ ] Return button reachable after a run.
+
+**Live test (published):** match → a new reserved server per party; joining a public combat server bounces you to the Lobby.
+
+## 4. Central Boss (`X28`)
+- [ ] Temporarily set `available = true` in `GameModeConfig` and `MainMenu` ("FLIP HERE").
+- [ ] Start → the Iron Warden spawns. Use `DebugCommand("bossHP", 0.6/0.3)` to force phases 2 and 3 (Roar, faster attacks, adds). Kill it → Victory, plus boss drops and `boss_slayer` for **every** party member.
+- [ ] The boss bar sits in the top-centre slot, and Start / Next / banners stack below it.
+
+## 5. UI shell: menus, back, input (`§AGX/UI-P3`, `UI-FIX`)
+- [ ] **Desktop:** the right-edge rail. Character and Progress open flyouts; the other groups open directly.
+- [ ] **Phone:** ☰ top-right → MenuSheet in two rows (no scroll on iPhone), with PLAY as the only orange button in the body.
+- [ ] **Gamepad:** D-pad Down → radial.
+- [ ] **Back:**
+  - Backspace or B closes the top panel **only**. B with a panel open must **not** dash.
+  - B with nothing open dashes in combat.
+  - Esc opens the Roblox menu only.
+- [ ] With Stats open near an NPC, E or tapping the prompt does nothing.
+- [ ] Opening a menu hides the SkillPad / ActionBar and blocks skills. Closing it restores combat; the input must never stay stuck in "UI".
+- [ ] Closing a menu mid-wave keeps Next Wave / Return correct (`UX-02`).
+- [ ] Knocked down or dead: panels hide, and they reappear on revive.
+- [ ] A Horde vote opened while the radial is up: you can still walk and vote (`UI-FIX 5`).
+- [ ] **SocialPlaza:** Talents and Achievements show data; EXIT → confirm → Lobby.
+- [ ] New player: Character Creation first; Daily Login auto-opens after it (once per session).
+
+## 6. Mobile (phone 844×390 and 800×360)
+- [ ] Character Creation completes with a single tap on Confirm (defaults preselected).
+- [ ] **SkillPad:**
+  - Attack (hold repeats), skills and dash work.
+  - Cooldown wipes show; unaffordable skills dim from the start.
+  - Horde: drag from Attack to aim.
+- [ ] Toasts sit centred under the banner, clear of Skill 4 and Dash. The ☰ is not under the ult.
+- [ ] Talent tree: pan, pinch, fit; tap selects, then Allocate. The Refund button stays disabled (the server has no single refund).
+- [ ] NPCs: the native "Talk – <name>" prompt opens the shop, smith and dialog.
+- [ ] Every close button and tap target is ≥44 px; nothing sits under the top bar or the notch.
+- [ ] Emote wheel opens from the HUD quick button; it closes on an outside tap or thumbstick movement.
+
+## 7. Look and feel: Hybrid Theme v2 (1080p and phone)
+- [ ] Mount `UI/Common/_Showcase` (command in its header) and review every component at each size.
+- [ ] Orange appears only on window ribbons, one primary button per screen, and HUD vitals; bodies are blue on navy.
+- [ ] Each re-skinned screen opens as a sheet on phone and a window on desktop:
+  - Stats, Class, Equipment, Wardrobe, Achievements, Talents
+  - Shop, Settings, Character Creation, Main Menu, NPC Shop / Smith / Dialog
+  - Death, Vote, Class reference, Inventory, Leaderboard, Daily Login
+- [ ] Settings → Controls is the only keybind editor. While a key is being captured, clicking ✕ or a tab must **not** bind a mouse button (`UI-FIX R1`).
+- [ ] Main Menu: select a mode card, then one "Play <mode>" button.
+- [ ] The lightning resource bar stays inside its track at 1080p (`UI-FIX 4`).
+- [ ] Tooltips inside panels appear above the panel (`UI-FIX 3`).
+
+## 8. Gamepad (`§AGX/UI-P7`, `UI-FIX`)
+- [ ] One blue focus ring on every control. The hint strip "A Select · B Back · LB/RB Tabs" shows only on the pad.
+- [ ] Settings: LB/RB switch tabs, the D-pad adjusts sliders, and the right stick scrolls.
+- [ ] Opening Stats focuses a "+" (not Respec). The talent tree focuses the Origin, with stick pan and trigger zoom.
+- [ ] Start Game and Next Wave are **not** auto-focused, but Return is. Death focuses Revive or Respawn; Vote focuses the first card.
+- [ ] Horde twin-stick and the camera still work after opening and closing a panel.
+- [ ] A party invite can be accepted with the pad.
+
+## 9. Economy and monetization spot-checks
+- [ ] Respec costs 25 Essence everywhere (UI labels too); the respec scroll costs 25.
+- [ ] Only the Respec Scroll is buyable under Consumables; the others show "Coming soon" (`X10`).
+- [ ] Daily login: the calendar day advances per claim, and the spree resets after a missed day (`X47`).
+- [ ] Leaderboards: Highest Wave and Play Time have entries after a run (`X27`).
+- [ ] **Premium:** everything is disabled until you create the real products. When you do, follow `docs/BALANCE_NUMBERS.md` §48 and the steps in commit `1c6e333`.
+
+---
+
+**Only you can do these (no agent can):**
+- Bulk-import the delivered menu icons and paste the ids into `Theme.Icons` (also add `play`, `leave`, `emote`, `menu`).
+- Rotate the Open Cloud key (G20).
+- Create the DevProducts / GamePass.
+- Run the live reserved-server test after publishing.
