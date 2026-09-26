@@ -27,6 +27,9 @@ local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local ResourceCache  = require(Modules:WaitForChild("ResourceCache"))
 local Locale         = require(Modules:WaitForChild("Locale"))
 local LightningBar   = require(script.Parent:WaitForChild("Common"):WaitForChild("LightningBar"))
+-- §AGX/UI-P4: wave / run-state banners, the killfeed and the combo summary
+-- go through Notify (one feedback system) instead of HUD-local labels.
+local Notify         = require(script.Parent:WaitForChild("Common"):WaitForChild("Notify"))
 
 local LocalPlayer = Players.LocalPlayer
 local cachedDefenseHP = nil
@@ -59,7 +62,10 @@ local EDGE_GAP_PX = 8
 local ATTR_TOP_CENTRE = "UI_TopCentreReservedPx" -- BossHud: px it uses below safeTop
 local ATTR_TL_BOTTOM  = "UI_TopLeftBottomPx"     -- HUD: bottom of the touch vitals stack
 local ATTR_TL_X       = "UI_TopLeftXPx"          -- HUD: left edge of the touch vitals stack
-local ATTR_TR_BOTTOM  = "UI_TopRightBottomPx"    -- HUD: bottom of menu/currency/killfeed block
+local ATTR_TR_BOTTOM  = "UI_TopRightBottomPx"    -- HUD: bottom of the menu/currency block
+-- §AGX/UI-P4: bottom of the visible Start / Next Wave / Return column (nil
+-- when none is shown); Notify's banner sits below it.
+local ATTR_TC_BUTTONS = "UI_TopCentreButtonsBottomPx"
 local ATTR_NAV_TOP    = "UI_NavToggleTopPx"      -- HUD: top of the ⋮ toggle
 
 -- TODO(FormFactor): touch-primary heuristic until FormFactor lands.
@@ -252,8 +258,7 @@ local function HUD(props)
 	-- Combo counter from HitTracker (nil = hidden)
 	local combo, setCombo = React.useState(nil)
 
-	-- Wave info banner (nil = hidden)
-	local waveInfo, setWaveInfo = React.useState(nil) -- { text, color }
+	-- §AGX/UI-P4: the wave banner (waveInfo) is a Notify banner now.
 
 	-- Defense line health
 	local defenseHP, setDefenseHP = React.useState(nil) -- { cur, max, pct }
@@ -261,11 +266,8 @@ local function HUD(props)
 	-- Defense line combo
 	local defCombo, setDefCombo = React.useState(nil) -- { level, multiplier, hitCount }
 
-	-- Combo summary toast (ComboEnded)
-	local comboSummary, setComboSummary = React.useState(nil)
-
-	-- Death killfeed notification
-	local deathNotice, setDeathNotice = React.useState(nil)
+	-- §AGX/UI-P4: the combo summary (ComboEnded) is a Notify toast and the
+	-- death killfeed (PlayerDeath) a Notify feed line; no HUD state left.
 
 	-- Between-waves flag (true after WaveCompleted, false after WaveStarted)
 	local betweenWaves, setBetweenWaves = React.useState(false)
@@ -293,22 +295,23 @@ local function HUD(props)
 	local touchLayout  = isTouchPrimary()  -- TODO(FormFactor)
 
 	-- Top-right block (M7/V3): ☰ + currency strip BELOW the topbar, in the
-	-- top-right corner Roblox leaves free; the killfeed goes under them.
+	-- top-right corner Roblox leaves free. §AGX/UI-P4: the killfeed row that
+	-- sat under them is gone (Notify feed), so the published bottom, and
+	-- with it Notify's toast/feed column, moves up by that row.
 	local menuW   = math.max(MIN_TAP_PX, 0.05 * vpW)
 	local menuH   = math.max(MIN_TAP_PX, 0.07 * vpH)
 	local stripH  = math.max(28, 0.055 * vpH)
 	local topRowH = onMenuClick and math.max(menuH, stripH) or stripH
 	local stripRightInset = onMenuClick and (menuW + EDGE_GAP_PX) or 0
-	local feedY   = safeTop + topRowH + EDGE_GAP_PX
-	local feedH   = math.max(22, 0.04 * vpH)
-	local topRightBottom = feedY + feedH + EDGE_GAP_PX
+	local topRightBottom = safeTop + topRowH + EDGE_GAP_PX
 
 	-- Right-middle ⋮ toggle
 	local toggleH   = math.max(MIN_TAP_PX, 0.09 * vpH)
 	local toggleTop = 0.5 * vpH - toggleH / 2
 
 	-- Top-centre column: BossHud (if any) owns safeTop..safeTop+bossReserved;
-	-- Start / Next Wave / Return and then the wave banner stack below it.
+	-- Start / Next Wave / Return stack below it, and Notify's banner below
+	-- them (§AGX/UI-P4: via ATTR_TC_BUTTONS; was the HUD's own bannerY).
 	local btnY  = safeTop + math.max(34, bossReserved)
 	local btnH  = math.max(MIN_TAP_PX, 0.065 * vpH)
 	local showStart     = (not hideStartButton) and (gameState == "Idle")
@@ -321,14 +324,15 @@ local function HUD(props)
 	-- always below the Start button.
 	local returnY = math.max((gameState == "Idle" and 0.22 or 0.14) * vpH,
 		btnY + ((gameState == "Idle") and (btnH + EDGE_GAP_PX) or 0))
-	local columnBottom = safeTop + bossReserved
+	-- §AGX/UI-P4: nil = no button visible (Notify then keeps its safeTop+88 floor).
+	-- The buttons have a scale height with a 44 px floor, so btnH is exact.
+	local buttonsBottom = nil
 	if showStart or showCountdown or showNextWave then
-		columnBottom = math.max(columnBottom, btnY + btnH)
+		buttonsBottom = btnY + btnH
 	end
 	if showReturn then
-		columnBottom = math.max(columnBottom, returnY + btnH)
+		buttonsBottom = math.max(buttonsBottom or 0, returnY + btnH)
 	end
-	local bannerY = math.max(safeTop + 88, columnBottom + EDGE_GAP_PX)
 
 	-- Vitals (M9): bottom-left sits under the left thumbstick on phones, so
 	-- on touch they move to the top-left under the topbar. In combat the
@@ -351,13 +355,15 @@ local function HUD(props)
 		ReplicatedStorage:SetAttribute(ATTR_TL_X, touchLayout and vitalsX or nil)
 		ReplicatedStorage:SetAttribute(ATTR_TR_BOTTOM, topRightBottom)
 		ReplicatedStorage:SetAttribute(ATTR_NAV_TOP, toggleTop)
-	end, { touchLayout, topLeftBottom, vitalsX, topRightBottom, toggleTop })
+		ReplicatedStorage:SetAttribute(ATTR_TC_BUTTONS, buttonsBottom)  -- §AGX/UI-P4
+	end, { touchLayout, topLeftBottom, vitalsX, topRightBottom, toggleTop, buttonsBottom })
 	React.useEffect(function()
 		return function()
 			ReplicatedStorage:SetAttribute(ATTR_TL_BOTTOM, nil)
 			ReplicatedStorage:SetAttribute(ATTR_TL_X, nil)
 			ReplicatedStorage:SetAttribute(ATTR_TR_BOTTOM, nil)
 			ReplicatedStorage:SetAttribute(ATTR_NAV_TOP, nil)
+			ReplicatedStorage:SetAttribute(ATTR_TC_BUTTONS, nil)  -- §AGX/UI-P4
 		end
 	end, {})
 
@@ -369,7 +375,8 @@ local function HUD(props)
 	local navPadY   = 0.02 * navPanelH
 
 	-- ── Wire up events ────────────────────────────────────────────────────────
-	local mountedRef = React.useRef(true)
+	-- §AGX/UI-P4: mountedRef dropped; it only guarded the wave / killfeed /
+	-- combo-summary hide timers, which Notify owns now.
 	local comboTimeoutRef = React.useRef(nil)
 	React.useEffect(function()
 		if cachedDefenseHP ~= nil then
@@ -451,6 +458,13 @@ local function HUD(props)
 			if data.newState ~= "Preparing" then
 				setCountdown(nil)
 			end
+			-- §AGX/UI-P4: the sticky run-state banner (all waves cleared /
+			-- defense line destroyed) ends when the place is back in Idle.
+			-- Preparing too: a new run must never start behind it (it
+			-- outranks the wave banners that used to simply replace it).
+			if data.newState == "Idle" or data.newState == "Preparing" then
+				Notify.clearBanner("runState")
+			end
 			-- §AGX/UX-02: RequestGameState snapshots carry the flags that
 			-- transitions alone can't rebuild (both optional).
 			if data.runEnded ~= nil then
@@ -483,32 +497,30 @@ local function HUD(props)
 		end)
 
 		-- WaveStarted: show "Wave N" banner
+		-- §AGX/UI-P4: Notify banner ("wave" priority, 3 s, same text/colour).
+		-- key "wave": a start/clear replaces the previous wave banner.
 		local waveStartConn = NetworkManager.OnServerEvent("WaveStarted", function(data)
 			setBetweenWaves(false)
-			setWaveInfo({
-				text  = "WAVE " .. tostring(data.wave or "?") .. "  (" .. tostring(data.mobCount or 0) .. " mobs)",
-				color = Color3.fromRGB(80, 210, 255),
-			})
-			task.delay(3, function() if mountedRef.current then setWaveInfo(nil) end end)
+			Notify.banner(
+				"WAVE " .. tostring(data.wave or "?") .. "  (" .. tostring(data.mobCount or 0) .. " mobs)",
+				{ key = "wave", priority = "wave", color = Color3.fromRGB(80, 210, 255), duration = 3 })
 		end)
 
 		-- WaveCompleted: show "Wave N Cleared" banner
 		local waveCompleteConn = NetworkManager.OnServerEvent("WaveCompleted", function(data)
 			setBetweenWaves(true)
-			setWaveInfo({
-				text  = "WAVE " .. tostring(data.wave or "?") .. " CLEARED!",
-				color = Color3.fromRGB(80, 255, 120),
-			})
-			task.delay(3, function() if mountedRef.current then setWaveInfo(nil) end end)
+			Notify.banner("WAVE " .. tostring(data.wave or "?") .. " CLEARED!",  -- §AGX/UI-P4
+				{ key = "wave", priority = "wave", color = Color3.fromRGB(80, 255, 120), duration = 3 })
 		end)
 
 		-- AllWavesCompleted: show victory banner
+		-- §AGX/UI-P4: sticky "runState" banner (don't auto-hide, as before);
+		-- cleared by GameStateChanged → Idle/Preparing above.
 		local allWavesConn = NetworkManager.OnServerEvent("AllWavesCompleted", function(data)
-			setWaveInfo({
-				text  = "ALL WAVES CLEARED!  (Wave " .. tostring(data.finalWave or "?") .. ")",
+			Notify.banner("ALL WAVES CLEARED!  (Wave " .. tostring(data.finalWave or "?") .. ")", {
+				key = "runState", priority = "runState", sticky = true,
 				color = Color3.fromRGB(255, 215, 0),
 			})
-			-- Don't auto-hide — let it stay
 		end)
 
 		-- DefenseLineUpdate: live HP sync for the defense line bar
@@ -539,8 +551,9 @@ local function HUD(props)
 				pct = 0,
 			}
 			setDefenseHP(cachedDefenseHP)
-			setWaveInfo({
-				text  = "DEFENSE LINE DESTROYED!",
+			-- §AGX/UI-P4: sticky "runState" banner (never auto-hid before either).
+			Notify.banner("DEFENSE LINE DESTROYED!", {
+				key = "runState", priority = "runState", sticky = true,
 				color = Color3.fromRGB(255, 60, 60),
 			})
 		end)
@@ -559,23 +572,23 @@ local function HUD(props)
 		end)
 
 		-- PlayerDeath: killfeed notification
+		-- §AGX/UI-P4: a Notify feed line (right column, 4 s, same text/colour).
 		local deathConn = NetworkManager.OnServerEvent("PlayerDeath", function(data)
-			setDeathNotice(
+			Notify.feed(
 				(data.playerName or "???") .. " was slain by "
-				.. (data.killerMob or "a mob")
-			)
-			task.delay(4, function() if mountedRef.current then setDeathNotice(nil) end end)
+				.. (data.killerMob or "a mob"),
+				{ color = Color3.fromRGB(255, 100, 100) })
 		end)
 
 		-- ComboEnded: personal summary toast
+		-- §AGX/UI-P4: a Notify toast (was a centre-screen label at 0.5/0.40).
+		-- Keyed so back-to-back combos update one toast; 4 s as before.
 		local comboEndConn = NetworkManager.OnServerEvent("ComboEnded", function(data)
-			setComboSummary({
-				combo  = data.finalCombo  or 0,
-				damage = data.totalDamage or 0,
-				crits  = data.totalCrits  or 0,
-				best   = data.best        or 0,
-			})
-			task.delay(4, function() if mountedRef.current then setComboSummary(nil) end end)
+			Notify.toast("info",
+				tostring(data.finalCombo or 0) .. "x Combo!  "
+				.. tostring(math.floor(data.totalDamage or 0)) .. " dmg  "
+				.. tostring(data.totalCrits or 0) .. " crits",
+				{ key = "comboSummary", duration = 4 })
 		end)
 
 		-- MobDeath: consume the event (prevents queue exhaustion).
@@ -617,7 +630,6 @@ local function HUD(props)
 		end)
 
 		return function()
-			mountedRef.current = false
 			if resUnsub      then resUnsub()                 end
 			if infoConn      then infoConn:Disconnect()      end
 			if curConn       then curConn:Disconnect()       end
@@ -932,30 +944,8 @@ local function HUD(props)
 			}, { minText = minText() }),  -- §AGX/UI-P1
 		}) or nil,
 
-		-- ── Top-centre: Wave banner (appears briefly when waves start/end) ───────
-		waveBanner = (waveInfo ~= nil) and React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(0.5, 0),
-			-- §AGX/UI-P1: M9: below BossHud and any visible top-centre button.
-			Position               = UDim2.new(0.5, 0, 0, bannerY),
-			Size                   = UDim2.fromScale(0.30, 0.055),
-			BackgroundColor3       = Color3.fromRGB(20, 20, 30),
-			BackgroundTransparency = 0.20,
-			BorderSizePixel        = 0,
-			Text                   = waveInfo.text,
-			TextColor3             = waveInfo.color or C.white,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			ZIndex                 = 3,
-		}, {
-			minSize = minTap(0, 24),  -- §AGX/UI-P1: room for 12 px text
-			minText = minText(),
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
-			stroke = React.createElement("UIStroke", {
-				Color     = waveInfo.color or C.white,
-				Thickness = 1.5,
-				Transparency = 0.4,
-			}),
-		}) or nil,
+		-- §AGX/UI-P4: waveBanner removed; wave / run-state banners are
+		-- Notify banners (below the Start/Next column via ATTR_TC_BUTTONS).
 
 		-- ── Bottom-left: Defense line HP bar (only when defenseHP is known) ──────
 		-- §AGX/UI-P1: M9: on touch, stacked under the vitals (top-left).
@@ -1002,51 +992,8 @@ local function HUD(props)
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
 		}) or nil,
 
-		-- ── Top-right: Death killfeed notice ────────────────────────────────────
-		deathFeed = (deathNotice ~= nil) and React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(1, 0),
-			-- §AGX/UI-P1: M9: under the top-right ☰/currency row (was safeTop+52,
-			-- which the moved strip now occupies); 22 px floor for 12 px text.
-			Position               = UDim2.new(0.98, 0, 0, feedY),
-			Size                   = UDim2.new(0.24, 0, 0, feedH),
-			BackgroundColor3       = Color3.fromRGB(60, 15, 15),
-			BackgroundTransparency = 0.25,
-			BorderSizePixel        = 0,
-			Text                   = deathNotice,
-			TextColor3             = Color3.fromRGB(255, 100, 100),
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			ZIndex                 = 4,
-		}, {
-			minText = minText(),  -- §AGX/UI-P1
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
-		}) or nil,
-
-		-- ── Centre: Combo summary toast (personal) ──────────────────────────────
-		comboToast = (comboSummary ~= nil) and React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(0.5, 0.5),
-			Position               = UDim2.fromScale(0.5, 0.40),
-			Size                   = UDim2.fromScale(0.22, 0.06),
-			BackgroundColor3       = Color3.fromRGB(25, 20, 40),
-			BackgroundTransparency = 0.15,
-			BorderSizePixel        = 0,
-			Text                   = tostring(comboSummary.combo) .. "x Combo!  "
-					.. tostring(math.floor(comboSummary.damage)) .. " dmg  "
-				.. tostring(comboSummary.crits) .. " crits",
-			TextColor3             = Color3.fromRGB(255, 210, 60),
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			ZIndex                 = 5,
-		}, {
-			minSize = minTap(0, 24),  -- §AGX/UI-P1
-			minText = minText(),
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
-			stroke = React.createElement("UIStroke", {
-				Color     = Color3.fromRGB(200, 160, 40),
-				Thickness = 1.5,
-				Transparency = 0.3,
-			}),
-		}) or nil,
+		-- §AGX/UI-P4: deathFeed and comboToast removed; the killfeed is a
+		-- Notify feed line and the combo summary a Notify toast.
 
 		-- ── Top-centre: "Next Wave" button (visible between waves) ──────────────
 		-- §AGX/UI-P1: T4: 44 px floor; below BossHud's slot (CentralBoss, M9).

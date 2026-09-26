@@ -15,6 +15,9 @@ local React             = require(ReplicatedStorage.Packages.React)
 
 local Modules        = script.Parent.Parent:WaitForChild("Modules")
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
+-- §AGX/UI-P4: the pre-vote heads-up and the post-vote "Get ready!" alerts
+-- are Notify banners ("vote" priority) instead of VoteUI-drawn frames.
+local Notify         = require(script.Parent:WaitForChild("Common"):WaitForChild("Notify"))
 
 -- ═══════════════════════════════════════════════════════════
 -- PALETTE
@@ -316,53 +319,30 @@ local function VoteUI()
         end
     end, { voteData, winnerIndex, voteEndTime })
 
-    -- Pre-vote heads-up countdown overlay
-    if pendingCountdown and not voteData then
-        return React.createElement("Frame", {
-            Name                   = "VotePendingAlert",
-            Size                   = UDim2.fromScale(0.177, 0.048),
-            Position               = UDim2.fromScale(0.5, 0.12),
-            AnchorPoint            = Vector2.new(0.5, 0.5),
-            BackgroundColor3       = Color3.fromRGB(30, 30, 46),
-            BackgroundTransparency = 0.15,
-            ZIndex                 = 48,
-        }, {
-            corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 10) }),
-            stroke = React.createElement("UIStroke", { Color = Color3.fromRGB(255, 180, 40), Thickness = 2 }),
-            lbl    = React.createElement("TextLabel", {
-                Size                 = UDim2.fromScale(1, 1),
-                BackgroundTransparency = 1,
-                Text                 = "⚠  Vote starting in  " .. tostring(pendingCountdown) .. "s",
-                TextColor3           = Color3.fromRGB(255, 215, 80),
-                Font                 = Enum.Font.GothamBold,
-                TextScaled           = true,
-            }),
-        })
-    end
-
-    -- §VG4: post-vote "Get ready!" countdown.
-    if resumeCountdown and not voteData then
-        return React.createElement("Frame", {
-            Name                   = "VoteResumeCountdown",
-            Size                   = UDim2.fromScale(0.20, 0.06),
-            Position               = UDim2.fromScale(0.5, 0.18),
-            AnchorPoint            = Vector2.new(0.5, 0.5),
-            BackgroundColor3       = Color3.fromRGB(30, 30, 46),
-            BackgroundTransparency = 0.15,
-            ZIndex                 = 48,
-        }, {
-            corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 10) }),
-            stroke = React.createElement("UIStroke", { Color = Color3.fromRGB(120, 200, 255), Thickness = 2 }),
-            lbl    = React.createElement("TextLabel", {
-                Size                 = UDim2.fromScale(1, 1),
-                BackgroundTransparency = 1,
-                Text                 = "▶  Get ready!  " .. tostring(resumeCountdown),
-                TextColor3           = Color3.fromRGB(160, 230, 255),
-                Font                 = Enum.Font.GothamBold,
-                TextScaled           = true,
-            }),
-        })
-    end
+    -- §AGX/UI-P4: pre-vote heads-up countdown + §VG4 post-vote "Get ready!"
+    -- countdown, as ONE sticky "vote" banner (same text and colour, same
+    -- precedence: heads-up first, both only while no cards are up). Key
+    -- "vote" updates it in place each tick; it is cleared the moment the
+    -- countdowns end or the cards appear, so it never outlives them.
+    local hasVoteData = voteData ~= nil
+    React.useEffect(function()
+        if pendingCountdown and not hasVoteData then
+            Notify.banner("⚠  Vote starting in  " .. tostring(pendingCountdown) .. "s", {
+                key = "vote", priority = "vote", sticky = true,
+                color = Color3.fromRGB(255, 215, 80),
+            })
+        elseif resumeCountdown and not hasVoteData then
+            Notify.banner("▶  Get ready!  " .. tostring(resumeCountdown), {
+                key = "vote", priority = "vote", sticky = true,
+                color = Color3.fromRGB(160, 230, 255),
+            })
+        else
+            Notify.clearBanner("vote")
+        end
+    end, { pendingCountdown, resumeCountdown, hasVoteData })
+    React.useEffect(function()
+        return function() Notify.clearBanner("vote") end
+    end, {})
 
     -- Nothing to show
     if not voteData then return nil end

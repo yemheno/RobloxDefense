@@ -98,6 +98,9 @@ local GEOMETRY = {
 	-- ReplicatedStorage (HUD.lua ATTR_*), so Notify stays clear of them.
 	attrTopRightBottom = "UI_TopRightBottomPx",
 	attrTopCentre      = "UI_TopCentreReservedPx",
+	-- §AGX/UI-P4: bottom of the HUD's visible Start / Next Wave / Return
+	-- column (absolute px, like attrTopRightBottom; nil when none shows).
+	attrTopCentreButtons = "UI_TopCentreButtonsBottomPx",
 
 	toast = {
 		duration      = 3.5,
@@ -116,7 +119,12 @@ local GEOMETRY = {
 	banner = {
 		duration      = 3.0,
 		staleAfter    = 6,      -- a queued banner older than this is dropped
-		minTop        = 88,     -- px below safeTop: clears HUD Start/Next (HUD.lua bannerY)
+		-- px below safeTop: a floor that also clears the phone top-left
+		-- vitals / top-right currency rows. §AGX/UI-P4: no longer the only
+		-- guard for the HUD's Start / Next / Return column; the banner also
+		-- sits below the published column (attrTopCentreButtons), exactly
+		-- the old HUD bannerY = max(safeTop + 88, columnBottom + gap).
+		minTop        = 88,
 		width         = 460,
 		maxWidthScale = 0.56,
 		pad           = 8,
@@ -519,6 +527,7 @@ local function useNotifyLayout()
 	local ff = useFormFactor()
 	local trBottom     = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrTopRightBottom)
 	local bossReserved = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrTopCentre) or 0
+	local tcButtons    = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrTopCentreButtons)  -- §AGX/UI-P4
 
 	local t      = ff.tokens
 	local vpW    = ff.viewport.X
@@ -527,12 +536,13 @@ local function useNotifyLayout()
 	local body  = math.max(GEOMETRY.minText, t.font.body)
 	local small = math.max(GEOMETRY.minText, t.font.min)
 	local dismiss = math.max(GEOMETRY.minDismiss, t.minTarget)
+	local title   = math.max(GEOMETRY.minText, t.font.title)
 
 	return {
 		kind        = ff.kind,
 		body        = body,
 		small       = small,
-		title       = math.max(GEOMETRY.minText, t.font.title),
+		title       = title,
 		dismiss     = dismiss,
 		columnTop   = math.max(safeTop, trBottom or 0),
 		toastW      = math.min(GEOMETRY.toast.width, math.floor(vpW * GEOMETRY.toast.maxWidthScale)),
@@ -540,7 +550,13 @@ local function useNotifyLayout()
 		feedW       = math.min(GEOMETRY.feed.width, math.floor(vpW * GEOMETRY.feed.maxWidthScale)),
 		feedH       = math.max(GEOMETRY.feed.lineHeight, small + 2 * GEOMETRY.gap),
 		feedMax     = GEOMETRY.feed.maxLines[ff.kind] or 4,
-		bannerY     = math.max(safeTop + GEOMETRY.banner.minTop, safeTop + bossReserved + GEOMETRY.gap),
+		-- §AGX/UI-P4: below BossHud's reserved slot AND the HUD button column.
+		bannerY     = math.max(safeTop + GEOMETRY.banner.minTop,
+			math.max(safeTop + bossReserved, tcButtons or 0) + GEOMETRY.gap),
+		-- Height of a banner without subtitle (BannerHost's maths), so a
+		-- caller can place its own controls under the banner slot
+		-- (MatchmakingUI's Cancel / Retry / Close).
+		bannerH     = (title + GEOMETRY.banner.pad) + GEOMETRY.banner.pad,
 		bannerW     = math.min(GEOMETRY.banner.width, math.floor(vpW * GEOMETRY.banner.maxWidthScale)),
 	}
 end

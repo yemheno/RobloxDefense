@@ -16,6 +16,7 @@ local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 local AppWindow      = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
+local useRequest     = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useRequest"))  -- §AGX/UI-P4
 
 local C = {
 	bg     = Color3.fromRGB(18, 18, 24),
@@ -32,7 +33,28 @@ local function DailyLoginUI(props)
 	local onClose = props.onClose or function() end
 
 	local status, setStatus       = React.useState(nil)
-	local resultMsg, setResultMsg = React.useState(nil)
+
+	-- §AGX/UI-P4: the claim result is useRequest's inline state (was a
+	-- resultMsg + DailyLoginResult listener + 3 s clear timer). Same texts,
+	-- same 3 s hold, status re-fetched after every result. New: "Claiming…"
+	-- while pending, a timeout error after 4 s, and the button is inert
+	-- while a claim is in flight.
+	local claimReq = useRequest("ClaimDailyLogin", {
+		reply       = "DailyLoginResult",
+		pendingText = "Claiming…",
+		holdFor     = 3,
+		match       = function(data)
+			if type(data) ~= "table" then return nil end
+			if data.ok then
+				return true, "Claimed!  +" .. table.concat(data.rewards or {}, ",  ")
+			end
+			return false, data.reason or "Failed."
+		end,
+		onResult    = function()
+			NetworkManager.FireServer("GetDailyLoginStatus")
+		end,
+	})
+	local resultMsg = claimReq.message
 
 	React.useEffect(function()
 		local mounted = true
@@ -42,23 +64,9 @@ local function DailyLoginUI(props)
 			if mounted then setStatus(data) end
 		end)
 
-		local conn2 = NetworkManager.OnServerEvent("DailyLoginResult", function(data)
-			if not mounted then return end
-			if data.ok then
-				setResultMsg("Claimed!  +" .. table.concat(data.rewards or {}, ",  "))
-			else
-				setResultMsg(data.reason or "Failed.")
-			end
-			NetworkManager.FireServer("GetDailyLoginStatus")
-			task.delay(3, function()
-				if mounted then setResultMsg(nil) end
-			end)
-		end)
-
 		return function()
 			mounted = false
 			if conn1 then conn1:Disconnect() end
-			if conn2 then conn2:Disconnect() end
 		end
 	end, {})
 
@@ -130,7 +138,10 @@ local function DailyLoginUI(props)
 				Size                   = UDim2.fromScale(0.90, 0.09),
 				BackgroundTransparency = 1,
 				Text                   = resultMsg,
-				TextColor3             = Color3.fromRGB(100, 220, 120),
+				-- §AGX/UI-P4: colour follows the request state (was always green).
+				TextColor3             = (claimReq.state == "err") and Color3.fromRGB(255, 110, 110)
+					or (claimReq.state == "pending") and C.dim
+					or Color3.fromRGB(100, 220, 120),
 				Font                   = Enum.Font.GothamBold,
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Center,
@@ -152,8 +163,8 @@ local function DailyLoginUI(props)
 				Active           = canClaim,
 				ZIndex           = 12,
 				[React.Event.Activated] = function()
-					if canClaim then
-						NetworkManager.FireServer("ClaimDailyLogin")
+					if canClaim and not claimReq.pending then  -- §AGX/UI-P4: no double claim
+						claimReq.send()  -- §AGX/UI-P4: fires ClaimDailyLogin
 					end
 				end,
 			}, {

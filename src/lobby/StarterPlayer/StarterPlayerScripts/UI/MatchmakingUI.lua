@@ -13,6 +13,11 @@
     
     Shown as a small bar near the top of the screen. Self-hides
     when not matchmaking.
+
+    §AGX/UI-P4: the status text is a sticky Notify banner ("matchmaking"
+    priority, key "matchmaking"); this component keeps the state machine
+    and renders only the Cancel / Retry / Close controls, directly under
+    Notify's banner slot.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,6 +26,8 @@ local React             = require(ReplicatedStorage.Packages.React)
 
 local SharedModules  = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
+local Notify         = require(Players.LocalPlayer:WaitForChild("PlayerScripts")
+	:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("Notify"))  -- §AGX/UI-P4
 
 -- ── Palette ───────────────────────────────────────────────
 local C = {
@@ -88,15 +95,16 @@ local function MatchmakingUI()
 		return function() alive = false end
 	end, { mmState })
 
-	if not mmState then
-		return nil
-	end
+	-- §AGX/UI-P4: controls go under Notify's banner slot (same maths).
+	local L = Notify.useLayout()
 
-	local status  = mmState.status or "Queued"
+	local status  = mmState and mmState.status or "Queued"
 	local color   = STATUS_COLORS[status] or C.text
 	local message = ""
 
-	if status == "Queued" then
+	if not mmState then
+		message = ""
+	elseif status == "Queued" then
 		message = "Queued for " .. tostring(mmState.mode or "match") .. "…"
 	elseif status == "Countdown" then
 		message = tostring(mmState.mode or "Match") .. " starts in " .. tostring(mmState.seconds or mmState.countdown or "?")  --[[ §AGX/X14: server sends `countdown` ]] .. "…"
@@ -109,103 +117,94 @@ local function MatchmakingUI()
 		message = mmState.message or "An error occurred."
 	end
 
+	-- §AGX/UI-P4: the status line is a Notify banner. Sticky while this
+	-- state lasts (Launched/Cancelled still hide after 2 s, the Launching
+	-- timeout still turns into an Error); an empty message (e.g. the
+	-- "Launched" status, which used to show an empty bar) clears it.
+	React.useEffect(function()
+		if message ~= "" then
+			Notify.banner(message, {
+				key = "matchmaking", priority = "matchmaking", sticky = true, color = color,
+			})
+		else
+			Notify.clearBanner("matchmaking")
+		end
+	end, { message, color })
+	React.useEffect(function()
+		return function() Notify.clearBanner("matchmaking") end
+	end, {})
+
+	if not mmState then
+		return nil
+	end
+
 	local showCancel = (status == "Queued" or status == "Countdown")
 	-- §AGX/X14: errors that carry a mode came from a failed/timed-out
 	-- launch → offer Retry (re-queue same mode + tier). Every error gets a
 	-- Close button; before this an Error banner could never be dismissed.
 	local isError  = (status == "Error")
 	local showRetry = isError and mmState.mode ~= nil
-	local labelWidth = 0.92
-	if showRetry then
-		labelWidth = 0.44
-	elseif showCancel or isError then
-		labelWidth = 0.62
+	if not (showCancel or isError) then
+		return nil  -- §AGX/UI-P4: nothing to press; the banner says it all
+	end
+
+	-- §AGX/UI-P4: one row of controls centred under the banner slot, with
+	-- the same fonts / tap floor as Notify (L.body, L.dismiss >= 44 px).
+	local btnH = L.dismiss
+	local btnW = math.max(96, 5 * L.body)
+	local function controlBtn(order, text, bg, onActivated)
+		return React.createElement("TextButton", {
+			Size             = UDim2.fromOffset(btnW, btnH),
+			BackgroundColor3 = bg,
+			BorderSizePixel  = 0,
+			Text             = text,
+			TextColor3       = C.white,
+			Font             = Enum.Font.GothamBold,
+			TextSize         = L.body,
+			LayoutOrder      = order,
+			[React.Event.Activated] = onActivated,
+		}, {
+			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
+		})
 	end
 
 	return React.createElement("Frame", {
 		Name                   = "MatchmakingUI",
 		AnchorPoint            = Vector2.new(0.5, 0),
-		Position               = UDim2.fromScale(0.5, 0.03),
-		Size                   = UDim2.fromScale(0.38, 0.065),
-		BackgroundColor3       = C.bg,
-		BackgroundTransparency = 0.08,
-		BorderSizePixel        = 0,
+		Position               = UDim2.new(0.5, 0, 0, L.bannerY + L.bannerH + 8),
+		Size                   = UDim2.fromOffset(L.bannerW, btnH),
+		BackgroundTransparency = 1,
 		ZIndex                 = 25,
 	}, {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-
-		-- Status text
-		statusLabel = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.04, 0),
-			Size                   = UDim2.fromScale(labelWidth, 1),  -- §AGX/X14
-			BackgroundTransparency = 1,
-			Text                   = message,
-			TextColor3             = color,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
+		layout = React.createElement("UIListLayout", {
+			FillDirection       = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			VerticalAlignment   = Enum.VerticalAlignment.Center,
+			SortOrder           = Enum.SortOrder.LayoutOrder,
+			Padding             = UDim.new(0, 8),
 		}),
 
 		-- Cancel button
-		cancelBtn = showCancel and React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0.5),
-			Position         = UDim2.fromScale(0.96, 0.5),
-			Size             = UDim2.fromScale(0.26, 0.65),
-			BackgroundColor3 = C.red,
-			BorderSizePixel  = 0,
-			Text             = "Cancel",
-			TextColor3       = C.white,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = function()
-				NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
-			end,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
-		}) or nil,
+		cancelBtn = showCancel and controlBtn(1, "Cancel", C.red, function()
+			NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
+		end) or nil,
 
 		-- §AGX/X14: Retry after a failed / timed-out launch. The server
 		-- re-validates everything (leader, level, IsQueued/launching).
-		retryBtn = showRetry and React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0.5),
-			Position         = UDim2.fromScale(0.70, 0.5),
-			Size             = UDim2.fromScale(0.22, 0.65),
-			BackgroundColor3 = C.green,
-			BorderSizePixel  = 0,
-			Text             = "Retry",
-			TextColor3       = C.white,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = function()
-				NetworkManager.FireServer("MatchmakingRequest", {
-					action     = "Queue",
-					mode       = mmState.mode,
-					difficulty = mmState.difficulty,
-				})
-			end,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
-		}) or nil,
+		retryBtn = showRetry and controlBtn(2, "Retry", C.green, function()
+			NetworkManager.FireServer("MatchmakingRequest", {
+				action     = "Queue",
+				mode       = mmState.mode,
+				difficulty = mmState.difficulty,
+			})
+		end) or nil,
 
 		-- §AGX/X14: Close dismisses the error banner (and clears any stale
 		-- queue entry server-side; Cancel is a no-op if there is none).
-		closeBtn = isError and React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0.5),
-			Position         = UDim2.fromScale(0.96, 0.5),
-			Size             = UDim2.fromScale(0.24, 0.65),
-			BackgroundColor3 = C.red,
-			BorderSizePixel  = 0,
-			Text             = "Close",
-			TextColor3       = C.white,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = function()
-				NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
-				setMmState(nil)
-			end,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
-		}) or nil,
+		closeBtn = isError and controlBtn(3, "Close", C.red, function()
+			NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
+			setMmState(nil)
+		end) or nil,
 	})
 end
 

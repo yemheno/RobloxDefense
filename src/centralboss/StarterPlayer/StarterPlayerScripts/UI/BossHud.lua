@@ -1,6 +1,8 @@
 -- centralboss/StarterPlayerScripts/UI/BossHud.lua
 --[[
     §AGX/X28: top-of-screen boss HP bar + phase banner (CentralBoss only).
+    §AGX/UI-P4: the phase banner is a Notify banner ("bossPhase", the top
+    priority) now; this component renders only the HP bar.
 
     Display-only: the server (BossEncounter) owns HP and phases and pushes
         BossStateUpdate  { active, name, hp, maxHp, phase, phaseCount, phaseName, ... }
@@ -12,18 +14,21 @@
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GuiService        = game:GetService("GuiService")
-local Workspace         = game:GetService("Workspace")
+-- §AGX/UI-P4: Workspace (banner height from the viewport) no longer needed.
 local React             = require(ReplicatedStorage.Packages.React)
 
 local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local NetworkManager = require(PlayerScripts:WaitForChild("Modules"):WaitForChild("NetworkManager"))
+local Notify         = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("Notify"))  -- §AGX/UI-P4
 
 local BANNER_SECONDS = 3.5
 
 -- §AGX/UI-P1: M9: BossHud owns its own top-centre slot directly under the
 -- topbar (safeTop). It publishes how many px below safeTop it uses as a
 -- client-local ReplicatedStorage attribute; HUD.lua pushes Start / Next Wave
--- / Return and its wave banner below that (they collided at safeTop+30..88).
+-- / Return below that (they collided at safeTop+30..88), and Notify puts
+-- its banner below both. §AGX/UI-P4: only the HP bar is reserved now; the
+-- phase banner lives in Notify's banner slot.
 -- TODO(FormFactor): becomes the "top-centre banner" region in P5.
 local ATTR_TOP_CENTRE = "UI_TopCentreReservedPx"
 local BAR_H      = 46
@@ -44,26 +49,27 @@ end
 
 local function BossHud()
 	local state, setState   = React.useState(nil)
-	local banner, setBanner = React.useState(nil)
 
 	React.useEffect(function()
-		local bannerToken = 0
 		local stateConn = NetworkManager.OnServerEvent("BossStateUpdate", function(data)
 			if type(data) == "table" then
 				setState(data)
 			end
 		end)
+		-- §AGX/UI-P4: was local banner state + a 3.5 s token timer. Same
+		-- text and colour; "bossPhase" outranks (preempts) a wave banner,
+		-- and a newer phase replaces an older one via the key.
 		local phaseConn = NetworkManager.OnServerEvent("BossPhaseChanged", function(data)
 			if type(data) ~= "table" then return end
-			bannerToken += 1
-			local myToken = bannerToken
-			setBanner(data)
-			task.delay(BANNER_SECONDS, function()
-				if bannerToken == myToken then setBanner(nil) end
-			end)
+			Notify.banner(tostring(data.text or data.name or ""), {
+				key      = "bossPhase",
+				priority = "bossPhase",
+				duration = BANNER_SECONDS,
+				color    = data.final and Color3.fromRGB(255, 215, 90)
+					or PHASE_COLORS[math.clamp(tonumber(data.phase) or 1, 1, #PHASE_COLORS)],
+			})
 		end)
 		return function()
-			bannerToken += 1   -- orphan any pending banner timer
 			if stateConn then stateConn:Disconnect() end
 			if phaseConn then phaseConn:Disconnect() end
 		end
@@ -76,15 +82,10 @@ local function BossHud()
 
 	local showBar = state ~= nil and state.active == true and (state.maxHp or 0) > 0
 
-	-- §AGX/UI-P1: slot geometry (px below safeTop). Banner keeps its old
-	-- 0.055-of-screen height on desktop, with a 28 px floor for phones.
-	local cam = Workspace.CurrentCamera
-	local vpH = cam and cam.ViewportSize.Y or 1080
-	local bannerH = math.max(28, 0.055 * vpH)
-	local bannerY = showBar and (BAR_H + SLOT_GAP) or 0
+	-- §AGX/UI-P1: slot geometry (px below safeTop).
+	-- §AGX/UI-P4: reserves the HP bar only; the phase banner is Notify's.
 	local reserved = 0
 	if showBar then reserved = BAR_H + SLOT_GAP end
-	if banner ~= nil then reserved = bannerY + bannerH + SLOT_GAP end
 
 	React.useEffect(function()
 		ReplicatedStorage:SetAttribute(ATTR_TOP_CENTRE, reserved > 0 and reserved or nil)
@@ -174,25 +175,7 @@ local function BossHud()
 			}),
 		}) or nil,
 
-		banner = (banner ~= nil) and React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(0.5, 0),
-			-- §AGX/UI-P1: directly under the bar, inside BossHud's slot (was
-			-- safeTop+84, colliding with the HUD wave banner at safeTop+88).
-			Position               = UDim2.new(0.5, 0, 0, safeTop + bannerY),
-			Size                   = UDim2.new(0.34, 0, 0, bannerH),
-			BackgroundColor3       = Color3.fromRGB(30, 15, 20),
-			BackgroundTransparency = 0.2,
-			BorderSizePixel        = 0,
-			Text                   = tostring(banner.text or banner.name or ""),
-			TextColor3             = banner.final and Color3.fromRGB(255, 215, 90)
-				or PHASE_COLORS[math.clamp(banner.phase or 1, 1, #PHASE_COLORS)],
-			Font                   = Enum.Font.GothamBlack,
-			TextScaled             = true,
-			ZIndex                 = 4,
-		}, {
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
-		}) or nil,
+		-- §AGX/UI-P4: phase banner removed (Notify.banner, see above).
 	})
 end
 
