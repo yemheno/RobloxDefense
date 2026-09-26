@@ -30,6 +30,20 @@ local SharedModules = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Mo
 
 local InputSystem    = require(SharedModules:WaitForChild("InputSystem"))
 local InputActions   = require(SharedModules:WaitForChild("InputSystem"):WaitForChild("InputActions"))
+-- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
+-- outside a PanelHost, so Wave 1 behaves exactly as before).
+local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
+do
+	local shell = script.Parent:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" then
+			PanelStackHooks.useCloseHandler  = PanelStack.useCloseHandler or PanelStackHooks.useCloseHandler
+			PanelStackHooks.useModalPresence = PanelStack.useModalPresence or PanelStackHooks.useModalPresence
+		end
+	end
+end
 
 -- ── Palette ───────────────────────────────────────────────
 local C = {
@@ -173,6 +187,19 @@ local function KeybindSettings(props)
 
 	-- Which action is awaiting a keypress (nil = none)
 	local listeningFor, setListeningFor = useState(nil)
+
+	-- §AGX/UI-P3: A11. Back while capturing cancels the capture and vetoes.
+	-- Registered on the enclosing entry (BattleClassUI's "class"); it is
+	-- newer than BattleClassUI's own handler, so it runs first (A13).
+	local listeningRef = React.useRef(nil)
+	listeningRef.current = listeningFor
+	PanelStackHooks.useCloseHandler(function(_reason)
+		if listeningRef.current then
+			setListeningFor(nil)
+			return false
+		end
+		return nil
+	end)
 	-- Version counter, incremented on each binding change → forces row re-reads
 	local ver, setVer = useState(0)
 
@@ -190,7 +217,8 @@ local function KeybindSettings(props)
 			local key = input.KeyCode
 			if BLOCKED_KEYS[key] then return end
 
-			if key == Enum.KeyCode.Escape then
+			-- §AGX/UI-P3: Backspace (UIBack) cancels too instead of being bound.
+			if key == Enum.KeyCode.Escape or key == Enum.KeyCode.Backspace then
 				-- Escape cancels the listen without binding
 				setListeningFor(nil)
 				return

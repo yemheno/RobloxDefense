@@ -30,6 +30,16 @@
 
 	  Set via InputSystem.SetContext("Combat").
 
+	  -- §AGX/UI-P3: base / override split (shell-spec §3.4, D6).
+	  SetContext(name) sets the BASE context (place clients, SceneController,
+	  the Horde vote pause). PushUIContext() -> release() adds a ref-counted
+	  "UI" override (the PanelStack holds one while any panel/menu is open).
+	  GetContext() and every dispatch gate use the EFFECTIVE context:
+	      effective = (uiOverride > 0) and "UI" or base
+	  OnContextChanged fires only when the effective value changes, so a base
+	  change under an open menu is silent until the menu closes, and closing
+	  a menu can't un-pause a paused Horde (its base stays "UI").
+
 	─── Rebinding ───────────────────────────────────────────
 	  InputSystem.SetBinding("Attack", "Keyboard", { Enum.KeyCode.X })
 	  InputSystem.ResetAllBindings()
@@ -47,7 +57,10 @@ local FormFactor   = require(script.Parent:WaitForChild("FormFactor"))
 -- STATE
 -- ═══════════════════════════════════════════════════════════
 
-local activeContext   = "Lobby"      -- "Lobby" | "Combat" | "UI"
+local activeContext   = "Lobby"      -- EFFECTIVE context: "Lobby" | "Combat" | "UI"
+-- §AGX/UI-P3: base context (SetContext) + ref-counted UI override (PushUIContext).
+local baseContext     = "Lobby"
+local uiOverride      = 0
 local activeInputType = "Keyboard"   -- "Keyboard" | "Gamepad" | "Touch"
 
 -- §AGX/UI-P2: input-type and context change listeners, plus the actions whose
@@ -276,18 +289,48 @@ end
 -- CONTEXT
 -- ═══════════════════════════════════════════════════════════
 
-function InputSystem.SetContext(contextName)
+-- §AGX/UI-P3: recompute the effective context; notify only on a real change.
+local function UpdateEffectiveContext()
+	local effective = (uiOverride > 0) and "UI" or baseContext
+	if effective == activeContext then return end
+	activeContext = effective
 	-- §AGX/UI-P2: notify listeners (SkillPad hides outside "Combat").
-	if contextName == activeContext then return end
-	activeContext = contextName
 	for _, cb in pairs(contextCallbacks) do
-		task.spawn(cb, contextName)
+		task.spawn(cb, effective)
 	end
 end
 
--- §AGX/UI-P2: read the current context.
+--- Sets the BASE context (§AGX/UI-P3). While a UI override is held the
+--- effective context stays "UI" and listeners hear nothing until release.
+function InputSystem.SetContext(contextName)
+	if contextName == baseContext then return end
+	baseContext = contextName
+	UpdateEffectiveContext()
+end
+
+-- §AGX/UI-P2: read the current (§AGX/UI-P3: effective) context.
 function InputSystem.GetContext()
 	return activeContext
+end
+
+-- §AGX/UI-P3: the base context under any UI override (diagnostics / shell).
+function InputSystem.GetBaseContext()
+	return baseContext
+end
+
+--- §AGX/UI-P3: push a ref-counted "UI" override (D6: no skills, dash, NPC
+--- prompts or emote key behind an open menu). Returns release(); calling it
+--- more than once is a no-op.
+function InputSystem.PushUIContext()
+	uiOverride += 1
+	UpdateEffectiveContext()
+	local released = false
+	return function()
+		if released then return end
+		released = true
+		uiOverride = math.max(0, uiOverride - 1)
+		UpdateEffectiveContext()
+	end
 end
 
 -- §AGX/UI-P2: cb(contextName) on every context change. Returns a disconnect.

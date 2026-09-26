@@ -17,6 +17,20 @@ local React             = require(ReplicatedStorage.Packages.React)
 local SharedModules  = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
 local useNpcDistanceClose = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useNpcDistanceClose"))  -- §AGX/X29
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
+local PlayerScripts_UI = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI")
+-- §AGX/UI-P3: register with the shell's PanelStack (A10, shell-spec §3.2.3).
+-- Nil-safe: without UI/Shell (or outside a PanelHost) useExternal is a no-op.
+local useExternal = function(_id, _isOpen, _closeFn) end
+do
+	local shell = PlayerScripts_UI:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" and PanelStack.useExternal then
+			useExternal = PanelStack.useExternal
+		end
+	end
+end
 
 -- ── Palette ───────────────────────────────────────────────
 local C = {
@@ -318,7 +332,9 @@ local SMITH_TITLES = {
 	BonusReroll = "Enchanting Table",
 }
 
-local function WeaponSmithUI(_props)
+local function WeaponSmithUI(props)
+	-- §AGX/UI-P3: onClose (PanelHost: close(id, "self")); was unused.
+	local onClose = (props and props.onClose) or function() end
 	local smithData, setSmithData = React.useState(nil)
 	local statusMsg, setStatusMsg = React.useState(nil)
 
@@ -415,7 +431,27 @@ local function WeaponSmithUI(_props)
 		smithDataRef.current = nil
 		setSmithData(nil)
 		setStatusMsg(nil)
+		onClose()   -- §AGX/UI-P3
 	end)
+
+	-- §AGX/UI-P3: one close helper before the early return, so the stack
+	-- (useExternal) can call it; fires NPCResponse Close as the ✕ did.
+	local function closeSmith()
+		local current = smithDataRef.current
+		if current then
+			NetworkManager.FireServer("NPCResponse", {
+				npcId  = current.npcId,
+				action = "Close",
+			})
+		end
+		smithDataRef.current = nil
+		setSmithData(nil)
+		setStatusMsg(nil)
+		onClose()
+	end
+
+	-- §AGX/UI-P3: A10, register with the PanelStack (replaces / is replaced).
+	useExternal("npcSmith", smithData ~= nil, closeSmith)
 
 	if not smithData then
 		return nil
@@ -424,16 +460,6 @@ local function WeaponSmithUI(_props)
 	local smithType = smithData.smithType or "Refinement"
 	local title     = (smithData.npcName or "Smith") .. " — " .. (SMITH_TITLES[smithType] or smithType)
 	local npcId     = smithData.npcId
-
-	local function closeSmith()
-		NetworkManager.FireServer("NPCResponse", {
-			npcId  = npcId,
-			action = "Close",
-		})
-		smithDataRef.current = nil
-		setSmithData(nil)
-		setStatusMsg(nil)
-	end
 
 	return React.createElement("Frame", {
 		Name = "WeaponSmithUI",
@@ -449,6 +475,7 @@ local function WeaponSmithUI(_props)
 			Size = UDim2.fromScale(0.55, 0.6),
 			BackgroundColor3 = C.panel,
 			BorderSizePixel = 0,
+			Active = true,   -- §AGX/UI-P3: no click-through on empty panel space (UX-14)
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 10) }),
 			pad = React.createElement("UIPadding", {

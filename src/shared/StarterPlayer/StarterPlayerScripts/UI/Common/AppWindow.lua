@@ -13,6 +13,21 @@
                               (Talent Tree, Character Creation).
       variant = "sheet"       §AGX/UI-P1v2: full-bleed dim, panel fills the
                               safe area under the Roblox topbar (mobile.md §2.6).
+      variant = "side"        §AGX/UI-P3: D7 right sheet (combat, Tablet/Desktop):
+                              min(0.46 W, 640 design px) wide, full height below
+                              the topbar, NO dim; only the sheet sinks input.
+      variant = "dialog"      §AGX/UI-P3: small window. Phone = bottom sheet at
+                              45 % height; elsewhere the `size` passed in.
+
+    §AGX/UI-P3: PRESENTATION FROM THE SHELL (A8, shell-spec §3.8)
+      Inside a PanelHost entry, PanelStack.usePresentation() ("windowed" |
+      "side" | "sheet" | "fullscreen" | "dialog") OVERRIDES props.variant, so
+      the registry, not each panel, decides how a panel is presented. Outside
+      PanelHost props.variant applies exactly as before.
+      • The backdrop and the Panel are Active (UX-06 / UX-14 click-through).
+      • When the entry is dismissable (D8, registry dismissOnBackdrop) the
+        backdrop is a TextButton calling props.onBackdrop or the stack's
+        back("backdrop"). Outside PanelHost, passing props.onBackdrop opts in.
 
     Shared chrome (D1 Hybrid: the anime identity lives HERE):
       • slanted ORANGE ribbon behind an UPPERCASE title (ink text, 10:1)
@@ -30,11 +45,15 @@
     inside a UIScaleRoot. Panel geometry (size / minSize) keeps the caller's
     units: Scale, or Offset px of the tree the caller lives in.
 
-    Back / Esc / gamepad B (hook point for the P3 shell):
-      closeOnBack = true binds Escape + ButtonB through ContextActionService
-      at high priority while the window is mounted; the newest window wins.
-      onClose is then called with "back" (the ✕ passes "close"). OFF by
-      default until the shell phase turns it on (Dash is still on B, P7).
+    Back (Backspace / gamepad B):
+      §AGX/UI-P3: there is ONE back handler, PanelStack's (InputActions
+      UIBack + a CAS sink on B, debounced). Inside a PanelHost entry the
+      stack pops the window on Back by itself; closeOnBack is not needed.
+      Outside PanelHost, closeOnBack = true registers this window with
+      PanelStack.pushBackHandler (newest window wins; it holds the "UI"
+      context while mounted, so B means Back, not Dash). onClose is then
+      called with "back" (the ✕ passes "close"). Esc is NOT bound: the Roblox
+      system menu owns it (shell-spec §3.3; 2e3fdf5 bound Escape here).
 
     Usage (unchanged contract):
         local AppWindow = require(script.Parent:WaitForChild("Common"):WaitForChild("AppWindow"))
@@ -47,13 +66,13 @@
             size    = UDim2.fromScale(0.88, 0.82),  -- windowed only
             minSize = Vector2.new(360, 260),         -- windowed only, px (§AGX/UI-P1)
             zIndex  = 10,
-            closeOnBack = false,           -- §AGX/UI-P1v2
+            closeOnBack = false,           -- §AGX/UI-P1v2 (§AGX/UI-P3: via PanelStack)
+            onBackdrop = fn?,              -- §AGX/UI-P3: D8 click-outside (dismissable)
             scroll  = false,               -- §AGX/UI-P1v2: body is a vertical ScrollingFrame
         }, bodyChildrenTable)
 ]]
 
 local ReplicatedStorage    = game:GetService("ReplicatedStorage")
-local ContextActionService = game:GetService("ContextActionService")
 local TextService          = game:GetService("TextService")
 local Workspace            = game:GetService("Workspace")
 local React = require(ReplicatedStorage.Packages.React)
@@ -64,6 +83,19 @@ local useFormFactor = require(Common:WaitForChild("useFormFactor"))
 local UIScaleRoot   = require(Common:WaitForChild("UIScaleRoot"))
 local IconButton    = require(Common:WaitForChild("IconButton"))
 
+-- §AGX/UI-P3: PanelStack (UI/Shell) is optional at load: AppWindow must work
+-- in any tree, and the hooks below stay unconditional either way.
+local PanelStack = nil
+do
+	local shell = Common.Parent:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, res = pcall(require, mod)
+		if ok then PanelStack = res end
+	end
+end
+local EntryContext = (PanelStack and PanelStack.EntryContext) or React.createContext(nil)
+
 local e = React.createElement
 local R = Theme.Roles
 local S = Theme.Speed
@@ -72,10 +104,11 @@ local MW = Theme.Metrics.window
 -- §AGX/UI-P1v2: Theme.Layout[kind].header / .close replace the old
 -- MIN_HEADER_PX / MIN_CLOSE_PX floors (48 / 44).
 local TOPBAR_GAP_PX = MW.topGap   -- breathing room below Roblox's topbar
+local SIDE_WIDTH_SCALE = 0.46     -- §AGX/UI-P3: D7 side sheet
+local SIDE_MAX_W       = 640      -- design px
+local DIALOG_PHONE_H   = 0.45     -- §AGX/UI-P3: phone dialog = bottom sheet
 local RIBBON_TAIL   = 28          -- ribbon past the title's end (design px)
 local CHROME_PAD    = 16
-
-local backCounter = 0
 
 -- §AGX/UI-P1: fallback before the first AbsoluteSize measurement.
 local function viewportSize()
@@ -209,9 +242,28 @@ local function AppWindow(props)
 	local scale = UIScaleRoot.useUIScale()
 	local zBase = props.zIndex or Theme.Z.window
 
-	local variant = props.variant or "auto"
+	-- §AGX/UI-P3: the shell's presentation wins over props.variant.
+	local entryCtx = React.useContext(EntryContext)
+	local presentation = entryCtx and entryCtx.presentation or nil
+	local variant = presentation or props.variant or "auto"
 	if variant == "auto" then
 		variant = (ff.kind == "Phone") and "sheet" or "windowed"
+	end
+	if variant == "dialog" then
+		variant = (ff.kind == "Phone") and "dialogSheet" or "windowed"
+	elseif variant ~= "windowed" and variant ~= "fullscreen"
+		and variant ~= "sheet" and variant ~= "side" then
+		variant = "windowed"   -- menu presentations etc. never reach AppWindow
+	end
+
+	-- §AGX/UI-P3: D8 click-outside.
+	local onBackdrop = nil
+	if entryCtx then
+		if entryCtx.dismissable then
+			onBackdrop = props.onBackdrop or entryCtx.onBackdrop
+		end
+	else
+		onBackdrop = props.onBackdrop
 	end
 
 	-- §AGX/UI-P1: measure the window root (fills its parent, normally the
@@ -223,22 +275,17 @@ local function AppWindow(props)
 		if sz.X > 0 and sz.Y > 0 then setRootAbs(sz) end
 	end, {})
 
-	-- §AGX/UI-P1v2: Esc / B / back hook point (see header comment).
+	-- §AGX/UI-P1v2 / §AGX/UI-P3: back routing (see header comment). Inside a
+	-- PanelHost entry the stack owns Back; outside, register with the one
+	-- PanelStack back route instead of binding a second CAS action.
 	local onCloseRef = React.useRef(props.onClose)
 	onCloseRef.current = props.onClose
-	local closeOnBack = props.closeOnBack == true
+	local closeOnBack = props.closeOnBack == true and entryCtx == nil
 	React.useEffect(function()
-		if not closeOnBack then return nil end
-		backCounter += 1
-		local actionName = "AppWindowBack_" .. backCounter
-		ContextActionService:BindActionAtPriority(actionName, function(_, state)
-			if state ~= Enum.UserInputState.Begin then return Enum.ContextActionResult.Pass end
+		if not closeOnBack or not PanelStack then return nil end
+		return PanelStack.pushBackHandler(function()
 			if onCloseRef.current then onCloseRef.current("back") end
-			return Enum.ContextActionResult.Sink
-		end, false, Enum.ContextActionPriority.High.Value + 10, Enum.KeyCode.Escape, Enum.KeyCode.ButtonB)
-		return function()
-			ContextActionService:UnbindAction(actionName)
-		end
+		end)
 	end, { closeOnBack })
 
 	local onCloseButton = React.useCallback(function()
@@ -259,7 +306,11 @@ local function AppWindow(props)
 	local panelPos  = UDim2.fromScale(0.5, 0.5)
 	local panelW    = panelSize.X.Scale * rootSize.X + panelSize.X.Offset
 	local panelHpx  = panelSize.Y.Scale * rootSize.Y + panelSize.Y.Offset
-	if variant == "windowed" then
+	local sideTop   = topInset + TOPBAR_GAP_PX
+	if variant == "side" then
+		-- §AGX/UI-P3: D7, right-anchored, full height below the topbar.
+		panelW = math.min(SIDE_WIDTH_SCALE * rootSize.X, SIDE_MAX_W * r)
+	elseif variant == "windowed" then
 		local minSize  = props.minSize
 		local wantW, wantH = panelW, panelHpx
 		if minSize then
@@ -279,7 +330,7 @@ local function AppWindow(props)
 				math.max(rootSize.Y / 2, safeTopPx + wantH / 2))
 			panelW    = wantW
 		end
-	else
+	elseif variant ~= "side" then
 		panelW = rootSize.X
 	end
 
@@ -337,6 +388,29 @@ local function AppWindow(props)
 		}, props.children)
 	end
 
+	-- §AGX/UI-P3: a dim backdrop that sinks clicks; a TextButton when the
+	-- entry is dismissable (D8), a Frame otherwise.
+	local function backdrop(children)
+		local base = {
+			Name                   = (props.title or "AppWindow") .. "Backdrop",
+			Size                   = UDim2.fromScale(1, 1),
+			BackgroundColor3       = R.surface.scrim,
+			BackgroundTransparency = Theme.Elevation.overlay.scrim,
+			BorderSizePixel        = 0,
+			Active                 = true,   -- §AGX/UI-P1v2: clicks no longer fall through to the HUD/world
+			ZIndex                 = zBase,
+			[React.Change.AbsoluteSize] = onRootSize,
+		}
+		if onBackdrop then
+			base.Text            = ""
+			base.AutoButtonColor = false
+			base.Selectable      = false
+			base[React.Event.Activated] = function() onBackdrop() end
+			return e("TextButton", base, children)
+		end
+		return e("Frame", base, children)
+	end
+
 	-- ── Variants ──────────────────────────────────────────────────────────────
 	if variant == "fullscreen" then
 		return e("Frame", {
@@ -356,16 +430,7 @@ local function AppWindow(props)
 
 	if variant == "sheet" then
 		local top = topInset + TOPBAR_GAP_PX
-		return e("Frame", {
-			Name                   = (props.title or "AppWindow") .. "Backdrop",
-			Size                   = UDim2.fromScale(1, 1),
-			BackgroundColor3       = R.surface.scrim,
-			BackgroundTransparency = Theme.Elevation.overlay.scrim,
-			BorderSizePixel        = 0,
-			Active                 = true,
-			ZIndex                 = zBase,
-			[React.Change.AbsoluteSize] = onRootSize,
-		}, {
+		return backdrop({
 			panel = e("Frame", {
 				Name             = "Panel",
 				Position         = UDim2.fromOffset(0, top),
@@ -373,6 +438,7 @@ local function AppWindow(props)
 				BackgroundColor3 = R.surface.panel,
 				BorderSizePixel  = 0,
 				ClipsDescendants = true,
+				Active           = true,   -- §AGX/UI-P3: UX-06/UX-14
 				ZIndex           = zBase + 1,
 			}, {
 				corner = e("UICorner", { CornerRadius = Theme.Radius.lg }),
@@ -382,17 +448,61 @@ local function AppWindow(props)
 		})
 	end
 
+	if variant == "dialogSheet" then
+		-- §AGX/UI-P3: phone dialog = bottom sheet at 45 % of the height.
+		return backdrop({
+			panel = e("Frame", {
+				Name             = "Panel",
+				AnchorPoint      = Vector2.new(0, 1),
+				Position         = UDim2.fromScale(0, 1),
+				Size             = UDim2.new(1, 0, DIALOG_PHONE_H, math.max(0, headerPx * 3 - DIALOG_PHONE_H * rootSize.Y)),
+				BackgroundColor3 = R.surface.panel,
+				BorderSizePixel  = 0,
+				ClipsDescendants = true,
+				Active           = true,
+				ZIndex           = zBase + 1,
+			}, {
+				corner = e("UICorner", { CornerRadius = Theme.Radius.lg }),
+				header = header,
+				body   = body,
+			}),
+		})
+	end
+
+	if variant == "side" then
+		-- §AGX/UI-P3: D7. No dim and no input sink outside the sheet, so the
+		-- HUD vitals stay visible (hudMode "combatSide").
+		return e("Frame", {
+			Name                   = (props.title or "AppWindow") .. "Side",
+			Size                   = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			ZIndex                 = zBase,
+			[React.Change.AbsoluteSize] = onRootSize,
+		}, {
+			panel = e("Frame", {
+				Name                   = "Panel",
+				AnchorPoint            = Vector2.new(1, 0),
+				Position               = UDim2.new(1, 0, 0, sideTop),
+				Size                   = UDim2.new(0, panelW, 1, -sideTop),
+				BackgroundColor3       = R.surface.panel,
+				BackgroundTransparency = 0.08,   -- D7 translucent
+				BorderSizePixel        = 0,
+				ClipsDescendants       = true,
+				Active                 = true,
+				ZIndex                 = zBase + 1,
+			}, {
+				corner = e("UICorner", { CornerRadius = Theme.Radius.lg }),
+				stroke = e("UIStroke", {
+					Color = R.border.identity, Thickness = Theme.Stroke.base, Transparency = 0.55,
+				}),
+				header = header,
+				body   = body,
+			}),
+		})
+	end
+
 	-- windowed
-	return e("Frame", {
-		Name                   = (props.title or "AppWindow") .. "Backdrop",
-		Size                   = UDim2.fromScale(1, 1),
-		BackgroundColor3       = R.surface.scrim,
-		BackgroundTransparency = Theme.Elevation.overlay.scrim,
-		BorderSizePixel        = 0,
-		Active                 = true,   -- §AGX/UI-P1v2: clicks no longer fall through to the HUD/world
-		ZIndex                 = zBase,
-		[React.Change.AbsoluteSize] = onRootSize,
-	}, {
+	return backdrop({
 		panel = e("Frame", {
 			Name             = "Panel",
 			AnchorPoint      = Vector2.new(0.5, 0.5),
@@ -401,6 +511,7 @@ local function AppWindow(props)
 			BackgroundColor3 = R.surface.panel,
 			BorderSizePixel  = 0,
 			ClipsDescendants = true,
+			Active           = true,   -- §AGX/UI-P3: UX-06/UX-14
 			ZIndex           = zBase + 1,
 		}, {
 			corner = e("UICorner", { CornerRadius = Theme.Radius.lg }),

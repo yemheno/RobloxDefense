@@ -18,6 +18,20 @@ local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 -- §AGX/UI-P4: the pre-vote heads-up and the post-vote "Get ready!" alerts
 -- are Notify banners ("vote" priority) instead of VoteUI-drawn frames.
 local Notify         = require(script.Parent:WaitForChild("Common"):WaitForChild("Notify"))
+-- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
+-- outside a PanelHost, so Wave 1 behaves exactly as before).
+local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
+do
+	local shell = script.Parent:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" then
+			PanelStackHooks.useCloseHandler  = PanelStack.useCloseHandler or PanelStackHooks.useCloseHandler
+			PanelStackHooks.useModalPresence = PanelStack.useModalPresence or PanelStackHooks.useModalPresence
+		end
+	end
+end
 
 -- ═══════════════════════════════════════════════════════════
 -- PALETTE
@@ -345,6 +359,10 @@ local function VoteUI()
     end, {})
 
     -- Nothing to show
+    -- §AGX/UI-P3: A12. While the cards are up the vote is a modal presence:
+    -- open panels are suspended and new opens are refused (rail dimmed).
+    PanelStackHooks.useModalPresence("vote", voteData ~= nil)
+
     if not voteData then return nil end
 
     local cards = voteData.cards or {}

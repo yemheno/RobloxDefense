@@ -15,6 +15,20 @@ local useNpcDistanceClose = require(Players.LocalPlayer:WaitForChild("PlayerScri
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 -- §AGX/UI-P4: inline request feedback (pending/ok/err + 4 s timeout)
 local useRequest = require(Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useRequest"))
+local PlayerScripts_UI = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI")
+-- §AGX/UI-P3: register with the shell's PanelStack (A10, shell-spec §3.2.3).
+-- Nil-safe: without UI/Shell (or outside a PanelHost) useExternal is a no-op.
+local useExternal = function(_id, _isOpen, _closeFn) end
+do
+	local shell = PlayerScripts_UI:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" and PanelStack.useExternal then
+			useExternal = PanelStack.useExternal
+		end
+	end
+end
 
 -- ── Palette ───────────────────────────────────────────────
 local C = {
@@ -176,12 +190,31 @@ local function ShopUI(props)
 		end
 	end, {})
 
-	-- §AGX/X29: the server now drops NPC responses from out of range, so
-	-- close the panel when the player walks away (same as NPCDialog).
-	useNpcDistanceClose(shopData and shopData.npcId, shopData ~= nil, function()
+	-- §AGX/UI-P3: one close helper, defined before the early return so the
+	-- stack (useExternal) can call it. Fires NPCResponse Close exactly as the
+	-- ✕ always did.
+	local shopDataRef = React.useRef(nil)
+	shopDataRef.current = shopData
+	local function closeShop()
+		local data = shopDataRef.current
+		if data then
+			NetworkManager.FireServer("NPCResponse", {
+				npcId  = data.npcId,
+				action = "Close",
+			})
+		end
 		setShopData(nil)
 		onClose()
-	end)
+	end
+
+	-- §AGX/X29: the server now drops NPC responses from out of range, so
+	-- close the panel when the player walks away (same as NPCDialog).
+	-- §AGX/UI-P3: UX-17 nit, the distance path now sends NPCResponse Close
+	-- too (it used to only hide the panel; NPCDialog sends it on both paths).
+	useNpcDistanceClose(shopData and shopData.npcId, shopData ~= nil, closeShop)
+
+	-- §AGX/UI-P3: A10, register with the PanelStack (replaces / is replaced).
+	useExternal("npcShop", shopData ~= nil, closeShop)
 
 	if not shopData then
 		return nil
@@ -214,15 +247,6 @@ local function ShopUI(props)
 		})
 	end
 
-	local function closeShop()
-		NetworkManager.FireServer("NPCResponse", {
-			npcId  = shopData.npcId,
-			action = "Close",
-		})
-		setShopData(nil)
-		onClose()
-	end
-
 	return React.createElement("Frame", {
 		Name = "ShopUI",
 		Size = UDim2.fromScale(1, 1),
@@ -237,6 +261,7 @@ local function ShopUI(props)
 			Size = UDim2.fromScale(0.5, 0.55),
 			BackgroundColor3 = C.panel,
 			BorderSizePixel = 0,
+			Active = true,   -- §AGX/UI-P3: no click-through on empty panel space (UX-14)
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.02, 0) }),
 			pad = React.createElement("UIPadding", {

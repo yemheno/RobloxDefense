@@ -23,6 +23,20 @@ local SharedModules = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Mo
 
 -- InputSystem: live key-binding display (already initialized by the bootstrap)
 local InputSystem = require(SharedModules:WaitForChild("InputSystem"))
+-- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
+-- outside a PanelHost, so Wave 1 behaves exactly as before).
+local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
+do
+	local shell = script.Parent:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" then
+			PanelStackHooks.useCloseHandler  = PanelStack.useCloseHandler or PanelStackHooks.useCloseHandler
+			PanelStackHooks.useModalPresence = PanelStack.useModalPresence or PanelStackHooks.useModalPresence
+		end
+	end
+end
 
 -- Class description data accessible on the client
 local ClassDescriptions = require(
@@ -178,6 +192,19 @@ local function BattleClassUI(props)
 	props = props or {}
 	local activeClass, setActiveClass = useState("Aegis")
 	local showKeybinds, setShowKeybinds = useState(false)
+
+	-- §AGX/UI-P3: A13. Back closes the KeybindOverlay first (and vetoes the
+	-- pop); the next Back closes the class reference. No-op for the badge
+	-- instance and outside a PanelHost.
+	local showKeybindsRef = React.useRef(false)
+	showKeybindsRef.current = showKeybinds
+	PanelStackHooks.useCloseHandler(function(reason)
+		if showKeybindsRef.current and reason ~= "system" then
+			setShowKeybinds(false)
+			return false
+		end
+		return nil
+	end)
 	-- Incremented by OnBindingChanged so skill rows re-render with fresh key labels
 	local _bindingsVer, setBindingsVer = useState(0)
 	local topLeftInset = select(1, GuiService:GetGuiInset())

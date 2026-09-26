@@ -10,6 +10,8 @@
 	  • defaults     — per-platform default bindings
 	                   Keys: "Keyboard", "Gamepad", "Touch"
 	                   Values: array of Enum.KeyCode / Enum.UserInputType
+	  • rebindable   — §AGX/UI-P3: false = fixed key (UIBack, MenuToggle);
+	                   nil = rebindable (every older action)
 
 	Touch bindings are empty because mobile on-screen buttons call
 	InputSystem.FireAction() directly — no physical key involved.
@@ -108,6 +110,40 @@ InputActions.Definitions = {
 		defaults    = {
 			Keyboard = { Enum.KeyCode.Q },
 			Gamepad  = { Enum.KeyCode.DPadUp },
+			Touch    = {},
+		},
+	},
+
+	-- ═══ UI (§AGX/UI-P3, shell-spec §3.4) ═════════════════
+	-- Neither is rebindable and neither is listed by KeybindSettings /
+	-- SettingsUI (they enumerate their actions explicitly).
+
+	-- Close the top panel (PanelStack.back). Only in the "UI" context, so
+	-- gamepad B is Dash in Combat and Back while a menu is open: keyToActions
+	-- [ButtonB] holds both and dispatch fires only the context-enabled one.
+	-- A focused TextBox marks Backspace gameProcessed, so typing never pops.
+	UIBack = {
+		displayName = "Back",
+		category    = "UI",
+		contexts    = { UI = true },
+		rebindable  = false,
+		defaults    = {
+			Keyboard = { Enum.KeyCode.Backspace },
+			Gamepad  = { Enum.KeyCode.ButtonB },
+			Touch    = {},
+		},
+	},
+
+	-- Open / close the menu surface (bound by Shell/MenuSurface). M and
+	-- DPadDown are unused elsewhere.
+	MenuToggle = {
+		displayName = "Menu",
+		category    = "UI",
+		contexts    = { Lobby = true, Combat = true, UI = true },
+		rebindable  = false,
+		defaults    = {
+			Keyboard = { Enum.KeyCode.M },
+			Gamepad  = { Enum.KeyCode.DPadDown },
 			Touch    = {},
 		},
 	},

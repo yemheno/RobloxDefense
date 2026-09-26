@@ -21,6 +21,20 @@ local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 local useNpcDistanceClose = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useNpcDistanceClose"))  -- §DISC/D8
 local useRequest = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useRequest"))  -- §AGX/UI-P4
+local PlayerScripts_UI = PlayerScripts:WaitForChild("UI")
+-- §AGX/UI-P3: register with the shell's PanelStack (A10, shell-spec §3.2.3).
+-- Nil-safe: without UI/Shell (or outside a PanelHost) useExternal is a no-op.
+local useExternal = function(_id, _isOpen, _closeFn) end
+do
+	local shell = PlayerScripts_UI:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" and PanelStack.useExternal then
+			useExternal = PanelStack.useExternal
+		end
+	end
+end
 
 -- ── Palette ───────────────────────────────────────────────
 local C = {
@@ -211,6 +225,12 @@ local function NPCDialog(props)
 		or (questData and questData.npcId)
 		or (teleportData and teleportData.npcId)
 	useNpcDistanceClose(activeNpcId, activeNpcId ~= nil, closeDialog)
+
+	-- §AGX/UI-P3: A10. Opening replaces Stats / another NPC panel (UX-05);
+	-- a stack-initiated close (replace / back / blocked) runs closeDialog,
+	-- which still fires NPCResponse Close. closeDialog's own onClose() ->
+	-- close(id, "self") is then a no-op (the stack already removed it).
+	useExternal("npcDialog", activeNpcId ~= nil, closeDialog)
 
 	-- §AGX/UX-03: a dialogue that points at a missing node (end of tree)
 	-- closes from an effect. It used to call closeDialog() during render,
@@ -544,6 +564,7 @@ local function NPCDialog(props)
 			Size = UDim2.fromScale(0.45, 0.35),
 			BackgroundColor3 = C.panel,
 			BorderSizePixel = 0,
+			Active = true,   -- §AGX/UI-P3: A10, taps on empty panel space don't fall through (UX-14)
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.02, 0) }),
 			pad = React.createElement("UIPadding", {

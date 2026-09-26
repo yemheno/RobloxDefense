@@ -9,6 +9,10 @@
 
     • Prompts are enabled locally only while CurrentScene == "Village"
       (same gate the old scan used).
+    • §AGX/UI-P3: ...and only while the input context is not "UI" (F3 /
+      UX-05). The prompt has its own KeyboardKeyCode, so the InputSystem
+      context never gated it: E next to an NPC opened ShopUI over Stats.
+      Re-applied on InputSystem.OnContextChanged.
     • The prompt's keyboard key follows the player's "Interact" binding
       (default E), so rebinding in KeybindSettings still works.
     • PromptTriggered fires "NPCInteract" { npcId } to the server — the exact
@@ -32,6 +36,7 @@ local PROMPT_NAME = "NPCPrompt"
 -- ── State ─────────────────────────────────────────────────
 local connections        = {}
 local unbindBindingChange = nil
+local unbindContextChange = nil   -- §AGX/UI-P3
 local folderConns        = {}
 
 -- ═══════════════════════════════════════════════════════════
@@ -48,6 +53,11 @@ local function inVillage()
 	return player:GetAttribute("CurrentScene") == "Village"
 end
 
+-- §AGX/UI-P3: F3, no NPC prompt while a menu/panel holds the "UI" context.
+local function menuOpen()
+	return InputSystem ~= nil and InputSystem.GetContext() == "UI"
+end
+
 -- §AGX/UI-P2: keyboard key mirrors the Interact binding (default E).
 local function interactKeyCode()
 	local keys = InputSystem and InputSystem.GetBinding("Interact", "Keyboard") or {}
@@ -61,7 +71,7 @@ end
 local function applyToPrompt(prompt)
 	if not isNPCPrompt(prompt) then return end
 	-- Local-only property writes on a replicated instance.
-	prompt.Enabled = inVillage()
+	prompt.Enabled = inVillage() and not menuOpen()   -- §AGX/UI-P3: F3
 	prompt.KeyboardKeyCode = interactKeyCode()
 end
 
@@ -103,6 +113,7 @@ function NPCInteraction.Init()
 		if triggeringPlayer ~= player then return end
 		if not isNPCPrompt(prompt) then return end
 		if not inVillage() then return end
+		if menuOpen() then return end   -- §AGX/UI-P3: F3 (a trigger already in flight)
 		local npcId = prompt.Parent:GetAttribute("NPCId")
 		if npcId then
 			-- Same remote + payload as the pre-P2 Interact action.
@@ -113,6 +124,8 @@ function NPCInteraction.Init()
 	table.insert(connections, player:GetAttributeChangedSignal("CurrentScene"):Connect(applyAll))
 
 	unbindBindingChange = InputSystem.OnBindingChanged(applyAll)
+	-- §AGX/UI-P3: F3, re-apply when a menu opens/closes (PushUIContext).
+	unbindContextChange = InputSystem.OnContextChanged(applyAll)
 
 	local npcFolder = workspace:FindFirstChild("NPCs")
 	if npcFolder then
@@ -135,6 +148,7 @@ function NPCInteraction.Stop()
 	for _, c in ipairs(folderConns) do c:Disconnect() end
 	folderConns = {}
 	if unbindBindingChange then unbindBindingChange(); unbindBindingChange = nil end
+	if unbindContextChange then unbindContextChange(); unbindContextChange = nil end   -- §AGX/UI-P3
 end
 
 return NPCInteraction

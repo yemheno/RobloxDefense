@@ -24,6 +24,20 @@ local SoundManager   = require(SharedModules:WaitForChild("SoundManager"))
 local AppWindow      = require(script.Parent:WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
 local InputSystem    = require(SharedModules:WaitForChild("InputSystem"))
 local InputActions   = require(SharedModules:WaitForChild("InputSystem"):WaitForChild("InputActions"))
+-- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
+-- outside a PanelHost, so Wave 1 behaves exactly as before).
+local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
+do
+	local shell = script.Parent:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" then
+			PanelStackHooks.useCloseHandler  = PanelStack.useCloseHandler or PanelStackHooks.useCloseHandler
+			PanelStackHooks.useModalPresence = PanelStack.useModalPresence or PanelStackHooks.useModalPresence
+		end
+	end
+end
 
 local C = {
     bg           = Color3.fromRGB(18, 18, 24),
@@ -298,6 +312,18 @@ local function SettingsUI(props)
     local listeningFor, setListeningFor = React.useState(nil)
     local bindingsVersion, setBindingsVersion = React.useState(0)
 
+    -- §AGX/UI-P3: A11. Back / backdrop / replace while a key is being
+    -- captured cancels the capture and vetoes the close ("system" ignores it).
+    local listeningRef = React.useRef(nil)
+    listeningRef.current = listeningFor
+    PanelStackHooks.useCloseHandler(function(_reason)
+        if listeningRef.current then
+            setListeningFor(nil)
+            return false
+        end
+        return nil
+    end)
+
     local function changeMusicVol(value)
         setMusicVol(value)
         SoundManager.SetVolume("Music", value)
@@ -337,7 +363,9 @@ local function SettingsUI(props)
             local key = nil
             if input.UserInputType == Enum.UserInputType.Keyboard then
                 key = input.KeyCode
-                if key == Enum.KeyCode.Escape then
+                -- §AGX/UI-P3: Backspace is the UIBack key: it cancels the
+                -- capture (like Escape) instead of being bound.
+                if key == Enum.KeyCode.Escape or key == Enum.KeyCode.Backspace then
                     setListeningFor(nil)
                     return
                 end
