@@ -42,6 +42,19 @@ local Text        = require(Common:WaitForChild("Text"))
 local Button      = require(Common:WaitForChild("Button"))
 local Tabs        = require(Common:WaitForChild("Tabs"))
 local Card        = require(Common:WaitForChild("Card"))
+local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-FIX: R3
+
+-- §AGX/UI-FIX: R3: PanelStack.EntryContext, nil-safe (nil outside a PanelHost).
+local EntryContext = nil
+do
+	local shell = script.Parent:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" then EntryContext = PanelStack.EntryContext end
+	end
+end
+EntryContext = EntryContext or React.createContext(nil)
 
 local R  = Theme.Roles
 local SP = Theme.Space
@@ -199,6 +212,18 @@ local function WardrobeUI(props)
 		end
 	end
 
+	-- §AGX/UI-FIX: R3: explicit gamepad first focus = the first item card
+	-- (top-left of the grid), never "Unequip" in the top row. A Card has no
+	-- ref, and the cards arrive with RequestWardrobe after mount, so this is
+	-- a first focus scoped to the grid that waits for the cards (and one
+	-- frame for the grid layout) instead of PanelStack.useFirstFocus, which
+	-- would fire once at mount on an empty grid. Gamepad only, while top.
+	local entryCtx = React.useContext(EntryContext)
+	local isTop = entryCtx == nil or entryCtx.top == true
+	local gridRef = React.useRef(nil)
+	GamepadFocus.useAutoSelect(gridRef, (isTop and idx > 0) and "cards" or nil,
+		{ steal = true, defer = true })
+
 	return e(AppWindow, {
 		variant = "windowed",
 		title   = "Wardrobe",
@@ -242,6 +267,7 @@ local function WardrobeUI(props)
 				-- Scrolling card grid
 				cardScroll = e("ScrollingFrame", {
 					Name                   = "Grid",
+					ref                    = gridRef,   -- §AGX/UI-FIX: R3
 					Position               = UDim2.fromOffset(0, TOOLBAR_H + SP.md),
 					Size                   = UDim2.new(1, 0, 1, -(TOOLBAR_H + SP.md)),
 					BackgroundTransparency = 1,

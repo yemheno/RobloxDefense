@@ -57,16 +57,22 @@ local function RunControlsRegion(props)
 		end
 	end, {})
 
-	-- §AGX/UI-P7: gamepad only: select Start / Next Wave / Return when it
-	-- appears (a new key per button). Never steals from an open panel; B
-	-- (engine) drops the selection and the stick drives the character again.
+	-- §AGX/UI-P7: gamepad only: select Return when it appears
+	-- (§AGX/UI-FIX: R2: Start and Next Wave are never auto-focused). Never
+	-- steals from an open panel; B (engine) drops the selection and the
+	-- stick drives the character again.
 	local rootRef = React.useRef(nil)
 	-- §AGX/UI-P7: Next Wave is NOT auto-focused — between waves the player
 	-- is still fighting/moving, and a selected button steals the left stick.
-	local focusKey = (show.start and "start")
-		or (show.returnBtn and "return") or nil
+	-- §AGX/UI-FIX: R2: Start is NOT auto-focused either: any player can
+	-- start the run for the whole party, and a pad player pressing A (Jump)
+	-- in the Idle place would fire RequestStartGame. Only Return stays
+	-- focused (the run is over). rootRef now wraps Return alone, so the
+	-- findFirst fallback can never land on Start in the post-run Idle,
+	-- where both show.
+	local focusKey = show.returnBtn and "return" or nil
 	GamepadFocus.useAutoSelect(rootRef, focusKey,
-		{ prefer = { "StartGame", "NextWave", "ReturnToLobby" }, steal = false })
+		{ prefer = { "ReturnToLobby" }, steal = false })
 
 	local r = L.run
 	local function btn(name, label, variant, y, onActivated)
@@ -88,7 +94,6 @@ local function RunControlsRegion(props)
 		Size                   = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		ZIndex                 = 3,
-		ref                    = rootRef,   -- §AGX/UI-P7
 	}, {
 		start = show.start and btn("StartGame", "▶ Start Game", "primary", r.y, function()
 			NetworkManager.FireServer("RequestStartGame")
@@ -118,9 +123,21 @@ local function RunControlsRegion(props)
 			NetworkManager.FireServer("RequestNextWave")
 		end) or nil,
 
-		returnBtn = show.returnBtn and btn("ReturnToLobby", "Return to Lobby", "danger", returnY, function()
-			NetworkManager.FireServer("RequestReturnToLobby")
-		end) or nil,
+		-- §AGX/UI-FIX: R2: full-size transparent slot (same coordinates as
+		-- before, not Active, so it never takes a click) that scopes the
+		-- gamepad auto-select to Return.
+		returnSlot = e("Frame", {
+			Name                   = "ReturnSlot",
+			Size                   = UDim2.fromScale(1, 1),
+			BackgroundTransparency = 1,
+			Active                 = false,
+			ZIndex                 = 3,
+			ref                    = rootRef,
+		}, {
+			returnBtn = show.returnBtn and btn("ReturnToLobby", "Return to Lobby", "danger", returnY, function()
+				NetworkManager.FireServer("RequestReturnToLobby")
+			end) or nil,
+		}),
 	})
 end
 

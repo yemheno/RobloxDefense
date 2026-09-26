@@ -51,6 +51,7 @@
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
 local GuiService        = game:GetService("GuiService")  -- §AGX/UI-P2: map input coords → GUI space for zoom anchors
+local RunService        = game:GetService("RunService")  -- §AGX/UI-FIX: R5: gamepad pan / zoom
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
@@ -69,6 +70,24 @@ local IconButton     = require(Common:WaitForChild("IconButton"))
 local Panel          = require(Common:WaitForChild("Panel"))
 local CurrencyPill   = require(Common:WaitForChild("CurrencyPill"))
 local useFormFactor  = require(Common:WaitForChild("useFormFactor"))
+local GamepadFocus   = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-FIX: R5
+
+-- §AGX/UI-FIX: R5: PanelStack.useFirstFocus + EntryContext, nil-safe
+-- (no-ops outside a PanelHost / without UI/Shell).
+local useFirstFocus = function(_ref) end
+local EntryContext = nil
+do
+	local shell = script.Parent:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" then
+			if type(PanelStack.useFirstFocus) == "function" then useFirstFocus = PanelStack.useFirstFocus end
+			EntryContext = PanelStack.EntryContext
+		end
+	end
+end
+EntryContext = EntryContext or React.createContext(nil)
 
 local e  = React.createElement
 local R  = Theme.Roles
@@ -111,6 +130,17 @@ local MIN_CELL_TOUCH  = math.min(MAX_CELL, MIN_TAP_PX * DEFAULT_CELL / NODE_SIZE
 -- supports single-node refunds; until then Refund renders disabled with
 -- the reason instead of a button that silently does nothing.
 local INDIVIDUAL_REFUND_ENABLED = false
+
+-- §AGX/UI-FIX: R5: gamepad canvas controls (only while the tree is the top
+-- entry and the input is Gamepad). Right stick pans; RT / RB zoom in, LT /
+-- LB zoom out (LB / RB only while the entry has no Tabs). Priority one
+-- above GamepadNav's RD_UIScroll / RD_UITabs (High + 1), owner-guarded.
+local CAS_PAD_PAN   = "RD_TalentPan"
+local CAS_PAD_ZOOM  = "RD_TalentZoom"
+local PAD_PRIORITY  = Enum.ContextActionPriority.High.Value + 2
+local PAD_DEADZONE  = 0.2
+local PAD_PAN_SPEED = 900    -- design px / s at full stick
+local PAD_ZOOM_RATE = 4      -- ZOOM_STEP steps / s while a zoom button is held
 -- §AGX/UI-P6: display only; the server charges 1 Respec Scroll or
 -- PlayerDataConfig.RESPEC_COSTS.*.essence (§AGX/X42).
 local RESPEC_ESSENCE = 25
@@ -352,6 +382,8 @@ local function TalentNode(props)
 	local isOrigin = node.x == 0 and node.y == 0
 
 	return e("TextButton", {
+		Name             = "Node_" .. tostring(node.id),   -- §AGX/UI-FIX: R5
+		ref              = props.nodeRef,                  -- §AGX/UI-FIX: R5 (Origin only)
 		AnchorPoint      = Vector2.new(0.5, 0.5),
 		Position         = UDim2.fromOffset(px, py),
 		Size             = UDim2.fromOffset(diameter, diameter),
@@ -989,6 +1021,83 @@ local function TalentTreeUI(props)
 		end
 	end, { uiScale.target })   -- §AGX/UI-P6: re-measure when the uiScale changes
 
+	-- §AGX/UI-FIX: R5: gamepad first focus = the Origin node (always at
+	-- the view centre when the tree opens), never the header Respec.
+	local originRef = React.useRef(nil)
+	useFirstFocus(originRef)
+
+	-- §AGX/UI-FIX: R5: gamepad pan / zoom while the tree is top.
+	local gamepad = GamepadFocus.useGamepad()
+	local entryCtx = React.useContext(EntryContext)
+	local padOn = gamepad and (entryCtx == nil or entryCtx.top == true)
+	local entryId = entryCtx and entryCtx.id or nil
+	React.useEffect(function()
+		if not padOn then return nil end
+		local owner = {}
+		local stick = Vector2.zero
+		local zoomIn, zoomOut = false, false
+
+		GamepadFocus.bindOwned(CAS_PAD_PAN, owner, function(_, state, input)
+			-- Focus inside the detail panel: RD_UIScroll scrolls its text.
+			local sel, panel = GuiService.SelectedObject, panelRef.current
+			if sel and panel and sel:IsDescendantOf(panel) then
+				stick = Vector2.zero
+				return Enum.ContextActionResult.Pass
+			end
+			if state == Enum.UserInputState.End or state == Enum.UserInputState.Cancel then
+				stick = Vector2.zero
+			else
+				stick = Vector2.new(input.Position.X, input.Position.Y)
+			end
+			return Enum.ContextActionResult.Sink
+		end, PAD_PRIORITY, Enum.KeyCode.Thumbstick2)
+
+		GamepadFocus.bindOwned(CAS_PAD_ZOOM, owner, function(_, state, input)
+			local k = input.KeyCode
+			if k == Enum.KeyCode.ButtonL1 or k == Enum.KeyCode.ButtonR1 then
+				-- LB / RB belong to the entry's Tabs when it has any.
+				local canvas = canvasRef.current
+				local entry = canvas and entryId and canvas:FindFirstAncestor(entryId)
+				if entry and GamepadFocus.tabsIn(entry) then
+					return Enum.ContextActionResult.Pass
+				end
+			end
+			local held = state ~= Enum.UserInputState.End and state ~= Enum.UserInputState.Cancel
+			if k == Enum.KeyCode.ButtonR2 or k == Enum.KeyCode.ButtonR1 then
+				zoomIn = held
+			else
+				zoomOut = held
+			end
+			return Enum.ContextActionResult.Sink
+		end, PAD_PRIORITY, Enum.KeyCode.ButtonL2, Enum.KeyCode.ButtonR2,
+			Enum.KeyCode.ButtonL1, Enum.KeyCode.ButtonR1)
+
+		local conn = RunService.Heartbeat:Connect(function(dt)
+			local canvas = canvasRef.current
+			if not canvas then return end
+			local moved = false
+			if stick.Magnitude >= PAD_DEADZONE then
+				-- stick right / up looks right / up: the web moves left / down
+				setOffset(latestDragOffset.current
+					+ Vector2.new(-stick.X, stick.Y) * (PAD_PAN_SPEED * dt))
+				moved = true
+			end
+			local z = (zoomIn and 1 or 0) - (zoomOut and 1 or 0)
+			if z ~= 0 then
+				zoomAbout(cellRef.current * ZOOM_STEP ^ (z * PAD_ZOOM_RATE * dt), canvasSizeRef.current / 2)
+				moved = true
+			end
+			-- A node panned out of the clipped canvas can't stay focused.
+			if moved then GamepadFocus.reselectInView(canvas) end
+		end)
+
+		return function()
+			conn:Disconnect()
+			GamepadFocus.unbindOwned(CAS_PAD_PAN, owner)
+			GamepadFocus.unbindOwned(CAS_PAD_ZOOM, owner)
+		end
+	end, { padOn, entryId } :: { any })
+
 	local allocated      = talentState.allocatedNodes or {}
 	local pointsAvail    = talentState.pointsAvailable or 0
 	local allocatableSet = {}
@@ -1068,7 +1177,9 @@ local function TalentTreeUI(props)
 		end
 		local now = os.clock()
 		local last = lastClick.current
-		if not isTouch and last.id == node.id and now - last.t < DOUBLE_CLICK_S then
+		-- §AGX/UI-FIX: no double-A shortcut on gamepad — spending is only via
+		-- the Allocate button (refund is off; respec costs Essence).
+		if not isTouch and ff.input ~= "Gamepad" and last.id == node.id and now - last.t < DOUBLE_CLICK_S then
 			lastClick.current = { id = nil, t = 0 }
 			if allocatableSet[node.id] and not allocated[node.id] then
 				TalentClient.AllocateNode(node.id)
@@ -1117,6 +1228,7 @@ local function TalentTreeUI(props)
 			isAllocatable = allocatableSet[node.id] == true,
 			canRefund     = allocated[node.id] == true and TalentClient.CanRefund(node.id),
 			isSelected    = selectedId == node.id,
+			nodeRef       = (node.id == START_ID) and originRef or nil,   -- §AGX/UI-FIX: R5
 			px = px, py = py, cell = renderCell,
 			onActivate     = onNodeActivated,
 			onPointerBegan = onPointerBegan,
@@ -1181,6 +1293,9 @@ local function TalentTreeUI(props)
 	local legendText = isTouch
 		and "Tap = Select  |  Drag = Pan  |  Pinch = Zoom"
 		or  "Click = Select  |  Double-click = Allocate  |  Drag = Pan  |  Scroll = Zoom"
+	if gamepad then   -- §AGX/UI-FIX: R5 (gamepad only)
+		legendText = "A = Select  |  Right stick = Pan  |  LT / RT = Zoom"
+	end
 
 	return e(AppWindow, {
 		variant       = "fullscreen",

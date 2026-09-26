@@ -22,6 +22,7 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService  = game:GetService("UserInputService")  -- §AGX/UI-P1
+local GuiService        = game:GetService("GuiService")        -- §AGX/UI-FIX: R3
 local React = require(ReplicatedStorage.Packages.React)
 
 local Modules        = script.Parent.Parent:WaitForChild("Modules")
@@ -38,6 +39,21 @@ local IconButton    = require(Common:WaitForChild("IconButton"))
 local Panel         = require(Common:WaitForChild("Panel"))
 local CurrencyPill  = require(Common:WaitForChild("CurrencyPill"))
 local useFormFactor = require(Common:WaitForChild("useFormFactor"))
+local GamepadFocus  = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-FIX: R3
+
+-- §AGX/UI-FIX: R3: PanelStack.useFirstFocus, nil-safe (no-op outside a
+-- PanelHost / without UI/Shell).
+local useFirstFocus = function(_ref) end
+do
+	local shell = script.Parent:FindFirstChild("Shell")
+	local mod = shell and shell:FindFirstChild("PanelStack")
+	if mod then
+		local ok, PanelStack = pcall(require, mod)
+		if ok and type(PanelStack) == "table" and type(PanelStack.useFirstFocus) == "function" then
+			useFirstFocus = PanelStack.useFirstFocus
+		end
+	end
+end
 
 local e = React.createElement
 local R = Theme.Roles
@@ -175,6 +191,28 @@ local function StatRow(props)
 		end
 	end, {})
 
+	-- §AGX/UI-FIX: R3: gamepad first focus for the panel. Row 1 publishes
+	-- its "+" (points to spend) or, with 0 points (the "+" is disabled and
+	-- not selectable), its PlusHost frame, which is then a selectable
+	-- no-op stop showing the focus ring on the row; never Respec. When the
+	-- points arrive / run out while row 1 is focused, the focus moves
+	-- between the two. SelectedObject is only ever set by the gamepad, so
+	-- mouse / touch never see this.
+	local isFirst = props.focusRef ~= nil
+	React.useEffect(function()
+		if not isFirst then return end
+		local host = plusHostRef.current
+		if not host then return end
+		local btn = host:FindFirstChild("Add_" .. meta.id)
+		props.focusRef.current = (canAdd and btn) or host
+		local sel = GuiService.SelectedObject
+		if canAdd and btn and sel == host then
+			GamepadFocus.select(btn)
+		elseif not canAdd and btn and sel == btn then
+			GamepadFocus.select(host)
+		end
+	end)
+
 	-- Pointer presses are handled on InputBegan above; Activated only covers
 	-- gamepad / keyboard activation so a click doesn't add two points.
 	local function onAddActivated(_rbx, input)
@@ -224,6 +262,9 @@ local function StatRow(props)
 			Size                   = UDim2.fromOffset(PLUS_SIZE, PLUS_SIZE),
 			BackgroundTransparency = 1,
 			ref                    = plusHostRef,
+			-- §AGX/UI-FIX: R3: gamepad-only placeholder stop (row 1, 0 points).
+			Selectable             = isFirst and not canAdd,
+			SelectionImageObject   = GamepadFocus.ring("md"),
 		}, {
 			btn = e(IconButton, {
 				name        = "Add_" .. meta.id,
@@ -335,6 +376,11 @@ local function StatsMenu(props)
 		end
 	end, {})
 
+	-- §AGX/UI-FIX: R3: explicit gamepad first focus = row 1's "+" (or the
+	-- row itself with 0 points), never the Respec danger button above it.
+	local firstFocusRef = React.useRef(nil)
+	useFirstFocus(firstFocusRef)
+
 	local wide = bodyW >= WIDE_MIN
 	local gap = SP.md
 
@@ -349,6 +395,7 @@ local function StatsMenu(props)
 	for i, meta in ipairs(STAT_META) do
 		statRows["row_" .. meta.id] = e(StatRow, {
 			meta        = meta,
+			focusRef    = (i == 1) and firstFocusRef or nil,   -- §AGX/UI-FIX: R3
 			allocated   = stats.allocated[meta.id] or 0,
 			canAdd      = stats.unallocated > 0,
 			unallocated = stats.unallocated,  -- §AGX/UI-P1: hold budget
@@ -406,6 +453,7 @@ local function StatsMenu(props)
 		}),
 		-- Full Respec button (uses 1 Respec Scroll if owned, otherwise Essence — §AGX/X42)
 		respec = e(Button, {
+			name        = "Respec",   -- §AGX/UI-FIX: R3: ranked last for gamepad focus
 			variant     = "danger",
 			size        = "sm",
 			label       = "Respec",

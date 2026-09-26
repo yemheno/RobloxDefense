@@ -46,6 +46,8 @@ local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-
 -- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
 -- outside a PanelHost, so Wave 1 behaves exactly as before).
 local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
+-- §AGX/UI-FIX: R8: the entry context (nil outside a PanelHost).
+local EntryContext = nil
 do
 	local shell = script.Parent:FindFirstChild("Shell")
 	local mod = shell and shell:FindFirstChild("PanelStack")
@@ -54,9 +56,12 @@ do
 		if ok and type(PanelStack) == "table" then
 			PanelStackHooks.useCloseHandler  = PanelStack.useCloseHandler or PanelStackHooks.useCloseHandler
 			PanelStackHooks.useModalPresence = PanelStack.useModalPresence or PanelStackHooks.useModalPresence
+			EntryContext = PanelStack.EntryContext   -- §AGX/UI-FIX: R8
 		end
 	end
 end
+
+EntryContext = EntryContext or React.createContext(nil)   -- §AGX/UI-FIX: R8
 
 local e = React.createElement
 local R = Theme.Roles
@@ -272,6 +277,8 @@ local function BindingRow(props)
 			position    = UDim2.fromScale(1, 0.5),
 			selected    = isListening,
 			label       = isListening and "Press key…" or InputSystem.GetBindingDisplayName(actionName, "Keyboard"),
+			-- §AGX/UI-FIX: R7: no keyboard = a capture could never finish.
+			disabled    = props.disabled == true,
 			onActivated = props.onActivate,
 		}),
 	})
@@ -361,7 +368,14 @@ local function SettingsUI(props)
 			return
 		end
 
-		local conn = UserInputService.InputBegan:Connect(function(input)
+		-- §AGX/UI-FIX: R1: a click the GUI consumed (the ✕, a tab, Reset,
+		-- another row's key, this badge again) is never captured as a
+		-- binding; only a click in open space binds a mouse button. Keys
+		-- still bind even when gameProcessed.
+		local conn = UserInputService.InputBegan:Connect(function(input, gameProcessed)
+			if gameProcessed and input.UserInputType ~= Enum.UserInputType.Keyboard then
+				return
+			end
 			local key = nil
 			if input.UserInputType == Enum.UserInputType.Keyboard then
 				key = input.KeyCode
@@ -390,6 +404,21 @@ local function SettingsUI(props)
 			conn:Disconnect()
 		end
 	end, { listeningFor })
+
+	-- §AGX/UI-FIX: R8: gamepad first focus INTO this panel. Inside the combat
+	-- "Controls / Rebind Keys" overlay SettingsUI shares the "class" entry,
+	-- whose first focus keeps the selection on RebindBtn behind it; select
+	-- into the Settings body instead (steal). Gamepad only, and only while
+	-- the entry is top (always, outside a PanelHost).
+	local entryCtx = React.useContext(EntryContext)
+	local isTop = entryCtx == nil or entryCtx.top == true
+	local contentRef = React.useRef(nil)
+	local bodyRef = React.useRef(nil)
+	React.useEffect(function()
+		local c = contentRef.current
+		bodyRef.current = c and c.Parent or nil   -- the SettingsBody frame (tabs + content)
+	end)
+	GamepadFocus.useAutoSelect(bodyRef, isTop and "settings" or nil, { steal = true, defer = true })
 
 	local content
 	if activeTab == "Audio" then
@@ -432,6 +461,7 @@ local function SettingsUI(props)
 					content[actionName] = e(BindingRow, {
 						actionName  = actionName,
 						isListening = listeningFor == actionName,
+						disabled    = not UserInputService.KeyboardEnabled,   -- §AGX/UI-FIX: R7
 						order       = order,
 						version     = bindingsVersion,
 						onActivate  = function()
@@ -503,6 +533,7 @@ local function SettingsUI(props)
 			}),
 			content = e("ScrollingFrame", {
 				Name                   = "Content",
+				ref                    = contentRef,   -- §AGX/UI-FIX: R8
 				Position               = UDim2.fromOffset(0, Theme.Metrics.tabs.height),
 				Size                   = UDim2.new(1, 0, 1, -Theme.Metrics.tabs.height),
 				BackgroundTransparency = 1,

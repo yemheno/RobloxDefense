@@ -18,6 +18,7 @@
     ── Queries ────────────────────────────────────────────────────────────
     GamepadFocus.isGamepad()                 FormFactor input == "Gamepad"
     GamepadFocus.canSelect(obj, root?)       Selectable + shown + non-zero size
+                                             + not clipped out (§AGX/UI-FIX: R5)
     GamepadFocus.findFirst(root, prefer?)    prefer = { "Name", ... } first;
                                              else top-left, content before tabs
                                              before the close button
@@ -36,14 +37,18 @@
                                              the incoming top's action
 
     ── Scrolling (right stick) ────────────────────────────────────────────
-    GamepadFocus.scrollTarget(root?) -> ScrollingFrame?   nearest scrollable
-                                             ancestor of the selection
+    GamepadFocus.scrollTarget(root?) -> ScrollingFrame?
+                                             nearest scrollable ancestor of the
+                                             selection, else the largest
+                                             scrollable one under root
+                                             (§AGX/UI-FIX: R4)
+    GamepadFocus.reselectInView(container)   (§AGX/UI-FIX: R5)
     GamepadFocus.scrollBy(sf, stick, dt)     + reselect when the selection
                                              leaves the window
 
     ── React ──────────────────────────────────────────────────────────────
     GamepadFocus.useGamepad() -> boolean
-    GamepadFocus.useAutoSelect(rootRef, key, { prefer?, steal? })
+    GamepadFocus.useAutoSelect(rootRef, key, { prefer?, steal?, defer? })
         While `key` is truthy AND the input is Gamepad: select the preferred
         (or first) selectable under rootRef. A new key re-selects. When key
         goes falsy / unmounts, clears the selection if it is still ours.
@@ -138,17 +143,86 @@ local function isShown(obj, root)
 	return false
 end
 
+-- §AGX/UI-FIX: R5. True when obj lies entirely outside the rect of a
+-- clipping (ClipsDescendants) ancestor, e.g. a talent node panned out of
+-- the tree canvas. The walk stops at the first ScrollingFrame: the engine
+-- scrolls a selected child of a ScrollingFrame into view, so list rows
+-- outside the window stay selectable exactly as before.
+local function isClippedOut(obj)
+	local p, s = obj.AbsolutePosition, obj.AbsoluteSize
+	local cur = obj.Parent
+	while cur and not cur:IsA("LayerCollector") do
+		if cur:IsA("ScrollingFrame") then return false end
+		if cur:IsA("GuiObject") and cur.ClipsDescendants then
+			local cp, cs = cur.AbsolutePosition, cur.AbsoluteSize
+			if p.X + s.X <= cp.X or p.X >= cp.X + cs.X
+				or p.Y + s.Y <= cp.Y or p.Y >= cp.Y + cs.Y then
+				return true
+			end
+		end
+		cur = cur.Parent
+	end
+	return false
+end
+
 function GamepadFocus.canSelect(obj, root)
 	if not obj or not obj:IsA("GuiObject") or not obj.Selectable then return false end
 	local size = obj.AbsoluteSize
 	if size.X < 2 or size.Y < 2 then return false end
-	return isShown(obj, root)
+	if not isShown(obj, root) then return false end
+	return not isClippedOut(obj)   -- §AGX/UI-FIX: R5
 end
 
--- Content first, then tabs (LB / RB reach them anyway), the close ✕ last.
+--- §AGX/UI-FIX: R10: a control the player can see and press (a GuiButton,
+--- TextBox or selectable non-scrolling GuiObject), shown under root and not
+--- clipped out. Used by the hint strip to avoid covering controls.
+function GamepadFocus.isVisibleControl(obj, root)
+	if not obj:IsA("GuiObject") or obj:IsA("ScrollingFrame") then return false end
+	if not (obj:IsA("GuiButton") or obj:IsA("TextBox") or obj.Selectable) then return false end
+	local size = obj.AbsoluteSize
+	if size.X < 2 or size.Y < 2 then return false end
+	return isShown(obj, root) and not isClippedOut(obj)
+end
+
+-- §AGX/UI-FIX: R3. Destructive controls (danger-variant Buttons, Respec,
+-- Unequip) never get first focus: they rank with the close ✕. A Button
+-- carries no variant tag, so danger is read off its fill (or its 9-slice
+-- plate when the art is pasted).
+local DANGER_FILL = Theme.Roles.state and Theme.Roles.state.dangerFill
+local function dangerPlateId()
+	local ok, img = pcall(Theme.GetImage, "btnDanger")
+	if ok and type(img) == "table" then return img.id end
+	return nil
+end
+local DANGER_PLATE = dangerPlateId()
+
+local function isDestructive(obj)
+	local n = string.lower(obj.Name)
+	if string.find(n, "respec", 1, true) or string.find(n, "unequip", 1, true) then return true end
+	if not obj:IsA("GuiButton") then return false end
+	-- Button keeps BackgroundColor3 = the variant fill even when a plate
+	-- makes the background transparent.
+	if DANGER_FILL and obj.BackgroundColor3 == DANGER_FILL then return true end
+	if DANGER_PLATE then
+		local plate = obj:FindFirstChild("Plate")
+		if plate and plate:IsA("ImageLabel") and plate.Image == DANGER_PLATE then return true end
+	end
+	-- Label text ("Respec" / "Unequip") for Buttons given another name.
+	for _, d in ipairs(obj:GetDescendants()) do
+		if d:IsA("TextLabel") or d:IsA("TextButton") then
+			local t = string.lower(d.Text)
+			if t == "respec" or t == "unequip" then return true end
+		end
+	end
+	return false
+end
+
+-- Content first, then tabs (LB / RB reach them anyway), the close ✕ and
+-- destructive buttons last.
 local function rank(obj)
 	local n = obj.Name
 	if n == "Close" or string.sub(n, 1, 16) == "IconButton_close" then return 3 end
+	if isDestructive(obj) then return 3 end   -- §AGX/UI-FIX: R3
 	if string.sub(n, 1, 4) == "Tab_" then return 2 end
 	return 1
 end
@@ -252,31 +326,57 @@ local function canScroll(sf)
 	return canvas.Y > win.Y + 1 or canvas.X > win.X + 1
 end
 
+-- §AGX/UI-FIX: R4. The largest shown, scrollable ScrollingFrame under
+-- root: read-only lists (Equipment, Achievements, Leaderboard) have nothing
+-- selectable inside, so the selection's ancestors never reach them.
+local function largestScrollable(root)
+	local best, bestArea = nil, 0
+	for _, d in ipairs(root:GetDescendants()) do
+		if d:IsA("ScrollingFrame") and canScroll(d) and isShown(d, root) and not isClippedOut(d) then
+			local ws = d.AbsoluteWindowSize
+			local area = ws.X * ws.Y
+			if area > bestArea then best, bestArea = d, area end
+		end
+	end
+	return best
+end
+
+--- The ScrollingFrame the right stick drives: the nearest scrollable
+--- ancestor of the selection, else (§AGX/UI-FIX: R4) the largest
+--- scrollable ScrollingFrame under root.
 function GamepadFocus.scrollTarget(root)
 	local sel = GuiService.SelectedObject
-	if not sel or not sel.Parent then return nil end
-	if root and not GamepadFocus.isInside(sel, root) then return nil end
-	local cur = sel:IsA("ScrollingFrame") and sel or sel.Parent
-	while cur and cur ~= root do
-		if cur:IsA("ScrollingFrame") and canScroll(cur) then return cur end
-		cur = cur.Parent
+	if sel and sel.Parent and (not root or GamepadFocus.isInside(sel, root)) then
+		local cur = sel:IsA("ScrollingFrame") and sel or sel.Parent
+		while cur and cur ~= root do
+			if cur:IsA("ScrollingFrame") and canScroll(cur) then return cur end
+			cur = cur.Parent
+		end
 	end
-	return nil
+	if not root then return nil end
+	return largestScrollable(root)
+end
+
+-- §AGX/UI-FIX: R5: works for a plain (clipping) Frame as well.
+local function windowSize(container)
+	return container:IsA("ScrollingFrame") and container.AbsoluteWindowSize or container.AbsoluteSize
 end
 
 local function inWindow(obj, sf)
 	local p, s = obj.AbsolutePosition, obj.AbsoluteSize
-	local wp, ws = sf.AbsolutePosition, sf.AbsoluteWindowSize
+	local wp, ws = sf.AbsolutePosition, windowSize(sf)
 	local cx, cy = p.X + s.X / 2, p.Y + s.Y / 2
 	return cx >= wp.X and cx <= wp.X + ws.X and cy >= wp.Y and cy <= wp.Y + ws.Y
 end
 
 -- Keep the selection on screen: if the stick scrolled it out of the window,
--- move it to the selectable nearest the window centre.
+-- move it to the selectable nearest the window centre. §AGX/UI-FIX: R4: a
+-- selection that lives outside `sf` (a tab, the ✕) is left alone.
 local function reselectInView(sf)
 	local sel = GuiService.SelectedObject
+	if sel and sel.Parent and not sel:IsDescendantOf(sf) then return end
 	if sel and sel.Parent and inWindow(sel, sf) then return end
-	local wp, ws = sf.AbsolutePosition, sf.AbsoluteWindowSize
+	local wp, ws = sf.AbsolutePosition, windowSize(sf)
 	local centre = Vector2.new(wp.X + ws.X / 2, wp.Y + ws.Y / 2)
 	local best, bestD = nil, math.huge
 	for _, o in ipairs(sf:GetDescendants()) do
@@ -287,6 +387,12 @@ local function reselectInView(sf)
 		end
 	end
 	if best then GamepadFocus.select(best) end
+end
+
+--- §AGX/UI-FIX: R5: public form for non-scrolling canvases (the talent
+--- tree pans its own clipping Frame).
+function GamepadFocus.reselectInView(container)
+	if container then reselectInView(container) end
 end
 
 function GamepadFocus.scrollBy(sf, stick, dt)
@@ -323,6 +429,9 @@ function GamepadFocus.useAutoSelect(rootRef, key, opts)
 		GamepadFocus.installDefault()
 		local alive = true
 		task.spawn(function()
+			-- §AGX/UI-FIX: R3: `defer` waits one frame so a fresh layout
+			-- (grid cells) has real AbsolutePositions before findFirst.
+			if (optsRef.current or {}).defer then task.wait() end
 			for _ = 1, AUTOSELECT_TRIES do
 				if not alive then return end
 				local root = rootRef.current

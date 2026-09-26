@@ -16,9 +16,11 @@
         the top entry): cycle tabs, skipping locked ones. If the focus was on
         a tab (or lost) it follows the new active tab.
       • Right stick (CAS "RD_UIScroll", High+1, while top): scroll the
-        nearest scrollable ScrollingFrame around the selection; Pass when
-        there is none (the camera keeps the stick). Nothing is bound while
-        no panel is open, so combat twin-stick aim is untouched.
+        nearest scrollable ScrollingFrame around the selection, else
+        (§AGX/UI-FIX: R4) the largest scrollable ScrollingFrame in the
+        entry, so read-only lists scroll too; Pass when there is none (the
+        camera keeps the stick). Nothing is bound while no panel is open,
+        so combat twin-stick aim is untouched.
       Both CAS actions are unbound on pop / when the entry stops being top /
       on a switch away from the gamepad (owner-guarded, GamepadFocus.bindOwned).
 
@@ -27,7 +29,9 @@
     engine's selection mode over the HUD when no panel is open; while a
     panel is top, first focus and re-focus keep the pad inside it.
 
-    GamepadNav.Hints{ tabs, side }   A Select · B Back (· LB/RB Tabs) strip
+    GamepadNav.Hints{ tabs, side }   A Select · B Back (· LB/RB Tabs) strip;
+                                     §AGX/UI-FIX: R10: hides itself while it
+                                     would cover a control of the entry
     GamepadNav.clearIfInside(gui)    clear GuiService.SelectedObject if it is
                                      inside `gui` or detached (all closed)
 ]]
@@ -62,6 +66,10 @@ local CAS_TABS   = "RD_UITabs"
 local CAS_SCROLL = "RD_UIScroll"
 local CAS_PRIORITY = Enum.ContextActionPriority.High.Value + 1
 local FOCUS_TRIES = 12   -- x 0.05 s
+-- §AGX/UI-FIX: R10: hint-strip overlap check cadence and the minimum time
+-- it stays hidden (a talent node panning under it must not flicker it).
+local HINT_CHECK_S = 0.3
+local HINT_HOLD_S  = 1.5
 
 local GamepadNav = {}
 
@@ -279,10 +287,69 @@ local function Hint(props)
 	}, children)
 end
 
+-- §AGX/UI-FIX: R10: does the rect (screen px) cover a visible control of
+-- `entry` (outside `strip`)?
+local function coversControl(pos, size, entry, strip)
+	local x1, y1 = pos.X, pos.Y
+	local x2, y2 = x1 + size.X, y1 + size.Y
+	for _, d in ipairs(entry:GetDescendants()) do
+		if d:IsA("GuiObject") and not d:IsDescendantOf(strip)
+			and GamepadFocus.isVisibleControl(d, entry) then
+			local p, s = d.AbsolutePosition, d.AbsoluteSize
+			if p.X < x2 and p.X + s.X > x1 and p.Y < y2 and p.Y + s.Y > y1 then
+				return true
+			end
+		end
+	end
+	return false
+end
+
 --- props: tabs (boolean), side (boolean: right sheet), zIndex
 function GamepadNav.Hints(props)
+	-- §AGX/UI-FIX: R10: the strip sits bottom-centre at z 1000 inside the
+	-- entry; on fullscreen / sheet presentations it can cover a bottom
+	-- action bar. It cannot reserve padding in the entry (PanelHost owns the
+	-- layout), so it hides while it would cover a visible control, and
+	-- stays hidden at least HINT_HOLD_S. Gamepad only (PanelHost renders the
+	-- strip only while navOn).
+	local stripRef = React.useRef(nil)
+	local hidden, setHidden = React.useState(false)
+	React.useEffect(function()
+		local alive = true
+		local rect = nil           -- last measured { pos, size, entrySize }
+		local hiddenNow = false
+		local hiddenAt = 0
+		task.spawn(function()
+			while alive do
+				local strip = stripRef.current
+				local entry = strip and strip.Parent
+				if strip and entry and entry:IsA("GuiObject") then
+					-- Measure while shown; a resized entry invalidates it.
+					if not hiddenNow then
+						rect = { pos = strip.AbsolutePosition, size = strip.AbsoluteSize, entrySize = entry.AbsoluteSize }
+					elseif rect and rect.entrySize ~= entry.AbsoluteSize then
+						rect = nil
+					end
+					local covers = rect ~= nil and rect.size.X >= 2
+						and coversControl(rect.pos, rect.size, entry, strip)
+					if covers and not hiddenNow then
+						hiddenNow, hiddenAt = true, os.clock()
+						setHidden(true)
+					elseif not covers and hiddenNow and os.clock() - hiddenAt >= HINT_HOLD_S then
+						hiddenNow = false
+						setHidden(false)
+					end
+				end
+				task.wait(HINT_CHECK_S)
+			end
+		end)
+		return function() alive = false end
+	end, {})
+
 	return e("Frame", {
 		Name                   = "GamepadHints",
+		ref                    = stripRef,   -- §AGX/UI-FIX: R10
+		Visible                = not hidden, -- §AGX/UI-FIX: R10
 		AnchorPoint            = props.side and Vector2.new(1, 1) or Vector2.new(0.5, 1),
 		Position               = props.side and UDim2.new(1, -Theme.Space.lg, 1, -Theme.Space.sm)
 			or UDim2.new(0.5, 0, 1, -Theme.Space.sm),

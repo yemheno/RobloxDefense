@@ -11,6 +11,8 @@
     presents it as a dialog: phone = bottom sheet). Body = design px inside
     UIScaleRoot.Local, one vertical list in a ScrollingFrame (the phone
     sheet body is ~120 design px, so it scrolls instead of clipping).
+    §AGX/UI-FIX: R9: the Claim button is pinned below that list (outside
+    the ScrollingFrame), so it can never sit below the fold on a phone.
     Rewards "100 Merits" / "2 Essence" render as CurrencyPills; the claim
     is the ONE primary (orange) Button ("Already Claimed" = locked,
     "…" while pending). Kept: useRequest, the §AGX/X47 calendar + spree
@@ -39,6 +41,10 @@ local R  = Theme.Roles
 local SP = Theme.Space
 
 local CLAIM_W = 240   -- design px
+-- §AGX/UI-FIX: R9: Claim is pinned under the scrolling list, so it is on
+-- screen in the phone bottom sheet (~127 design px of body at 844x390).
+local CLAIM_H      = Theme.Metrics.button.md          -- Button size "md"
+local CLAIM_FOOT_H = CLAIM_H + SP.sm + SP.sm          -- button + gaps
 
 -- "100 Merits" -> "merits", 100 (a Theme.Currency key), else nil.
 local function parseCurrency(entry)
@@ -156,7 +162,8 @@ local function DailyLoginUI(props)
 	}, {
 		content = e(UIScaleRoot.Local, { name = "DailyLoginBody", zIndex = Theme.Z.window + 2 }, {
 			scroll = e("ScrollingFrame", {
-				Size                   = UDim2.fromScale(1, 1),
+				-- §AGX/UI-FIX: R9: leaves the footer strip for the pinned Claim.
+				Size                   = UDim2.new(1, 0, 1, -CLAIM_FOOT_H),
 				BackgroundTransparency = 1,
 				BorderSizePixel        = 0,
 				CanvasSize             = UDim2.new(),
@@ -198,21 +205,22 @@ local function DailyLoginUI(props)
 					wrap        = true,
 					layoutOrder = 3,
 				}) or nil,
-
-				claimBtn = e(Button, {
-					variant     = "primary",
-					size        = "md",
-					width       = CLAIM_W,
-					label       = canClaim and "Claim Reward" or "Already Claimed",
-					disabled    = not canClaim,
-					loading     = claimReq.pending == true,
-					layoutOrder = 4,
-					onActivated = function()
-						if canClaim and not claimReq.pending then  -- §AGX/UI-P4: no double claim
-							claimReq.send()  -- §AGX/UI-P4: fires ClaimDailyLogin
-						end
-					end,
-				}),
+			}),
+			-- §AGX/UI-FIX: R9: pinned outside the ScrollingFrame, bottom-centre.
+			claimBtn = e(Button, {
+				anchorPoint = Vector2.new(0.5, 1),
+				position    = UDim2.new(0.5, 0, 1, -SP.sm),
+				variant     = "primary",
+				size        = "md",
+				width       = CLAIM_W,
+				label       = canClaim and "Claim Reward" or "Already Claimed",
+				disabled    = not canClaim,
+				loading     = claimReq.pending == true,
+				onActivated = function()
+					if canClaim and not claimReq.pending then  -- §AGX/UI-P4: no double claim
+						claimReq.send()  -- §AGX/UI-P4: fires ClaimDailyLogin
+					end
+				end,
 			}),
 		}),
 	})

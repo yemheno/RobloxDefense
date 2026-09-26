@@ -35,6 +35,10 @@ local RunService = game:GetService("RunService")
 local React = require(ReplicatedStorage.Packages.React)
 local Theme = require(script.Parent:WaitForChild("Theme"))
 local UIParticles = require(script.Parent:WaitForChild("UIParticles"))
+-- §AGX/UI-FIX: shell#4: the HUD mounts this bar inside UIScaleRoot.Local,
+-- so AbsoluteSize (screen px) must be divided by the applied scale before
+-- it is written back as Offset (bolts, spark spawn points).
+local UIScaleRoot = require(script.Parent:WaitForChild("UIScaleRoot"))
 
 local BASE_BOLT_HZ = 8      -- regenerations/sec at speed = 1
 local SEGMENTS     = 10     -- polyline steps across the fill
@@ -66,8 +70,9 @@ local function buildSegmentFrames(layer, count, zIndex)
 	return frames
 end
 
-local function regenBolt(layer, frames, color, intensity)
-	local size = layer.AbsoluteSize
+local function regenBolt(layer, frames, color, intensity, applied)
+	-- §AGX/UI-FIX: shell#4: screen px -> local (design) px.
+	local size = layer.AbsoluteSize / math.max(applied or 1, 0.01)
 	local w, h = size.X, size.Y
 	if w < 20 or h < 4 then
 		for _, f in ipairs(frames) do
@@ -132,6 +137,13 @@ local function LightningBar(props)
 	local fillRef = React.useRef(nil)
 	local boltLayerRef = React.useRef(nil)
 
+	-- §AGX/UI-FIX: shell#4: UIScale applied above this bar (1 when mounted
+	-- in an unscaled tree). A ref, so the crackle loop reads the latest.
+	local applied = UIScaleRoot.useUIScale().applied
+	local appliedRef = React.useRef(applied)
+	appliedRef.current = applied
+	local emitterRef = React.useRef(nil)
+
 	-- Bolt crackle loop (imperative, off the React render path)
 	React.useEffect(function()
 		local layer = boltLayerRef.current
@@ -143,7 +155,7 @@ local function LightningBar(props)
 			accum += dt
 			if accum >= interval then
 				accum = 0
-				regenBolt(layer, frames, color, intensity)
+				regenBolt(layer, frames, color, intensity, appliedRef.current)
 			end
 		end)
 
@@ -174,12 +186,21 @@ local function LightningBar(props)
 			rotation  = { -180, 180 },
 			spawn     = "right",
 			zIndex    = zBase + 4,
+			uiScale   = appliedRef.current,   -- §AGX/UI-FIX: shell#4
 		})
+		emitterRef.current = emitter   -- §AGX/UI-FIX: shell#4
 
 		return function()
+			if emitterRef.current == emitter then emitterRef.current = nil end
 			emitter:Destroy()
 		end
 	end, { sparks, intensity, color, zBase })
+
+	-- §AGX/UI-FIX: shell#4: keep the live emitter's scale current.
+	React.useEffect(function()
+		local emitter = emitterRef.current
+		if emitter then emitter:SetUIScale(applied) end
+	end, { applied })
 
 	-- Chrome: real 9-slice art when pasted, dark fallback until then
 	local frameImg = Theme.GetImage("barFrame")

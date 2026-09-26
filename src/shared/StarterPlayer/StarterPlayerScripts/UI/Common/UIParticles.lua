@@ -29,10 +29,15 @@
             spawn     = "full",                -- "full"|"center"|"top"|"right"
                                                -- or function(sizePx) -> Vector2
             zIndex    = 50,
+            uiScale   = 1,                     -- §AGX/UI-FIX: shell#4: UIScale
+                                               -- already applied above the
+                                               -- container (UIScaleRoot
+                                               -- useUIScale().applied)
         })
         emitter:Emit(12)        -- burst
         emitter:SetRate(10)
         emitter:SetEnabled(false)
+        emitter:SetUIScale(applied)   -- §AGX/UI-FIX: shell#4
         emitter:Destroy()
 ]]
 
@@ -179,6 +184,10 @@ function UIParticles.new(container, config)
 		self.spawnFn = SPAWN[config.spawn] or SPAWN.full
 	end
 	self.rate = config.rate or 0
+	-- §AGX/UI-FIX: shell#4: particles are written as Offset inside the
+	-- container, which a UIScale above it multiplies again; the measured
+	-- AbsoluteSize (screen px) is divided by this before it is used.
+	self.uiScale = (type(config.uiScale) == "number" and config.uiScale > 0) and config.uiScale or 1
 	self.enabled = true
 	self.accum = 0
 	self.active = {}
@@ -190,7 +199,8 @@ function UIParticles.new(container, config)
 end
 
 function UIParticles:_spawnOne()
-	local sizePx = self.container.AbsoluteSize
+	-- §AGX/UI-FIX: shell#4: screen px -> the container's local (design) px.
+	local sizePx = self.container.AbsoluteSize / self.uiScale
 	if sizePx.X < 1 or sizePx.Y < 1 then return end
 
 	local gui = table.remove(self.pool) or makeGui(self)
@@ -227,6 +237,11 @@ end
 
 function UIParticles:SetEnabled(enabled)
 	self.enabled = enabled
+end
+
+--- §AGX/UI-FIX: shell#4: update the UIScale applied above the container.
+function UIParticles:SetUIScale(applied)
+	if type(applied) == "number" and applied > 0 then self.uiScale = applied end
 end
 
 function UIParticles:Destroy()
