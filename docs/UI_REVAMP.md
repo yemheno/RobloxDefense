@@ -5,7 +5,12 @@
 > - `structure-and-flow.md` (ux-architect)
 > - `mobile.md` (ux-researcher + roblox-experience-designer)
 >
-> Status (updated 2026-09-26):
+> **Status (final, 2026-09-26):**
+> - Every phase from P0 to P7 has landed.
+> - Two review passes are fixed (commits 90e5985, e1524b9).
+> - Studio testing is pending; see `docs/STUDIO_TEST_PLAN.md`.
+>
+> Earlier status (2026-09-26):
 > - **P0 bug fixes have landed** (commit 0c93026, tag `§AGX/UX-0n`).
 > - **Mobile blockers have landed**, using the recommended defaults for D4/D5/D6/D10/D11/D12. None of this needed D1–D3:
 >   - char creation, NPC ProximityPrompts, emote wheel (ff49c04)

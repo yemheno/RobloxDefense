@@ -95,6 +95,9 @@ Studio can't test reserved servers. Check what it can:
 - [ ] Start Game and Next Wave are **not** auto-focused, but Return is. Death focuses Revive or Respawn; Vote focuses the first card.
 - [ ] Horde twin-stick and the camera still work after opening and closing a panel.
 - [ ] A party invite can be accepted with the pad.
+- [ ] While a panel with a scrollable list is open, the right stick scrolls the list, not the camera. That is intended; check it feels right.
+- [ ] Talent tree on a pad: a double A press does **not** allocate; use the Allocate button.
+- [ ] On a phone or console with no keyboard, Settings → Controls key badges show as locked (rebinding needs a keyboard).
 
 ## 9. Economy and monetization spot-checks
 - [ ] Respec costs 25 Essence everywhere (UI labels too); the respec scroll costs 25.
