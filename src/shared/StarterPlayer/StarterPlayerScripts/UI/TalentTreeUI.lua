@@ -1203,7 +1203,7 @@ local function TalentTreeUI(props)
 			Size             = UDim2.fromScale(0.42, 0.85),
 			BackgroundColor3 = Color3.fromRGB(140, 50, 50),
 			BorderSizePixel  = 0,
-			Text             = "Respec  (Token / 500 ♦)",
+			Text             = "Respec  (Scroll / 25 ♦)"  --[[ §AGX/X42 ]],
 			TextColor3       = C.btn_text,
 			Font             = Enum.Font.GothamBold,
 			TextScaled       = true,
