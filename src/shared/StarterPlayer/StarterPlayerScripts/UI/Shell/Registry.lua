@@ -122,7 +122,8 @@ E.class = {
 				position = UDim2.fromScale(0.5, 0.5), anchorPoint = Vector2.new(0.5, 0.5),
 				zIndex = 7,
 			},
-			dim = 0.35,   -- BattleClassUI draws no backdrop of its own
+			-- §AGX/UI-P6: no `dim` — the reference is an AppWindow now and
+			-- draws its own (non-dismissing, F6) backdrop; a second dim stacked.
 		},
 		default = { module = { folder = "UI", name = "ClassMenu" } },
 	},
@@ -186,7 +187,7 @@ E.dailyLogin = {
 	module = { folder = "UI", name = "DailyLoginUI" },  -- §AGX/UI-P3 (W4)
 	places = ALL,
 	class = "panel", presentation = "dialog", phone = "dialog",
-	dismissOnBackdrop = true,   -- D8: small dialog (0.38 x 0.46, DailyLoginUI.lua:86)
+	dismissOnBackdrop = true,   -- D8: small dialog (DailyLoginUI, AppWindow variant "dialog")
 	badge = "daily",
 }
 

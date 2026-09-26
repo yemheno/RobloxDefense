@@ -7,6 +7,15 @@
     in real-time. After resolution, shows the winning card briefly.
 
     Mounted in CombatApp; renders nothing when no vote is active.
+
+    §AGX/UI-P6: Theme v2 re-skin (docs/UI_REVAMP.md D1 Hybrid / D2).
+      • Content = design px inside UIScaleRoot.Local (the Shell mounts this
+        unscaled). Header Text + timer Bar + a row of Common Card tiles.
+      • Card: selected = blue focus ring, winner = legendary (gold) stroke;
+        the lane tag + vote count sit in the card footer.
+      • Private palette gone: lane colours map onto Theme roles (LANE_ROLE).
+      • Kept: useModalPresence("vote"), the Notify "vote" banner, the §VG5
+        anti-misclick window, every server event and payload.
 ]]
 
 local Players           = game:GetService("Players")
@@ -18,6 +27,18 @@ local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 -- §AGX/UI-P4: the pre-vote heads-up and the post-vote "Get ready!" alerts
 -- are Notify banners ("vote" priority) instead of VoteUI-drawn frames.
 local Notify         = require(script.Parent:WaitForChild("Common"):WaitForChild("Notify"))
+
+-- §AGX/UI-P6: shared components
+local Common      = script.Parent:WaitForChild("Common")
+local Theme       = require(Common:WaitForChild("Theme"))
+local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
+local Text        = require(Common:WaitForChild("Text"))
+local Bar         = require(Common:WaitForChild("Bar"))
+local Card        = require(Common:WaitForChild("Card"))
+
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
 -- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
 -- outside a PanelHost, so Wave 1 behaves exactly as before).
 local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
@@ -34,37 +55,29 @@ do
 end
 
 -- ═══════════════════════════════════════════════════════════
--- PALETTE
+-- LAYOUT + LANE COLOURS (§AGX/UI-P6: design px, Theme roles)
 -- ═══════════════════════════════════════════════════════════
 
-local C = {
-    overlay     = Color3.fromRGB(  0,   0,   0),
-    cardBg      = Color3.fromRGB( 28,  28,  38),
-    cardBorder  = Color3.fromRGB( 60,  70, 110),
-    cardHover   = Color3.fromRGB( 40,  45,  65),
-    cardSelected = Color3.fromRGB( 50,  80, 140),
-    text        = Color3.fromRGB(220, 220, 230),
-    textDim     = Color3.fromRGB(140, 140, 160),
-    textBright  = Color3.fromRGB(255, 255, 255),
-    timerBg     = Color3.fromRGB( 35,  35,  50),
-    timerBar    = Color3.fromRGB( 80, 160, 255),
-    voteBadge   = Color3.fromRGB( 80, 210, 255),
-    winnerGlow  = Color3.fromRGB(255, 200,  60),
-    -- Lane colors
-    greed       = Color3.fromRGB(200,  60,  60),
-    control     = Color3.fromRGB( 60, 140, 200),
-    relief      = Color3.fromRGB( 60, 180,  80),
-    supply      = Color3.fromRGB(210, 150,  40),
-    tactical    = Color3.fromRGB(120, 100, 200),
+local CARD_W    = 232      -- 3 x 232 + 2 x 12 = 720 <= 844 phone width
+local CARD_GAP  = SP.md
+local TIMER_H   = 8
+local OVERLAY_Z = Theme.Z.modal   -- was a literal 50
+
+-- Lane / card-type identity (was the private palette: greed red, control
+-- blue, relief green, supply amber, tactical purple).
+local LANE_ROLE = {
+    greed    = "state.danger",
+    control  = "accent.secondary",
+    relief   = "state.success",
+}
+local TYPE_ROLE = {
+    supply   = "vital.xp",
+    tactical = "rarity.epic",
 }
 
 local function getLaneColor(card)
-    if card.lane == "greed"   then return C.greed end
-    if card.lane == "control" then return C.control end
-    if card.lane == "relief"  then return C.relief end
-    if card.cardType == "supply"   then return C.supply end
-    if card.cardType == "tactical" then return C.tactical end
-    return C.cardBorder
+    local role = (card.lane and LANE_ROLE[card.lane]) or (card.cardType and TYPE_ROLE[card.cardType])
+    return Theme.color(role or "text.secondary")
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -73,98 +86,64 @@ end
 
 local function VoteCard(props)
     -- props: card, index, voteCount, isSelected, isWinner, onSelect, hideVoteCount
-    local card       = props.card
-    local isHovered, setHovered = React.useState(false)
+    local card = props.card
+    local z = OVERLAY_Z + 2
+    local count = props.voteCount or 0
 
-    local bgColor = props.isWinner and C.winnerGlow
-        or props.isSelected and C.cardSelected
-        or isHovered and C.cardHover
-        or C.cardBg
-
-    local borderColor = props.isWinner and C.winnerGlow or getLaneColor(card)
-
-    return React.createElement("Frame", {
-        Size             = UDim2.fromScale(0.28, 0.85),
-        BackgroundColor3 = bgColor,
-        BorderSizePixel  = 0,
-        LayoutOrder      = props.index,
+    -- §AGX/UI-P6: footer = lane tag (left) + live vote count (right).
+    local footer = e("Frame", {
+        Size                   = UDim2.new(1, 0, 0, 24),
+        BackgroundTransparency = 1,
+        ZIndex                 = z,
     }, {
-        corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 12) }),
-        stroke = React.createElement("UIStroke", {
-            Color     = borderColor,
-            Thickness = props.isWinner and 3 or 2,
-        }),
-        padding = React.createElement("UIPadding", {
-            PaddingTop    = UDim.new(0, 14),
-            PaddingBottom = UDim.new(0, 14),
-            PaddingLeft   = UDim.new(0, 16),
-            PaddingRight  = UDim.new(0, 16),
-        }),
-
-        -- Lane tag (top)
-        laneTag = card.lane and React.createElement("TextLabel", {
-            Size             = UDim2.new(1, 0, 0, 18),
-            Position         = UDim2.fromOffset(0, 0),
-            BackgroundTransparency = 1,
-            Font             = Enum.Font.GothamBold,
-            TextSize         = 13,
-            Text             = string.upper(card.lane),
-            TextColor3       = getLaneColor(card),
-            TextXAlignment   = Enum.TextXAlignment.Left,
+        lane = card.lane and e(Text, {
+            style  = "label",
+            text   = string.upper(card.lane),
+            color  = getLaneColor(card),
+            size   = UDim2.new(1, -52, 1, 0),
+            zIndex = z + 1,
         }) or nil,
-
-        -- Card name
-        name = React.createElement("TextLabel", {
-            Size             = UDim2.new(1, 0, 0, 28),
-            Position         = UDim2.new(0, 0, 0, card.lane and 22 or 0),
-            BackgroundTransparency = 1,
-            Font             = Enum.Font.GothamBold,
-            TextSize         = 20,
-            Text             = card.name,
-            TextColor3       = C.textBright,
-            TextXAlignment   = Enum.TextXAlignment.Left,
-            TextWrapped      = true,
-        }),
-
-        -- Description
-        desc = React.createElement("TextLabel", {
-            Size             = UDim2.new(1, 0, 0, 48),
-            Position         = UDim2.new(0, 0, 0, card.lane and 54 or 32),
-            BackgroundTransparency = 1,
-            Font             = Enum.Font.Gotham,
-            TextSize         = 14,
-            Text             = card.description,
-            TextColor3       = C.textDim,
-            TextXAlignment   = Enum.TextXAlignment.Left,
-            TextYAlignment   = Enum.TextYAlignment.Top,
-            TextWrapped      = true,
-        }),
-
         -- Vote count badge (hidden for personal votes — no tallying there)
-        voteBadge = (not props.hideVoteCount) and React.createElement("TextLabel", {
-            Size             = UDim2.fromScale(0.021, 0.022),
-            Position         = UDim2.new(1, -40, 1, -30),
-            AnchorPoint      = Vector2.new(0, 0),
-            BackgroundColor3 = C.voteBadge,
-            BackgroundTransparency = (props.voteCount or 0) > 0 and 0.15 or 0.7,
-            Font             = Enum.Font.GothamBold,
-            TextSize         = 16,
-            Text             = tostring(props.voteCount or 0),
-            TextColor3       = C.textBright,
+        voteBadge = (not props.hideVoteCount) and e("Frame", {
+            Name                   = "VoteCount",
+            AnchorPoint            = Vector2.new(1, 0.5),
+            Position               = UDim2.fromScale(1, 0.5),
+            Size                   = UDim2.fromOffset(44, 24),
+            BackgroundColor3       = R.accent.secondary,
+            BackgroundTransparency = count > 0 and 0 or 0.7,
+            BorderSizePixel        = 0,
+            ZIndex                 = z + 1,
         }, {
-            corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 6) }),
+            corner = e("UICorner", { CornerRadius = Theme.Radius.pill }),
+            label  = e(Text, {
+                style  = "numeric",
+                text   = tostring(count),
+                color  = count > 0 and "text.onAccent" or "text.primary",
+                align  = "center",
+                size   = UDim2.fromScale(1, 1),
+                zIndex = z + 2,
+            }),
         }) or nil,
+    })
 
-        -- Click detector
-        button = React.createElement("TextButton", {
-            Size                   = UDim2.fromScale(1, 1),
-            Position               = UDim2.fromScale(0, 0),
-            BackgroundTransparency = 1,
-            Text                   = "",
-            ZIndex                 = 10,
-            [React.Event.MouseEnter]  = function() setHovered(true) end,
-            [React.Event.MouseLeave]  = function() setHovered(false) end,
-            [React.Event.Activated]   = function()
+    -- Fixed-width column; the Card grows in Y with its text.
+    return e("Frame", {
+        Name                   = "VoteCard" .. tostring(props.index),
+        Size                   = UDim2.fromOffset(CARD_W, 0),
+        AutomaticSize          = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        LayoutOrder            = props.index,
+        ZIndex                 = z,
+    }, {
+        card = e(Card, {
+            title       = card.name,
+            subtitle    = card.description,
+            selected    = props.isSelected and not props.isWinner,
+            rarity      = props.isWinner and "legendary" or nil,
+            footer      = footer,
+            zIndex      = z,
+            -- The whole card is the tap target (was a transparent overlay button).
+            onActivated = function()
                 if props.onSelect then
                     props.onSelect(props.index)
                 end
@@ -343,12 +322,12 @@ local function VoteUI()
         if pendingCountdown and not hasVoteData then
             Notify.banner("⚠  Vote starting in  " .. tostring(pendingCountdown) .. "s", {
                 key = "vote", priority = "vote", sticky = true,
-                color = Color3.fromRGB(255, 215, 80),
+                color = R.state.warning,          -- §AGX/UI-P6: Theme role
             })
         elseif resumeCountdown and not hasVoteData then
             Notify.banner("▶  Get ready!  " .. tostring(resumeCountdown), {
                 key = "vote", priority = "vote", sticky = true,
-                color = Color3.fromRGB(160, 230, 255),
+                color = R.accent.secondary,       -- §AGX/UI-P6: Theme role
             })
         else
             Notify.clearBanner("vote")
@@ -390,7 +369,7 @@ local function VoteUI()
     -- Build card elements
     local cardElements = {}
     for i, card in ipairs(cards) do
-        cardElements["card" .. i] = React.createElement(VoteCard, {
+        cardElements["card" .. i] = e(VoteCard, {
             card          = card,
             index         = i,
             voteCount     = voteCounts[i] or 0,
@@ -401,10 +380,7 @@ local function VoteUI()
         })
     end
 
-    -- Timer bar
-    local timerFraction = voteData.timerSeconds > 0
-        and math.clamp(timeLeft / voteData.timerSeconds, 0, 1) or 0
-
+    -- Header text
     local headerText
     if winnerIndex then
         local label = isPersonal and "Chosen: " or "Winner: "
@@ -417,11 +393,11 @@ local function VoteUI()
 
     -- Card row children (merge layout + card elements)
     local cardRowChildren = {
-        layout = React.createElement("UIListLayout", {
+        layout = e("UIListLayout", {
             FillDirection       = Enum.FillDirection.Horizontal,
             HorizontalAlignment = Enum.HorizontalAlignment.Center,
-            VerticalAlignment   = Enum.VerticalAlignment.Center,
-            Padding             = UDim.new(0, 16),
+            VerticalAlignment   = Enum.VerticalAlignment.Top,
+            Padding             = UDim.new(0, CARD_GAP),
             SortOrder           = Enum.SortOrder.LayoutOrder,
         }),
     }
@@ -429,65 +405,79 @@ local function VoteUI()
         cardRowChildren[key] = element
     end
 
-    return React.createElement("Frame", {
+    local rowW = math.max(1, #cards) * CARD_W + math.max(0, #cards - 1) * CARD_GAP
+    local z = OVERLAY_Z + 1
+
+    return e("Frame", {
         Name                   = "VoteOverlay",
         Size                   = UDim2.fromScale(1, 1),
-        BackgroundColor3       = C.overlay,
+        BackgroundColor3       = R.surface.scrim,
         BackgroundTransparency = 0.55,
-        ZIndex                 = 50,
+        ZIndex                 = OVERLAY_Z,
     }, {
-        -- Center container
-        container = React.createElement("Frame", {
-            Size             = UDim2.fromScale(0.72, 0.38),
-            Position         = UDim2.fromScale(0.5, 0.42),
-            AnchorPoint      = Vector2.new(0.5, 0.5),
-            BackgroundTransparency = 1,
-        }, {
-            -- Header
-            header = React.createElement("TextLabel", {
-                Size             = UDim2.new(1, 0, 0, 32),
-                Position         = UDim2.new(0, 0, 0, -40),
+        content = e(UIScaleRoot.Local, { name = "VoteContent", zIndex = z }, {
+            -- Center container (design px)
+            container = e("Frame", {
+                Name                   = "Container",
+                AnchorPoint            = Vector2.new(0.5, 0.5),
+                Position               = UDim2.fromScale(0.5, 0.45),
+                Size                   = UDim2.fromOffset(rowW, 0),
+                AutomaticSize          = Enum.AutomaticSize.Y,
                 BackgroundTransparency = 1,
-                Font             = Enum.Font.GothamBold,
-                TextSize         = 22,
-                Text             = headerText,
-                TextColor3       = winnerIndex and C.winnerGlow or C.textBright,
-            }),
-
-            -- Timer bar
-            timerBg = (not winnerIndex) and React.createElement("Frame", {
-                Size             = UDim2.new(1, 0, 0, 6),
-                Position         = UDim2.new(0, 0, 0, -6),
-                BackgroundColor3 = C.timerBg,
-                BorderSizePixel  = 0,
+                ZIndex                 = z,
             }, {
-                corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 3) }),
-                fill = React.createElement("Frame", {
-                    Size             = UDim2.fromScale(timerFraction, 1),
-                    BackgroundColor3 = C.timerBar,
-                    BorderSizePixel  = 0,
-                }, {
-                    corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 3) }),
+                layout = e("UIListLayout", {
+                    SortOrder = Enum.SortOrder.LayoutOrder,
+                    Padding   = UDim.new(0, SP.sm),
                 }),
-            }) or nil,
 
-            -- Timer text
-            timerText = (not winnerIndex) and React.createElement("TextLabel", {
-                Size             = UDim2.fromScale(0.031, 0.022),
-                Position         = UDim2.new(1, -60, 0, -36),
-                BackgroundTransparency = 1,
-                Font             = Enum.Font.GothamBold,
-                TextSize         = 16,
-                Text             = tostring(timeLeft) .. "s",
-                TextColor3       = timeLeft <= 3 and Color3.fromRGB(255, 80, 80) or C.textDim,
-                TextXAlignment   = Enum.TextXAlignment.Right,
-            }) or nil,
+                -- Header row: title + seconds left
+                headerRow = e("Frame", {
+                    LayoutOrder            = 1,
+                    Size                   = UDim2.new(1, 0, 0, Theme.Type.title.lineHeight),
+                    BackgroundTransparency = 1,
+                    ZIndex                 = z,
+                }, {
+                    header = e(Text, {
+                        style  = "title",
+                        text   = headerText,
+                        color  = winnerIndex and "rarity.legendary" or "text.primary",
+                        align  = "center",
+                        size   = UDim2.new(1, -120, 1, 0),
+                        position = UDim2.fromOffset(60, 0),
+                        zIndex = z + 1,
+                    }),
+                    timerText = (not winnerIndex) and e(Text, {
+                        style       = "numeric",
+                        text        = tostring(timeLeft) .. "s",
+                        color       = timeLeft <= 3 and "state.danger" or "text.secondary",
+                        align       = "right",
+                        anchorPoint = Vector2.new(1, 0),
+                        position    = UDim2.fromScale(1, 0),
+                        size        = UDim2.new(0, 56, 1, 0),
+                        zIndex      = z + 1,
+                    }) or nil,
+                }),
 
-            -- Card row
-            cardRow = React.createElement("Frame", {
-                Size                   = UDim2.fromScale(1, 1),
-                BackgroundTransparency = 1,
-            }, cardRowChildren),
+                -- Timer bar (§AGX/UI-P6: Common Bar, blue progress)
+                timerBar = (not winnerIndex) and e(Bar, {
+                    value       = timeLeft,
+                    max         = voteData.timerSeconds,
+                    height      = TIMER_H,
+                    layoutOrder = 2,
+                    zIndex      = z,
+                }) or nil,
+
+                -- Card row
+                cardRow = e("Frame", {
+                    Name                   = "CardRow",
+                    LayoutOrder            = 3,
+                    Size                   = UDim2.fromScale(1, 0),
+                    AutomaticSize          = Enum.AutomaticSize.Y,
+                    BackgroundTransparency = 1,
+                    ZIndex                 = z,
+                }, cardRowChildren),
+            }),
         }),
     })
 end

@@ -8,6 +8,11 @@
 
     Server broadcasts "VitalsUpdate" every ~1 s with a table keyed by
     userId → { name, hp, maxHp, class, level }.
+
+    §AGX/UI-P6: Theme v2 re-skin. Rows = a sunken Panel with a Text name
+    line and the Common Bar (kind "hp"; turns vital.hpLow under 25 %,
+    was 30 %). The private palette and TextScaled labels are gone. Row
+    geometry still follows `rect` (§AGX/UI-P5) in design px.
 ]]
 
 local Players           = game:GetService("Players")
@@ -64,79 +69,66 @@ end
 local LocalPlayer   = Players.LocalPlayer
 local SharedModules = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
 
--- ── Palette ───────────────────────────────────────────────
-local C = {
-	panel_bg   = Color3.fromRGB(16, 16, 22),
-	bar_bg     = Color3.fromRGB(40, 40, 56),
-	bar_hp     = Color3.fromRGB(60, 190, 90),
-	bar_low    = Color3.fromRGB(200, 60, 60),
-	text       = Color3.fromRGB(210, 210, 225),
-	text_dim   = Color3.fromRGB(130, 130, 150),
-	stub_text  = Color3.fromRGB(100, 100, 130),
-	power_c    = Color3.fromRGB(255, 180, 40),
-}
+
+-- §AGX/UI-P6: shared components
+local Common = script.Parent:WaitForChild("Common")
+local Theme  = require(Common:WaitForChild("Theme"))
+local Text   = require(Common:WaitForChild("Text"))
+local Bar    = require(Common:WaitForChild("Bar"))
+local Panel  = require(Common:WaitForChild("Panel"))
+
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
+
+local ROW_PAD_Y = 3        -- design px above / between / below the two lines
+local POWER_W   = 56       -- power badge column
 
 -- ═══════════════════════════════════════════════════════════
 -- VITAL BAR (per-teammate row)
 -- ═══════════════════════════════════════════════════════════
 local function TeammateMember(props)
 	local teammate = props.teammate
-	local rowH     = props.rowH or ROW_H
-	local hpFrac   = math.max(0, math.min(1, teammate.hp / math.max(teammate.maxHp, 1)))
-	local isLow    = hpFrac < 0.30
+	local rowH     = props.rowH or ROW_H   -- §AGX/UI-P1 / §AGX/UI-P5: rect.rowH
+	local barH     = math.max(6, math.floor(rowH * 0.22))
+	local nameH    = math.max(1, rowH - barH - 3 * ROW_PAD_Y)
+	local hasPower = teammate.powerLevel and teammate.powerLevel > 0
 
-	return React.createElement("Frame", {
-		Size             = UDim2.new(1, 0, 0, rowH),  -- §AGX/UI-P1 / §AGX/UI-P5: rect.rowH
-		LayoutOrder      = props.order or 0,
-		BackgroundColor3 = C.panel_bg,
-		BackgroundTransparency = 0.25,
-		BorderSizePixel  = 0,
+	return e(Panel, {
+		name         = "Teammate",
+		elevation    = "sunken",
+		padding      = "none",
+		radius       = "sm",
+		transparency = 0.25,
+		size         = UDim2.new(1, 0, 0, rowH),
+		layoutOrder  = props.order or 0,
 	}, {
-		Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 6) }),
-
 		-- Name + class label
-		Label = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.03, 0.08),
-			Size                   = UDim2.fromScale(0.94, 0.42),
-			BackgroundTransparency = 1,
-			Text                   = teammate.name .. "  [" .. (teammate.class or "?") .. "]",
-			TextColor3             = C.text,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-		}, {
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
+		Label = e(Text, {
+			style    = "caption",
+			text     = teammate.name .. "  [" .. (teammate.class or "?") .. "]",
+			color    = "text.primary",
+			position = UDim2.fromOffset(SP.xs, ROW_PAD_Y),
+			size     = UDim2.new(1, -(2 * SP.xs + (hasPower and POWER_W or 0)), 0, nameH),
 		}),
-		PowerBadge = (teammate.powerLevel and teammate.powerLevel > 0) and React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(1, 0),
-			Position               = UDim2.fromScale(0.97, 0.08),
-			Size                   = UDim2.fromScale(0.28, 0.42),
-			BackgroundTransparency = 1,
-			Text                   = "⚡" .. tostring(teammate.powerLevel),
-			TextColor3             = C.power_c,
-			TextXAlignment         = Enum.TextXAlignment.Right,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-		}, {
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
+		PowerBadge = hasPower and e(Text, {
+			style       = "caption",
+			text        = "⚡" .. tostring(teammate.powerLevel),
+			color       = "state.warning",
+			align       = "right",
+			anchorPoint = Vector2.new(1, 0),
+			position    = UDim2.new(1, -SP.xs, 0, ROW_PAD_Y),
+			size        = UDim2.fromOffset(POWER_W, nameH),
 		}) or nil,
 
-		-- HP bar track
-		BarBg = React.createElement("Frame", {
-			Position         = UDim2.fromScale(0.03, 0.58),
-			Size             = UDim2.fromScale(0.94, 0.30),
-			BackgroundColor3 = C.bar_bg,
-			BorderSizePixel  = 0,
-		}, {
-			Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 4) }),
-			-- Filled portion
-			Fill = React.createElement("Frame", {
-				Size             = UDim2.fromScale(hpFrac, 1),
-				BackgroundColor3 = isLow and C.bar_low or C.bar_hp,
-				BorderSizePixel  = 0,
-			}, {
-				Corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 4) }),
-			}),
+		-- HP bar (§AGX/UI-P6: Common Bar)
+		HP = e(Bar, {
+			kind     = "hp",
+			value    = teammate.hp or 0,
+			max      = math.max(teammate.maxHp or 1, 1),
+			height   = barH,
+			position = UDim2.fromOffset(SP.xs, ROW_PAD_Y * 2 + nameH),
+			size     = UDim2.new(1, -2 * SP.xs, 0, barH),
 		}),
 	})
 end
@@ -184,18 +176,15 @@ local function TeammateVitals(props)
 	-- Nothing to show when solo
 	if #teammates == 0 then
 		if game:GetService("RunService"):IsStudio() then
-			return React.createElement("TextLabel", {
-				AnchorPoint            = rect and rect.anchorPoint or Vector2.new(1, 0),
-				Position               = rect and rect.position or UDim2.new(1, -8, 0, 120),
-				Size                   = rect and UDim2.fromOffset(rect.width, rowH)
-					or UDim2.fromScale(0.089, 0.020),
-				BackgroundTransparency = 1,
-				Text                   = "[TeammateVitals — waiting]",
-				TextColor3             = C.stub_text,
-				TextScaled             = true,
-				Font                   = Enum.Font.Gotham,
-			}, {
-				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
+			-- §AGX/UI-P6: Text (caption floor) instead of a TextScaled label.
+			return e(Text, {
+				style       = "caption",
+				text        = "[TeammateVitals — waiting]",
+				color       = "text.disabled",
+				align       = rect and "left" or "right",
+				anchorPoint = rect and rect.anchorPoint or Vector2.new(1, 0),
+				position    = rect and rect.position or UDim2.new(1, -8, 0, 120),
+				size        = UDim2.fromOffset(rect and rect.width or 200, rowH),
 			})
 		end
 		return nil
@@ -204,13 +193,13 @@ local function TeammateVitals(props)
 	-- Build the rows
 	local rows = {}
 	for i, teammate in ipairs(teammates) do
-		rows["member_" .. i] = React.createElement(TeammateMember, {
+		rows["member_" .. i] = e(TeammateMember, {
 			teammate = teammate,
 			order    = i,  -- §AGX/UI-P1: keep the alphabetical order in the list
 			rowH     = rowH,
 		})
 	end
-	rows.layout = React.createElement("UIListLayout", {
+	rows.layout = e("UIListLayout", {
 		SortOrder     = Enum.SortOrder.LayoutOrder,
 		Padding       = UDim.new(0, rowGap),  -- §AGX/UI-P1
 		FillDirection = Enum.FillDirection.Vertical,
@@ -249,7 +238,7 @@ local function TeammateVitals(props)
 
 	-- ScrollingFrame so a clipped list (tiny window, big party) still reaches
 	-- every teammate; with room to spare it looks like the old Frame.
-	return React.createElement("ScrollingFrame", {
+	return e("ScrollingFrame", {
 		AnchorPoint      = anchor,
 		Position         = pos,
 		Size             = UDim2.new(width.X.Scale, width.X.Offset, 0, height),
@@ -258,6 +247,7 @@ local function TeammateVitals(props)
 		CanvasSize       = UDim2.new(0, 0, 0, contentH),
 		ScrollingDirection = Enum.ScrollingDirection.Y,
 		ScrollBarThickness = (height < contentH) and 4 or 0,
+		ScrollBarImageColor3 = R.text.secondary,   -- §AGX/UI-P6
 		ScrollingEnabled = height < contentH,
 		Active           = height < contentH,  -- don't sink world clicks unless it scrolls
 	}, rows)

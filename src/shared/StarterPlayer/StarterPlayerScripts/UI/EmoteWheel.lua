@@ -10,6 +10,13 @@
     • §AGX/UI-P2: touch — EmoteWheel.open()/close()/toggle() for on-screen
       buttons (SocialPlaza AppearanceBar Emote button); closes on outside
       tap and on thumbstick movement (Humanoid.MoveDirection).
+    • §AGX/UI-P6: Theme v2 re-skin. Geometry stays in SCREEN px from
+      wheelMetrics() (exported to MenuRadial, unchanged); the wheel lives in
+      the unscaled AppRoot, so text sizes are Theme.typeFor sizes
+      pre-multiplied by ff.uiScale (Theme.Layout option (b), no
+      scale-inside-scale). Colours are Theme roles (legacy Theme.Colors /
+      the local C table are gone). The centre is now an IconButton (✕ on
+      touch, the bound key elsewhere) that also closes the wheel.
 ]]
 
 local Players          = game:GetService("Players")
@@ -83,20 +90,24 @@ local function setAllVisible(fnOrValue)
 	end
 end
 
--- ── Palette ───────────────────────────────────────────────
--- §AGX/UI-P2: minimal restyle onto shared Theme tokens.
-local Theme = require(script.Parent:WaitForChild("Common"):WaitForChild("Theme"))
-local T = Theme.Colors
-local C = {
-	wheel_bg   = T.panel,
-	btn_bg     = T.panelAlt,
-	btn_hover  = T.track,
-	btn_border = T.locked,
-	label      = T.text,
-	label_sub  = T.textDim,
-	accent     = T.accent2,
-	overlay    = T.dim,
-}
+-- ── Theme (§AGX/UI-P6: roles, no private palette) ─────────
+local Common        = script.Parent:WaitForChild("Common")
+local Theme         = require(Common:WaitForChild("Theme"))
+local useFormFactor = require(Common:WaitForChild("useFormFactor"))
+local IconButton    = require(Common:WaitForChild("IconButton"))
+local R = Theme.Roles
+
+-- Text style scaled for this unscaled (screen px) tree.
+local function scaledType(style, ff)
+	local ty = Theme.typeFor(style, ff.kind)
+	local s = ff.uiScale or 1
+	return {
+		font = ty.font,
+		size = math.floor(ty.size * s + 0.5),
+		min  = math.floor(ty.min * s + 0.5),
+		max  = math.floor(ty.max * s + 0.5),
+	}
+end
 
 -- ── Animation helper (plays anim, stops previous) ─────────
 local function playEmote(emote)
@@ -125,56 +136,63 @@ local function EmoteButton(props)
 	local emote    = props.emote
 	local onSelect = props.onSelect
 	local hovered, setHovered = useState(false)
+	local ff = useFormFactor()
+	local ty = scaledType("caption", ff)
 
 	return e("TextButton", {
 		-- §AGX/UI-P2: M3 — pixel size (>= 56 px) instead of a scale of the wheel.
+		Name              = "Emote_" .. tostring(emote.id),
 		Size              = UDim2.fromOffset(props.size, props.size),
 		AnchorPoint       = Vector2.new(0.5, 0.5),
 		Position          = props.position,
-		BackgroundColor3  = hovered and C.btn_hover or C.btn_bg,
+		BackgroundColor3  = hovered and R.surface.track or R.surface.raised,
 		BorderSizePixel   = 0,
 		AutoButtonColor   = false,
 		Text              = "",
 		ZIndex            = 3,
 		[React.Event.Activated]       = function() onSelect(emote) end,
+		-- hover tint only (mobile.md M18: nothing is lost on touch)
 		[React.Event.MouseEnter]      = function() setHovered(true) end,
 		[React.Event.MouseLeave]      = function() setHovered(false) end,
+		[React.Event.SelectionGained] = function() setHovered(true) end,
+		[React.Event.SelectionLost]   = function() setHovered(false) end,
 	}, {
-		Corner = e("UICorner", { CornerRadius = UDim.new(1, 0) }),
+		Corner = e("UICorner", { CornerRadius = Theme.Radius.pill }),
 
 		Stroke = e("UIStroke", {
-			Color     = hovered and C.accent or C.btn_border,
-			Thickness = hovered and 2 or 1,
+			Color     = hovered and R.border.focus or R.border.subtle,
+			Thickness = hovered and Theme.Stroke.strong or Theme.Stroke.hair,
 			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
 		}),
 
-		-- Emoji / icon (large)
+		-- Emoji / icon (large; fills its box, TextScaled only for the glyph)
 		Icon = e("TextLabel", {
 			Size             = UDim2.fromScale(0.8, 0.5),
 			AnchorPoint      = Vector2.new(0.5, 0),
 			Position         = UDim2.fromScale(0.5, 0.1),
 			BackgroundTransparency = 1,
 			Text             = emote.icon,
-			TextColor3       = C.accent,  -- §AGX/UI-P2: was default black on dark bg
+			TextColor3       = R.accent.secondary,  -- §AGX/UI-P2: was default black on dark bg
 			TextScaled       = true,
-			Font             = Enum.Font.GothamBold,
+			FontFace         = Theme.FontFaces.bold,
 			ZIndex           = 4,
 		}),
 
 		-- Label
 		Label = e("TextLabel", {
-			Size             = UDim2.new(0.9, 0, 0, 14),
+			Size             = UDim2.new(0.9, 0, 0, ty.size + 2),
 			AnchorPoint      = Vector2.new(0.5, 1),
 			Position         = UDim2.new(0.5, 0, 1, -6),
 			BackgroundTransparency = 1,
 			Text             = emote.label,
-			TextColor3       = C.label,
-			TextScaled       = true,
-			Font             = Enum.Font.Gotham,
+			TextColor3       = R.text.primary,
+			FontFace         = ty.font,
+			TextSize         = ty.size,
+			TextTruncate     = Enum.TextTruncate.AtEnd,
 			ZIndex           = 4,
 		}, {
-			-- §AGX/UI-P2: readable floor
-			Tsc = e("UITextSizeConstraint", { MinTextSize = 10, MaxTextSize = 14 }),
+			-- §AGX/UI-P2 readable floor, now Theme.Type caption
+			Tsc = e("UITextSizeConstraint", { MinTextSize = ty.min, MaxTextSize = ty.max }),
 		}),
 	})
 end
@@ -184,6 +202,7 @@ end
 -- ═══════════════════════════════════════════════════════════
 local function EmoteWheel()
 	local visible, setVisible = useState(false)
+	local ff = useFormFactor()   -- §AGX/UI-P6: type scale (unconditional hook)
 	-- §AGX/UI-P2: M3 — track the viewport so the wheel stays square in px.
 	local viewport, setViewport = useState(function()
 		local cam = workspace.CurrentCamera
@@ -271,32 +290,27 @@ local function EmoteWheel()
 	local wheelPx, btnPx, radius = wheelMetrics(viewport)
 	local centerPx = math.max(40, math.floor(wheelPx * 0.18))
 
+	local isTouch  = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+	local keyLabel = InputSystem and InputSystem.GetBindingDisplayName("EmoteWheel") or "Q"
+	local hintTy   = scaledType("caption", ff)
+
 	-- Cardinal directions: top=270°, right=0°, bottom=90°, left=180°
 	local angles   = { 270, 0, 90, 180 }
 	local children = {
 		Corner = e("UICorner", { CornerRadius = UDim.new(1, 0) }),
 
-		CenterLabel = e("TextLabel", {
-			AnchorPoint            = Vector2.new(0.5, 0.5),
-			Position               = UDim2.fromScale(0.5, 0.5),
-			-- §AGX/UI-P2: M3 — pixel size (was a scale of the wheel).
-			Size                   = UDim2.fromOffset(centerPx, centerPx),
-			BackgroundColor3       = C.btn_bg,
-			BackgroundTransparency = 0.2,
-			BorderSizePixel        = 0,
-			Text                   = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-				and "\u{2715}"
-				or (InputSystem and InputSystem.GetBindingDisplayName("EmoteWheel") or "Q"),
-			TextColor3             = C.label_sub,
-			TextScaled             = true,
-			Font                   = Enum.Font.GothamBold,
-			ZIndex                 = 3,
-		}, {
-			Corner = e("UICorner", { CornerRadius = UDim.new(1, 0) }),
-			Pad    = e("UIPadding", {
-				PaddingTop = UDim.new(0.22, 0), PaddingBottom = UDim.new(0.22, 0),
-				PaddingLeft = UDim.new(0.22, 0), PaddingRight = UDim.new(0.22, 0),
-			}),
+		-- §AGX/UI-P6: IconButton (was a TextLabel): ✕ on touch, the bound
+		-- key elsewhere; tapping it closes the wheel like an outside tap.
+		CenterLabel = e(IconButton, {
+			name        = "Center",
+			icon        = isTouch and "close" or nil,
+			label       = keyLabel,
+			variant     = "secondary",
+			size        = math.max(Theme.Metrics.iconButton.sm, centerPx),
+			anchorPoint = Vector2.new(0.5, 0.5),
+			position    = UDim2.fromScale(0.5, 0.5),
+			zIndex      = 3,
+			onActivated = function() setVisible(false) end,
 		}),
 	}
 
@@ -313,22 +327,21 @@ local function EmoteWheel()
 		})
 	end
 
-	local isTouch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 	local hintText = isTouch
 		and "Tap an emote  \u{2022}  tap outside or move to close"
-		or ("[" .. (InputSystem and InputSystem.GetBindingDisplayName("EmoteWheel") or "Q") .. "] Close  \u{2022}  Click to emote")
+		or ("[" .. keyLabel .. "] Close  \u{2022}  Click to emote")
 
 	return e("Frame", {
 		Name                   = "EmoteWheel",
 		Size                   = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
-		ZIndex                 = 30,
+		ZIndex                 = Theme.Z.windowOver,   -- §AGX/UI-P6: was a literal 30
 	}, {
 		-- §AGX/UI-P2: M3 — the dim overlay is now a button: tap/click outside
 		-- the wheel closes it.
 		Overlay = e("TextButton", {
 			Size                   = UDim2.fromScale(1, 1),
-			BackgroundColor3       = C.overlay,
+			BackgroundColor3       = R.surface.scrim,
 			BackgroundTransparency = 0.75,
 			BorderSizePixel        = 0,
 			AutoButtonColor        = false,
@@ -343,7 +356,7 @@ local function EmoteWheel()
 			AnchorPoint            = Vector2.new(0.5, 0.5),
 			Position               = UDim2.fromScale(0.5, 0.5),
 			Size                   = UDim2.fromOffset(wheelPx, wheelPx),
-			BackgroundColor3       = C.wheel_bg,
+			BackgroundColor3       = R.surface.panel,
 			BackgroundTransparency = 0.4,
 			BorderSizePixel        = 0,
 			Active                 = true,
@@ -353,15 +366,16 @@ local function EmoteWheel()
 		Hint = e("TextLabel", {
 			AnchorPoint            = Vector2.new(0.5, 0),
 			Position               = UDim2.new(0.5, 0, 0.5, math.floor(wheelPx / 2) + 6),
-			Size                   = UDim2.fromOffset(math.max(wheelPx, 280), 18),
+			Size                   = UDim2.fromOffset(math.max(wheelPx, 280), hintTy.size + 6),
 			BackgroundTransparency = 1,
 			Text                   = hintText,
-			TextColor3             = C.label_sub,
-			TextScaled             = true,
-			Font                   = Enum.Font.Gotham,
+			TextColor3             = R.text.secondary,
+			FontFace               = hintTy.font,
+			TextSize               = hintTy.size,
+			TextWrapped            = true,
 			ZIndex                 = 2,
 		}, {
-			Tsc = e("UITextSizeConstraint", { MinTextSize = 12, MaxTextSize = 16 }),  -- §AGX/UI-P2
+			Tsc = e("UITextSizeConstraint", { MinTextSize = hintTy.min, MaxTextSize = hintTy.max }),  -- §AGX/UI-P2
 		}),
 	})
 end

@@ -6,6 +6,15 @@
 
     Props:
       onClose  function
+
+    §AGX/UI-P6: Theme v2 re-skin. AppWindow variant "dialog" (the Registry
+    presents it as a dialog: phone = bottom sheet). Body = design px inside
+    UIScaleRoot.Local, one vertical list in a ScrollingFrame (the phone
+    sheet body is ~120 design px, so it scrolls instead of clipping).
+    Rewards "100 Merits" / "2 Essence" render as CurrencyPills; the claim
+    is the ONE primary (orange) Button ("Already Claimed" = locked,
+    "…" while pending). Kept: useRequest, the §AGX/X47 calendar + spree
+    line, the 360x260 windowed floor (T7). Private palette gone.
 ]]
 
 local Players           = game:GetService("Players")
@@ -15,19 +24,31 @@ local React             = require(ReplicatedStorage.Packages.React)
 local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
-local AppWindow      = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
-local useRequest     = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("useRequest"))  -- §AGX/UI-P4
+-- §AGX/UI-P6: shared components
+local Common       = PlayerScripts:WaitForChild("UI"):WaitForChild("Common")
+local AppWindow    = require(Common:WaitForChild("AppWindow"))   -- §T10/U3
+local useRequest   = require(Common:WaitForChild("useRequest"))  -- §AGX/UI-P4
+local Theme        = require(Common:WaitForChild("Theme"))
+local UIScaleRoot  = require(Common:WaitForChild("UIScaleRoot"))
+local Text         = require(Common:WaitForChild("Text"))
+local Button       = require(Common:WaitForChild("Button"))
+local CurrencyPill = require(Common:WaitForChild("CurrencyPill"))
 
-local C = {
-	bg     = Color3.fromRGB(18, 18, 24),
-	panel  = Color3.fromRGB(26, 26, 38),
-	text   = Color3.fromRGB(220, 220, 230),
-	dim    = Color3.fromRGB(140, 140, 160),
-	gold   = Color3.fromRGB(255, 200, 60),
-	green  = Color3.fromRGB(50, 170, 80),
-	grey   = Color3.fromRGB(60, 60, 75),
-	close  = Color3.fromRGB(180, 50, 50),
-}
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
+
+local CLAIM_W = 240   -- design px
+
+-- "100 Merits" -> "merits", 100 (a Theme.Currency key), else nil.
+local function parseCurrency(entry)
+	local amount, name = string.match(tostring(entry), "^%s*(%-?%d+)%s+(%a+)%s*$")
+	local key = name and string.lower(name)
+	if key and Theme.Currency[key] then
+		return key, tonumber(amount)
+	end
+	return nil
+end
 
 local function DailyLoginUI(props)
 	local onClose = props.onClose or function() end
@@ -73,106 +94,127 @@ local function DailyLoginUI(props)
 	-- §AGX/X47: calendar (casual, never resets) + spree (consecutive days).
 	local streakText  = status and string.format("Calendar day %d/30  ·  Spree: %d day%s",
 		status.calendarDay or 1, status.streak or 0, (status.streak == 1) and "" or "s") or "Loading…"
-	local rewardText  = (status and status.nextReward) and table.concat(status.nextReward, ",  ") or "—"
 	local canClaim    = status and status.canClaim == true
 
-	-- §T10/U3: chrome owned by AppWindow. (The old close button here was
-	-- 0.018×0.031 scale ≈ a dozen pixels — the "incredibly small" one.)
-	return React.createElement(AppWindow, {
-		variant = "windowed",
+	-- Today's reward: currencies as CurrencyPills (§AGX/UI-P6), anything
+	-- else as text; "—" when the server sent nothing.
+	local rewardRow = {
+		layout = e("UIListLayout", {
+			FillDirection     = Enum.FillDirection.Horizontal,
+			VerticalAlignment = Enum.VerticalAlignment.Center,
+			SortOrder         = Enum.SortOrder.LayoutOrder,
+			Padding           = UDim.new(0, SP.sm),
+			Wraps             = true,
+		}),
+		caption = e(Text, {
+			style       = "caption",
+			text        = "Today's reward:",
+			color       = "text.secondary",
+			size        = UDim2.fromOffset(0, Theme.Metrics.pill.height),
+			autoSize    = "X",
+			layoutOrder = 0,
+		}),
+	}
+	local rewards = (status and status.nextReward) or {}
+	if #rewards == 0 then
+		rewardRow.none = e(Text, {
+			style = "label", text = "—", size = UDim2.fromOffset(16, Theme.Metrics.pill.height), layoutOrder = 1,
+		})
+	end
+	for i, entry in ipairs(rewards) do
+		local key, amount = parseCurrency(entry)
+		rewardRow["r" .. i] = key and e(CurrencyPill, {
+			currency    = key,
+			value       = amount,
+			showLabel   = true,
+			layoutOrder = i,
+		}) or e(Text, {
+			style       = "label",
+			text        = tostring(entry),
+			color       = "rarity.legendary",
+			size        = UDim2.fromOffset(0, Theme.Metrics.pill.height),
+			autoSize    = "X",
+			layoutOrder = i,
+		})
+	end
+
+	-- §AGX/UI-P4: colour follows the request state (was always green).
+	local feedbackColor = (claimReq.state == "err") and "state.danger"
+		or (claimReq.state == "pending") and "text.secondary"
+		or "state.success"
+
+	-- §T10/U3: chrome owned by AppWindow (44 px close there).
+	return e(AppWindow, {
+		variant = "dialog",
 		title   = "Daily Login",
 		icon    = "dailyLogin",
 		onClose = onClose,
 		size    = UDim2.fromScale(0.38, 0.46),
-		-- §AGX/UI-P1: T7: 0.38x0.46 is 320x179 on an iPhone; with the 48 px
-		-- header floor the body would be ~130 px. Pixel floor for phones;
-		-- 1080p (730x497) is above it, so desktop is unchanged. The 12x12
-		-- close is fixed centrally in AppWindow (44x44 floor).
+		-- §AGX/UI-P1: T7 pixel floor for small windows (1080p is above it).
 		minSize = Vector2.new(360, 260),
-		zIndex  = 10,
+		zIndex  = Theme.Z.window,
 	}, {
-			streakLbl = React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.05, 0.22),
-				Size                   = UDim2.fromScale(0.90, 0.13),
+		content = e(UIScaleRoot.Local, { name = "DailyLoginBody", zIndex = Theme.Z.window + 2 }, {
+			scroll = e("ScrollingFrame", {
+				Size                   = UDim2.fromScale(1, 1),
 				BackgroundTransparency = 1,
-				Text                   = streakText,
-				TextColor3             = C.text,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
-				ZIndex                 = 12,
+				BorderSizePixel        = 0,
+				CanvasSize             = UDim2.new(),
+				AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+				ScrollingDirection     = Enum.ScrollingDirection.Y,
+				ScrollBarThickness     = Theme.Metrics.scrollBar,
+				ScrollBarImageColor3   = R.text.secondary,
 			}, {
-				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1: 12 px text floor
-			}),
+				pad = e("UIPadding", {
+					PaddingLeft = UDim.new(0, SP.lg), PaddingRight = UDim.new(0, SP.lg),
+					PaddingTop = UDim.new(0, SP.sm), PaddingBottom = UDim.new(0, SP.md),
+				}),
+				layout = e("UIListLayout", {
+					SortOrder           = Enum.SortOrder.LayoutOrder,
+					HorizontalAlignment = Enum.HorizontalAlignment.Center,
+					Padding             = UDim.new(0, SP.sm),
+				}),
 
-			rewardCaption = React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.05, 0.38),
-				Size                   = UDim2.fromScale(0.90, 0.09),
-				BackgroundTransparency = 1,
-				Text                   = "Today's reward:",
-				TextColor3             = C.dim,
-				Font                   = Enum.Font.Gotham,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
-				ZIndex                 = 12,
-			}, {
-				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1: 12 px text floor
-			}),
+				streakLbl = e(Text, {
+					style       = "label",
+					text        = streakText,
+					wrap        = true,
+					layoutOrder = 1,
+				}),
 
-			rewardValue = React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.05, 0.47),
-				Size                   = UDim2.fromScale(0.90, 0.12),
-				BackgroundTransparency = 1,
-				Text                   = rewardText,
-				TextColor3             = C.gold,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
-				ZIndex                 = 12,
-			}, {
-				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1: 12 px text floor
-			}),
+				rewardRow = e("Frame", {
+					Name                   = "Reward",
+					Size                   = UDim2.fromScale(1, 0),
+					AutomaticSize          = Enum.AutomaticSize.Y,
+					BackgroundTransparency = 1,
+					LayoutOrder            = 2,
+				}, rewardRow),
 
-			feedback = resultMsg and React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.05, 0.60),
-				Size                   = UDim2.fromScale(0.90, 0.09),
-				BackgroundTransparency = 1,
-				Text                   = resultMsg,
-				-- §AGX/UI-P4: colour follows the request state (was always green).
-				TextColor3             = (claimReq.state == "err") and Color3.fromRGB(255, 110, 110)
-					or (claimReq.state == "pending") and C.dim
-					or Color3.fromRGB(100, 220, 120),
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Center,
-				ZIndex                 = 12,
-			}, {
-				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1: 12 px text floor
-			}) or nil,
+				feedback = resultMsg and e(Text, {
+					style       = "label",
+					text        = resultMsg,
+					color       = feedbackColor,
+					align       = "center",
+					wrap        = true,
+					layoutOrder = 3,
+				}) or nil,
 
-			claimBtn = React.createElement("TextButton", {
-				AnchorPoint      = Vector2.new(0.5, 1),
-				Position         = UDim2.fromScale(0.5, 0.94),
-				Size             = UDim2.fromScale(0.55, 0.14),
-				BackgroundColor3 = canClaim and C.green or C.grey,
-				BorderSizePixel  = 0,
-				Text             = canClaim and "Claim Reward" or "Already Claimed",
-				TextColor3       = Color3.fromRGB(255, 255, 255),
-				Font             = Enum.Font.GothamBold,
-				TextScaled       = true,
-				Active           = canClaim,
-				ZIndex           = 12,
-				[React.Event.Activated] = function()
-					if canClaim and not claimReq.pending then  -- §AGX/UI-P4: no double claim
-						claimReq.send()  -- §AGX/UI-P4: fires ClaimDailyLogin
-					end
-				end,
-			}, {
-				-- §AGX/UI-P1: 44 px tap floor (0.14 of a phone body was ~30 px).
-				minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, 44) }),
-				minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),
-				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
+				claimBtn = e(Button, {
+					variant     = "primary",
+					size        = "md",
+					width       = CLAIM_W,
+					label       = canClaim and "Claim Reward" or "Already Claimed",
+					disabled    = not canClaim,
+					loading     = claimReq.pending == true,
+					layoutOrder = 4,
+					onActivated = function()
+						if canClaim and not claimReq.pending then  -- §AGX/UI-P4: no double claim
+							claimReq.send()  -- §AGX/UI-P4: fires ClaimDailyLogin
+						end
+					end,
+				}),
 			}),
+		}),
 	})
 end
 

@@ -6,6 +6,12 @@
 
     Props:
       onClose  function
+
+    §AGX/UI-P6: Theme v2 re-skin. AppWindow variant "auto" (sheet on
+    phone); body = design px inside UIScaleRoot.Local: Common Tabs (blue
+    underline, 44 px) over a scrolling list of Panel rows, then a "your
+    score" footer. Private palette, minText helper, hand-rolled tabs and
+    their hit boxes are gone. formatScore (§AGX/X27 play time) is kept.
 ]]
 
 local Players           = game:GetService("Players")
@@ -15,29 +21,25 @@ local React             = require(ReplicatedStorage.Packages.React)
 local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
-local AppWindow      = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
+-- §AGX/UI-P6: shared components
+local Common      = PlayerScripts:WaitForChild("UI"):WaitForChild("Common")
+local AppWindow   = require(Common:WaitForChild("AppWindow"))  -- §T10/U3
+local Theme       = require(Common:WaitForChild("Theme"))
+local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
+local Text        = require(Common:WaitForChild("Text"))
+local Tabs        = require(Common:WaitForChild("Tabs"))
+local Panel       = require(Common:WaitForChild("Panel"))
 
-local C = {
-	bg      = Color3.fromRGB(18, 18, 24),
-	row     = Color3.fromRGB(32, 32, 46),
-	rowSelf = Color3.fromRGB(26, 40, 60),
-	text    = Color3.fromRGB(220, 220, 230),
-	dim     = Color3.fromRGB(140, 140, 160),
-	gold    = Color3.fromRGB(255, 200, 60),
-	blue    = Color3.fromRGB(80, 160, 255),
-	tabOn   = Color3.fromRGB(60, 80, 120),
-	tabOff  = Color3.fromRGB(30, 30, 42),
-	close   = Color3.fromRGB(180, 50, 50),
-}
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
 
--- §AGX/UI-P1: minimum tap target. Close is AppWindow's (44x44 floor there);
--- the tabs were 16 px tall on a phone (0.07 of the window body).
-local MIN_TAP_PX = 44
-
--- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
-local function minText()
-	return React.createElement("UITextSizeConstraint", { MinTextSize = 12 })
-end
+-- §AGX/UI-P6: layout in DESIGN px (phone scale).
+local ROW_H    = 44
+local RANK_W   = 56
+local SCORE_W  = 120
+local FOOTER_H = 32
+local TABS_H   = Theme.Metrics.tabs.height   -- 44 (§AGX/UI-P1: tabs were 16 px on a phone)
 
 local BOARDS = { "GearScore", "HighestWave", "TotalPlayTime" }
 
@@ -84,156 +86,119 @@ local function LeaderboardUI(props)
 		end
 	end, { activeBoard })
 
-	-- Tab buttons
-	local tabs = {}
+	local tabItems = {}
 	for i, board in ipairs(BOARDS) do
-		local isActive = board == activeBoard
-		local function selectBoard()
-			setEntries({})
-			setActiveBoard(board)
-		end
-		tabs["tab_" .. i] = React.createElement("TextButton", {
-			Size             = UDim2.fromScale(1 / #BOARDS, 1),
-			BackgroundColor3 = isActive and C.tabOn or C.tabOff,
-			BorderSizePixel  = 0,
-			Text             = board,
-			TextColor3       = isActive and C.blue or C.dim,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			LayoutOrder      = i,
-			ZIndex           = 12,
-			[React.Event.Activated] = selectBoard,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.15, 0) }),
-			minText = minText(),  -- §AGX/UI-P1: M11 text floor
-			-- §AGX/UI-P1: transparent hit box, 44 px tall, grown upward from
-			-- the tab's bottom edge (+2 px) so it stays off the list below.
-			-- The visual tab is unchanged, so desktop looks the same.
-			hit = React.createElement("TextButton", {
-				Name                   = "HitArea",
-				AnchorPoint            = Vector2.new(0.5, 1),
-				Position               = UDim2.new(0.5, 0, 1, 2),
-				Size                   = UDim2.fromScale(1, 1),
-				BackgroundTransparency = 1,
-				Text                   = "",
-				ZIndex                 = 13,
-				[React.Event.Activated] = selectBoard,
-			}, {
-				minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, MIN_TAP_PX) }),
-			}),
-		})
+		tabItems[i] = { id = board, label = BOARD_LABELS[board] or board }
 	end
-
-	local tabBarChildren = {
-		layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			SortOrder     = Enum.SortOrder.LayoutOrder,
-			Padding       = UDim.new(0.01, 0),
-		}),
-	}
-	for key, value in pairs(tabs) do
-		tabBarChildren[key] = value
+	local function selectBoard(board)
+		if board == activeBoard then return end
+		setEntries({})
+		setActiveBoard(board)
 	end
 
 	-- Entry rows
 	local rows = {}
-	rows["layout"] = React.createElement("UIListLayout", {
+	rows["layout"] = e("UIListLayout", {
 		SortOrder = Enum.SortOrder.LayoutOrder,
-		Padding   = UDim.new(0, 3),
+		Padding   = UDim.new(0, SP.xs),
 	})
 
 	if #entries == 0 then
-		rows["empty"] = React.createElement("TextLabel", {
-			Size                   = UDim2.new(1, 0, 0, 40),
-			BackgroundTransparency = 1,
-			Text                   = "Loading…",
-			TextColor3             = C.dim,
-			Font                   = Enum.Font.Gotham,
-			TextScaled             = true,
-			LayoutOrder            = 1,
-		}, { minText = minText() })  -- §AGX/UI-P1: M11 text floor
+		rows["empty"] = e(Text, {
+			style       = "body",
+			text        = "Loading…",
+			color       = "text.secondary",
+			align       = "center",
+			size        = UDim2.new(1, 0, 0, 40),
+			layoutOrder = 1,
+		})
 	else
 		for i, entry in ipairs(entries) do
 			local isSelf = entry.userId == localUserId
-			rows["row_" .. i] = React.createElement("Frame", {
-				Size             = UDim2.new(1, 0, 0, 34),
-				BackgroundColor3 = isSelf and C.rowSelf or C.row,
-				BorderSizePixel  = 0,
-				LayoutOrder      = i,
+			rows["row_" .. i] = e(Panel, {
+				name        = "Row_" .. i,
+				elevation   = "raised",
+				padding     = "none",
+				accent      = isSelf and "accent.secondary" or nil,   -- you = blue ring
+				size        = UDim2.new(1, 0, 0, ROW_H),
+				layoutOrder = i,
 			}, {
-				corner   = React.createElement("UICorner", { CornerRadius = UDim.new(0, 6) }),
-				rankLbl  = React.createElement("TextLabel", {
-					Position               = UDim2.fromScale(0.01, 0),
-					Size                   = UDim2.fromScale(0.10, 1),
-					BackgroundTransparency = 1,
-					Text                   = "#" .. tostring(entry.rank),
-					TextColor3             = (entry.rank or 99) <= 3 and C.gold or C.dim,
-					Font                   = Enum.Font.GothamBold,
-					TextScaled             = true,
-				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
-				nameLbl  = React.createElement("TextLabel", {
-					Position               = UDim2.fromScale(0.13, 0),
-					Size                   = UDim2.fromScale(0.62, 1),
-					BackgroundTransparency = 1,
-					Text                   = entry.name or "Unknown",
-					TextColor3             = isSelf and C.blue or C.text,
-					Font                   = Enum.Font.GothamBold,
-					TextScaled             = true,
-					TextXAlignment         = Enum.TextXAlignment.Left,
-				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
-				scoreLbl = React.createElement("TextLabel", {
-					Position               = UDim2.fromScale(0.76, 0),
-					Size                   = UDim2.fromScale(0.22, 1),
-					BackgroundTransparency = 1,
-					Text                   = formatScore(activeBoard, entry.score),
-					TextColor3             = C.text,
-					Font                   = Enum.Font.Gotham,
-					TextScaled             = true,
-					TextXAlignment         = Enum.TextXAlignment.Right,
-				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
+				rankLbl = e(Text, {
+					style = "numeric",
+					text  = "#" .. tostring(entry.rank),
+					color = (entry.rank or 99) <= 3 and "rarity.legendary" or "text.secondary",
+					align = "center",
+					size  = UDim2.new(0, RANK_W, 1, 0),
+				}),
+				nameLbl = e(Text, {
+					style    = "label",
+					text     = entry.name or "Unknown",
+					color    = isSelf and "accent.secondary" or "text.primary",
+					position = UDim2.fromOffset(RANK_W, 0),
+					size     = UDim2.new(1, -(RANK_W + SCORE_W + SP.md), 1, 0),
+				}),
+				scoreLbl = e(Text, {
+					style       = "numeric",
+					text        = formatScore(activeBoard, entry.score),
+					align       = "right",
+					anchorPoint = Vector2.new(1, 0),
+					position    = UDim2.new(1, -SP.md, 0, 0),
+					size        = UDim2.new(0, SCORE_W, 1, 0),
+				}),
 			})
 		end
 	end
 
-	-- §T10/U3: chrome owned by AppWindow (this file had the other
-	-- ~12-pixel close button).
-	return React.createElement(AppWindow, {
-		variant = "windowed",
+	-- §AGX/UI-P6: the footer is the local Gear Score (PlayerGearScore is the
+	-- only score the server sends); it used to borrow the active tab's label
+	-- and format ("Your Play Time: 0m" for a gear score).
+	local footerH = myScore and (FOOTER_H + SP.sm) or 0
+	local listTop = TABS_H + SP.sm
+
+	-- §T10/U3: chrome owned by AppWindow.
+	return e(AppWindow, {
+		variant = "auto",
 		title   = "Leaderboard",
 		icon    = "leaderboard",
 		onClose = onClose,
 		size    = UDim2.fromScale(0.50, 0.72),
-		zIndex  = 10,
+		zIndex  = Theme.Z.window,
 	}, {
-			myScoreLbl = myScore and React.createElement("TextLabel", {
-				Position               = UDim2.fromScale(0.04, 0.91),
-				Size                   = UDim2.fromScale(0.92, 0.06),
-				BackgroundTransparency = 1,
-				Text                   = "Your " .. (BOARD_LABELS[activeBoard] or activeBoard) .. ": " .. formatScore(activeBoard, myScore),
-				TextColor3             = C.blue,
-				Font                   = Enum.Font.GothamBold,
-				TextScaled             = true,
-				TextXAlignment         = Enum.TextXAlignment.Left,
-				ZIndex                 = 12,
-			}, { minText = minText() }) or nil,  -- §AGX/UI-P1: M11 text floor
+		content = e(UIScaleRoot.Local, { name = "LeaderboardBody", zIndex = Theme.Z.window + 2 }, {
+			pad = e("UIPadding", {
+				PaddingLeft = UDim.new(0, SP.lg), PaddingRight = UDim.new(0, SP.lg),
+				PaddingTop = UDim.new(0, SP.sm), PaddingBottom = UDim.new(0, SP.md),
+			}),
 
-			tabBar = React.createElement("Frame", {
-				Position               = UDim2.fromScale(0.04, 0.11),
-				Size                   = UDim2.fromScale(0.92, 0.07),
-				BackgroundTransparency = 1,
-				ZIndex                 = 12,
-			}, tabBarChildren),
+			tabBar = e(Tabs, {
+				items    = tabItems,
+				value    = activeBoard,
+				onChange = selectBoard,
+				size     = UDim2.new(1, 0, 0, TABS_H),
+			}),
 
-			listFrame = React.createElement("ScrollingFrame", {
-				Position              = UDim2.fromScale(0.04, 0.20),
-				Size                  = UDim2.fromScale(0.92, myScore and 0.69 or 0.76),
+			listFrame = e("ScrollingFrame", {
+				Name                   = "List",
+				Position               = UDim2.fromOffset(0, listTop),
+				Size                   = UDim2.new(1, 0, 1, -(listTop + footerH)),
 				BackgroundTransparency = 1,
-				BorderSizePixel       = 0,
-				ScrollBarThickness    = 4,
-				AutomaticCanvasSize   = Enum.AutomaticSize.Y,
-				CanvasSize            = UDim2.fromScale(0, 0),
-				ZIndex                = 12,
+				BorderSizePixel        = 0,
+				ScrollBarThickness     = Theme.Metrics.scrollBar,
+				ScrollBarImageColor3   = R.text.secondary,
+				ScrollingDirection     = Enum.ScrollingDirection.Y,
+				AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+				CanvasSize             = UDim2.fromScale(0, 0),
 			}, rows),
+
+			myScoreLbl = myScore and e(Text, {
+				style       = "label",
+				text        = "Your " .. BOARD_LABELS.GearScore .. ": " .. formatScore("GearScore", myScore),
+				color       = "accent.secondary",
+				anchorPoint = Vector2.new(0, 1),
+				position    = UDim2.fromScale(0, 1),
+				size        = UDim2.new(1, 0, 0, FOOTER_H),
+			}) or nil,
+		}),
 	})
 end
 
