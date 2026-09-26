@@ -5,7 +5,7 @@
       • GetPlayerInfo  → PlayerInfoUpdate
       • GetStats       → StatsUpdate
       • AllocateStat   → StatsUpdate
-      • ModifySystemStat (admin only)
+      • ModifySystemStat (admin only, Studio only — §AGX/SEC)
 
     Usage in bootstrap:
         SharedEventHandlers.Register({
@@ -20,6 +20,7 @@
 local SharedEventHandlers = {}
 
 local Players = game:GetService("Players")  -- §AGX/X3r11: keybind state cleanup on leave
+local RunService = game:GetService("RunService")  -- §AGX/SEC: Studio-only admin remote
 
 -- ═══════════════════════════════════════════════════════════
 -- INTERNAL STATE (set by Register)
@@ -325,27 +326,31 @@ function SharedEventHandlers.Register(deps)
 	end)
 
 	-- ── ModifySystemStat (admin only) ─────────────────────
-	NetworkManager.GetEvent("ModifySystemStat")
-	NetworkManager.OnClientEvent("ModifySystemStat", function(player, statName, delta)
-		if type(statName) ~= "string" or type(delta) ~= "number" then return end
-		if not IsAdmin(player) then
-			warn("[Security] ModifySystemStat blocked for", player.Name)
-			return
-		end
+	-- §AGX/SEC: §T0P2-ADMIN — Studio only; the remote is never created
+	-- in a live server. A missing IsAdmin dep now fails closed.
+	if RunService:IsStudio() then
+		NetworkManager.OnClientEvent("ModifySystemStat", function(player, statName, delta)
+			if type(statName) ~= "string" or type(delta) ~= "number" then return end
+			if delta ~= delta or math.abs(delta) == math.huge then return end  -- §AGX/SEC: NaN/inf
+			if type(IsAdmin) ~= "function" or not IsAdmin(player) then
+				warn("[Security] ModifySystemStat blocked for", player.Name)
+				return
+			end
 
-		-- Route through BonusManager "other" source so the change survives
-		-- BonusManager.Recalculate() (direct data.Bonus writes are overwritten).
-		local bm = getBonusManager()
-		local currentValue = bm.GetAggregatedBonus(player, statName)
-		local newDelta = delta
-		if statName == "CritDamage" then
-			newDelta = math.max(0.5 - currentValue, delta)
-		elseif statName == "CritChance" then
-			newDelta = math.max(-currentValue, delta)
-		end
-		bm.ModifySourceBonus(player, "other", statName, newDelta)
-		print("[SharedEventHandlers]", player.Name, statName, ":", currentValue, "->", currentValue + newDelta)
-	end)
+			-- Route through BonusManager "other" source so the change survives
+			-- BonusManager.Recalculate() (direct data.Bonus writes are overwritten).
+			local bm = getBonusManager()
+			local currentValue = bm.GetAggregatedBonus(player, statName)
+			local newDelta = delta
+			if statName == "CritDamage" then
+				newDelta = math.max(0.5 - currentValue, delta)
+			elseif statName == "CritChance" then
+				newDelta = math.max(-currentValue, delta)
+			end
+			bm.ModifySourceBonus(player, "other", statName, newDelta)
+			print("[SharedEventHandlers]", player.Name, statName, ":", currentValue, "->", currentValue + newDelta)
+		end)
+	end  -- §AGX/SEC: IsStudio gate
 
 	-- ── SaveKeybindings ───────────────────────────────────
 	-- Client sends serialized overrides: { actionName = { Keyboard = "KeyName" } }

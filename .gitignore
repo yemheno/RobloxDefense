@@ -35,6 +35,9 @@ desktop.ini
 .env.*
 !.env.example
 
+# ── Python virtualenvs ── §AGX/SEC: G24
+.venv/
+
 # ── Node modules (tools/) ──────────────────────────────────
 tools/node_modules/
 node_modules/

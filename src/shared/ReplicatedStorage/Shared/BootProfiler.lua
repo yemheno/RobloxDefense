@@ -38,7 +38,9 @@ local RunService = game:GetService("RunService")
 
 local BootProfiler = {}
 
-local ENABLED          = true
+-- §AGX/SEC: OFF for shipping (docs/TODO.md §PERF/BP). Flip to true
+-- locally to get the boot timeline in Output; it is zero-cost when false.
+local ENABLED          = false
 local SLOW_THRESHOLD   = 0.100  -- s
 local GAP_THRESHOLD    = 0.350  -- s
 local QUIET_DUMP_DELAY = 5      -- s of inactivity before auto-dump

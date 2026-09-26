@@ -161,7 +161,8 @@ do
     end
 end
 
-ctx.Load(SharedModules, "AdminTesting")
+-- §AGX/SEC: §T0P2-ADMIN — admin panel backend is Studio-only.
+if ctx.IsStudio then ctx.Load(SharedModules, "AdminTesting") end
 
 -- ───────────────────────────────────────────────────────────
 -- VALIDATE CRITICAL MODULES
@@ -205,17 +206,21 @@ end)
 -- ───────────────────────────────────────────────────────────
 -- ADMIN DEBUG COMMANDS (lobby has only addXP for now)
 -- ───────────────────────────────────────────────────────────
-NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
-    if not IsAdmin(player) then
-        warn("[Security] DebugCommand blocked for " .. player.Name)
-        return
-    end
-    local args = {...}
-    if command == "addXP" then
-        local amount = args[1] or 100
-        DataManager.AddExperience(player, amount)
-    end
-end)
+-- §AGX/SEC: §T0P2-ADMIN — the DebugCommand remote exists only in Studio
+-- (NetworkManager studioOnly); outside Studio nothing is wired here.
+if ctx.IsStudio then
+    NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
+        if not IsAdmin(player) then
+            warn("[Security] DebugCommand blocked for " .. player.Name)
+            return
+        end
+        local args = {...}
+        if command == "addXP" then
+            local amount = tonumber(args[1]) or 100  -- §AGX/SEC: type-check client arg
+            DataManager.AddExperience(player, amount)
+        end
+    end)
+end
 
 -- ───────────────────────────────────────────────────────────
 -- PLAYER LIFECYCLE

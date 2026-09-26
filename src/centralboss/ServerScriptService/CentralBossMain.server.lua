@@ -157,7 +157,8 @@ ctx.loaded["TeleportDataReader"].OnDifficultyResolved(function(difficulty)
     print("[CentralBoss] Difficulty resolved:", difficulty)
 end)
 
-ctx.Load(SharedModules, "AdminTesting")
+-- §AGX/SEC: §T0P2-ADMIN — admin panel backend is Studio-only.
+if ctx.IsStudio then ctx.Load(SharedModules, "AdminTesting") end
 
 Players.PlayerRemoving:Connect(function(player)
     local tdr = ctx.loaded["TeleportDataReader"]
@@ -243,20 +244,24 @@ end)
 -- ───────────────────────────────────────────────────────────
 -- DEBUG COMMANDS
 -- ───────────────────────────────────────────────────────────
-NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
-    if not IsAdmin(player) then return end
-    local args = {...}
-    if command == "skipWave" then
-        MobSpawner.ForceCompleteWave()
-    elseif command == "addXP" then
-        local amount = args[1] or 100
-        DataManager.AddExperience(player, amount)
-    elseif command == "bossHP" then
-        -- §AGX/X28: jump phases while testing, e.g. bossHP 0.5 → phase 2.
-        local fraction = tonumber(args[1])
-        if fraction then ctx.loaded["BossEncounter"].DebugSetHpFraction(fraction) end
-    end
-end)
+-- §AGX/SEC: §T0P2-ADMIN — the DebugCommand remote exists only in Studio
+-- (NetworkManager studioOnly); outside Studio nothing is wired here.
+if ctx.IsStudio then
+    NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
+        if not IsAdmin(player) then return end
+        local args = {...}
+        if command == "skipWave" then
+            MobSpawner.ForceCompleteWave()
+        elseif command == "addXP" then
+            local amount = tonumber(args[1]) or 100  -- §AGX/SEC: type-check client arg
+            DataManager.AddExperience(player, amount)
+        elseif command == "bossHP" then
+            -- §AGX/X28: jump phases while testing, e.g. bossHP 0.5 → phase 2.
+            local fraction = tonumber(args[1])
+            if fraction then ctx.loaded["BossEncounter"].DebugSetHpFraction(fraction) end
+        end
+    end)
+end
 
 -- ───────────────────────────────────────────────────────────
 -- AMBIENT LOOPS

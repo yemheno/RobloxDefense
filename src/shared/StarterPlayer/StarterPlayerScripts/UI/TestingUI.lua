@@ -1,8 +1,10 @@
 -- UI/TestingUI.lua
 --[[
     Admin Testing Panel.
-    Visible ONLY to the game creator (UserId == game.CreatorId).
-    All requests are re-validated server-side — no trust given to the client.
+    §AGX/SEC: §T0P2-ADMIN — STUDIO ONLY. Outside Studio this module
+    exports a component that renders nothing and touches no remote (the
+    AdminAction remotes don't exist there). In Studio it shows for every
+    tester; the server re-validates each request (PlaceBootstrap.IsAdmin).
 
     Features:
       • Reset all player data (level 1, zero currencies)
@@ -18,27 +20,29 @@
       Server → "AdminActionResult", { ok=bool, message=string }
 ]]
 
-local Players           = game:GetService("Players")
 local GuiService        = game:GetService("GuiService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService        = game:GetService("RunService")
+
+-- §AGX/SEC: §T0P2-ADMIN — outside Studio, mount nothing. Shell.lua still
+-- does e(TestingUI), so export a component (not nil) that renders nil,
+-- with no hooks and no AdminActionResult subscription (that remote is
+-- never created live; the client listener would wait on it forever).
+-- IsStudio() is fixed for the session, so the hook order never varies.
+if not RunService:IsStudio() then
+	return function()
+		return nil
+	end
+end
+
 local React             = require(ReplicatedStorage.Packages.React)
 
 local Modules        = script.Parent.Parent:WaitForChild("Modules")
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 
-local player = Players.LocalPlayer
-
--- Show the panel if we are the game creator OR a listed developer OR in Studio.
--- (game.CreatorId returns 0 for unpublished games, so the Studio bypass is required.)
-local ADMIN_IDS = {
-	[4700259512] = true,  -- AstralitoCL (developer)
-}
-local function isAdmin()
-	if player.UserId == game.CreatorId then return true end
-	if ADMIN_IDS[player.UserId] then return true end
-	return RunService:IsStudio()
-end
+-- §AGX/SEC: X16 — the old client check duplicated the admin allowlist
+-- and trusted game.CreatorId. The panel is cosmetic and Studio-only now;
+-- the server's PlaceBootstrap.IsAdmin is the only gate that matters.
 
 -- ── Palette ─────────────────────────────────────────────────────────
 local C = {
@@ -154,8 +158,8 @@ end
 
 -- ── Main Component ────────────────────────────────────────────────────
 local function TestingUI()
-	-- All hooks must run unconditionally (React rules).
-	-- We gate the returned JSX after hooks using isAdmin().
+	-- All hooks must run unconditionally (React rules). §AGX/SEC: the
+	-- Studio gate lives at module level, so there's no per-render gate.
 	local open,       setOpen       = React.useState(false)
 	local feedback,   setFeedback   = React.useState("Ready.")
 	local feedbackOk, setFeedbackOk = React.useState(true)
@@ -186,9 +190,6 @@ local function TestingUI()
 	local topLeftInset = select(1, GuiService:GetGuiInset())
 	local safeLeft = topLeftInset.X + 8
 	local safeTop = topLeftInset.Y + 8
-
-	-- Non-admin players: render nothing (all hooks above have already run)
-	if not isAdmin() then return nil end
 
 	return React.createElement("Frame", {
 		Name                   = "TestingUI",

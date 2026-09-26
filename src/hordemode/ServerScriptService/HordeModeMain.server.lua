@@ -167,7 +167,8 @@ ctx.loaded["TeleportDataReader"].Init("HordeMode")
 -- The old boot-time GetDifficulty() read always returned "Normal".
 local hordeDifficulty = "Normal"
 
-ctx.Load(SharedModules, "AdminTesting")
+-- §AGX/SEC: §T0P2-ADMIN — admin panel backend is Studio-only.
+if ctx.IsStudio then ctx.Load(SharedModules, "AdminTesting") end
 
 Players.PlayerRemoving:Connect(function(player)
     local tdr = ctx.loaded["TeleportDataReader"]
@@ -295,10 +296,13 @@ local function startSpawnerOnce()
         local lvl = DataManager.GetAccountData(p, "Level") or 1
         if lvl > highest then highest = lvl end
     end
+    -- §AGX/SEC: Start() FIRST. Its first call resets currentLevel /
+    -- maxAutoLevel to CFG defaults, which silently clobbered an anchor
+    -- applied before it (the per-player extras re-anchor masked this).
+    HordeModeSpawner.Start()
     if highest > 1 then
         HordeModeSpawner.SetPartyAnchorLevel(highest)
     end
-    HordeModeSpawner.Start()
 end
 
 if DataManager.OnPlayerDataReady then
@@ -320,6 +324,15 @@ HordePauseManager.Setup({
 -- §AGX/X27: the same watcher also records HighestWaveReached (same level
 -- number the achievement hook gets), so it no longer bails when
 -- AchievementManager is missing.
+-- §AGX/SEC: HighestWave semantics = the highest wave/level COMPLETED,
+-- same as Lane (MobSpawner.OnWaveCompleted passes the wave just cleared)
+-- and the achievement hook. Level N→N+1 means level N was survived, so we
+-- report the OLD level; the old loop reported the level just REACHED
+-- (one too high). Only a single-step tick counts as progress: the party
+-- anchor (SetPartyAnchorLevel) and the Studio setHordeLevel command jump
+-- the level, and those jumps used to be credited as dozens of "survived"
+-- waves. Any other change just re-baselines. Natural ticks are 75 s apart
+-- (HordeModeSpawner CFG.LEVEL_TICK_INTERVAL) against a 2 s poll.
 task.spawn(function()
     local amMod = ctx.loaded["AchievementManager"]
     if amMod and not amMod.OnWaveCompleted then amMod = nil end
@@ -327,15 +340,12 @@ task.spawn(function()
     while hordeRunActive do
         task.wait(2)
         local lv = HordeModeSpawner.GetLevel() or lastLevel
-        local advanced = false
-        while lv > lastLevel do
-            lastLevel += 1
-            advanced = true
-            if amMod then amMod.OnWaveCompleted(lastLevel) end
+        if lv == lastLevel + 1 then
+            local completed = lastLevel  -- the level just survived
+            if amMod then amMod.OnWaveCompleted(completed) end
+            GameStateManager.RecordWaveReached(completed)
         end
-        if advanced then
-            GameStateManager.RecordWaveReached(lastLevel)
-        end
+        lastLevel = lv
     end
 end)
 
@@ -365,29 +375,33 @@ GameStateManager.SetState("Defending")
 -- ───────────────────────────────────────────────────────────
 -- DEBUG COMMANDS (admin-only)
 -- ───────────────────────────────────────────────────────────
-NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
-    if not IsAdmin(player) then return end
-    local args = {...}
+-- §AGX/SEC: §T0P2-ADMIN — the DebugCommand remote exists only in Studio
+-- (NetworkManager studioOnly); outside Studio nothing is wired here.
+if ctx.IsStudio then
+    NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
+        if not IsAdmin(player) then return end
+        local args = {...}
 
-    if command == "skipWave" then
-        MobSpawner.ForceCompleteWave()
-    elseif command == "addXP" then
-        local amount = args[1] or 100
-        DataManager.AddExperience(player, amount)
-    elseif command == "setHordeLevel" then
-        HordeModeSpawner.SetLevel(tonumber(args[1]) or 1)
-    elseif command == "stopHorde" then
-        HordeModeSpawner.Stop()
-    elseif command == "startHorde" then
-        HordeModeSpawner.Start()
-    elseif command == "pauseHorde" then
-        HordePauseManager.Pause()
-    elseif command == "resumeHorde" then
-        HordePauseManager.Resume()
-    elseif command == "toggleHordePause" then
-        HordePauseManager.Toggle()
-    end
-end)
+        if command == "skipWave" then
+            MobSpawner.ForceCompleteWave()
+        elseif command == "addXP" then
+            local amount = tonumber(args[1]) or 100  -- §AGX/SEC: type-check client arg
+            DataManager.AddExperience(player, amount)
+        elseif command == "setHordeLevel" then
+            HordeModeSpawner.SetLevel(tonumber(args[1]) or 1)
+        elseif command == "stopHorde" then
+            HordeModeSpawner.Stop()
+        elseif command == "startHorde" then
+            HordeModeSpawner.Start()
+        elseif command == "pauseHorde" then
+            HordePauseManager.Pause()
+        elseif command == "resumeHorde" then
+            HordePauseManager.Resume()
+        elseif command == "toggleHordePause" then
+            HordePauseManager.Toggle()
+        end
+    end)
+end
 
 -- ───────────────────────────────────────────────────────────
 -- AMBIENT LOOPS (vitals + regen)
@@ -419,6 +433,9 @@ task.spawn(function()
             -- ① 2 s heads-up before the freeze
             NetworkManager.FireAllClients("VotePending", { voteType = voteType, countdown = 2 })
             task.wait(2)
+            -- §AGX/SEC: the run can end during the heads-up; don't pause
+            -- the horde and open a vote on top of the victory screen.
+            if not hordeRunActive then break end
 
             -- ② Pause + start vote
             pauseStartedAt = os.clock()

@@ -18,6 +18,10 @@
 
       • rateLimit  — calls/sec/player allowed via OnClientEvent.
                      `nil`  → fall back to DEFAULT_LIMIT (30).
+      • studioOnly — §AGX/SEC (§T0P2-ADMIN): the event exists ONLY in
+                     Studio. Outside Studio it is never created (Init
+                     skips it, GetEvent refuses it and returns nil), so
+                     live servers expose no admin/debug remote at all.
       • readyGated — informational. `true` means the producer side should
                      fire it via ReadyGate.FireClient instead of plain
                      NetworkManager.FireClient. We don't auto-route
@@ -54,6 +58,10 @@ local NetworkManager = {}
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService        = game:GetService("RunService")
+
+-- §AGX/SEC: studioOnly manifest entries exist only when this is true.
+local IS_STUDIO = RunService:IsStudio()
 
 local eventsFolder = nil
 local remoteEvents = {}
@@ -151,6 +159,9 @@ local EVENTS = {
     DamageNumber           = { rateLimit = nil,  readyGated = false },
     -- §PERF/F5: Tibia-style 0.1 s damage-number batching (array payload).
     DamageNumberBatch      = { rateLimit = nil,  readyGated = false },
+    -- §AGX/SEC: §T0P2-ORPHANS — nothing on the server fires this (heals
+    -- ride HealNumberBatch), but DamageNumbers.lua:289 still listens, so it
+    -- stays until that client listener is removed; then delete both.
     HealNumber             = { rateLimit = nil,  readyGated = false },
     -- §SCALE/S5: batched DoT/HoT number windows (array payloads).
     HealNumberBatch        = { rateLimit = nil,  readyGated = false },
@@ -260,11 +271,11 @@ local EVENTS = {
     VoteCastPersonal       = { rateLimit = 4,    readyGated = false },
     VoteResultPersonal     = { rateLimit = nil,  readyGated = false },
 
-    -- ── Admin ────────────────────────────────────────────────────────
-    AdminAction            = { rateLimit = nil,  readyGated = false },
-    AdminActionResult      = { rateLimit = nil,  readyGated = false },
-    DebugCommand           = { rateLimit = nil,  readyGated = false },
-    ModifySystemStat       = { rateLimit = nil,  readyGated = false }, -- §T0P2/X10: was created ad-hoc by SharedEventHandlers
+    -- ── Admin (§AGX/SEC: §T0P2-ADMIN — Studio only, never created live) ──
+    AdminAction            = { rateLimit = nil,  readyGated = false, studioOnly = true },
+    AdminActionResult      = { rateLimit = nil,  readyGated = false, studioOnly = true },
+    DebugCommand           = { rateLimit = nil,  readyGated = false, studioOnly = true },
+    ModifySystemStat       = { rateLimit = nil,  readyGated = false, studioOnly = true }, -- §T0P2/X10: was created ad-hoc by SharedEventHandlers
 
     -- ── §T0P2/X10: previously used but missing from the manifest ─────
     -- These were created ad-hoc via GetEvent AFTER the pre-register
@@ -285,11 +296,10 @@ local EVENTS = {
     Notify                 = { rateLimit = 1,    readyGated = false },
 }
 
--- §T0P2/X10: manifest entries with NO server-side reference today —
--- either dead or pushes that were never wired. Verify at their owning
--- tier before deleting: ArmorRefinementResult / ArmorTierUp /
--- WeaponRefinementResult / WeaponTierUp (T6 equipment), HealNumber (T2
--- combat — heals may be intended to ride DamageNumber instead).
+-- §T0P2/X10 → §T0P2-ORPHANS (§AGX/SEC): the four equipment events are
+-- NOT orphans — fired by name (EquipmentRefinement / EquipmentTierSystem
+-- `eventName`). HealNumber: server never fires it, one dead client
+-- listener remains (see its manifest line).
 
 -- ─────────────────────────────────────────────────────────────────────
 -- RATE LIMITER (per-event)
@@ -353,9 +363,16 @@ function NetworkManager.Init()
     -- §NM-D4: pre-register every manifest entry so client WaitForChild
     -- never times out during boot.
     local count = 0
-    for name in pairs(EVENTS) do
-        NetworkManager.GetEvent(name)
-        count = count + 1
+    for name, entry in pairs(EVENTS) do
+        if entry.studioOnly and not IS_STUDIO then
+            -- §AGX/SEC: never create a Studio-only remote in a live
+            -- server, and drop any copy a place file might carry.
+            local stale = eventsFolder:FindFirstChild(name)
+            if stale then stale:Destroy() end
+        else
+            NetworkManager.GetEvent(name)
+            count = count + 1
+        end
     end
 
     -- Clean up rate-limit buckets when players leave
@@ -379,9 +396,16 @@ end
 -- GET / FIRE
 -- ─────────────────────────────────────────────────────────────────────
 
+--- §AGX/SEC: returns nil for a studioOnly event outside Studio (the
+--- remote must not exist there); FireClient / FireAllClients /
+--- OnClientEvent then no-op instead of creating it.
 function NetworkManager.GetEvent(eventName)
     if remoteEvents[eventName] then
         return remoteEvents[eventName]
+    end
+    if not IS_STUDIO and NetworkManager.IsStudioOnly(eventName) then
+        warn("[NetworkManager] Refusing to create Studio-only remote outside Studio: " .. tostring(eventName))
+        return nil
     end
 
     local event = eventsFolder:FindFirstChild(eventName)
@@ -397,17 +421,22 @@ end
 
 function NetworkManager.FireClient(player, eventName, ...)
     local event = NetworkManager.GetEvent(eventName)
+    if not event then return end  -- §AGX/SEC: Studio-only event outside Studio
     event:FireClient(player, ...)
 end
 
 function NetworkManager.FireAllClients(eventName, ...)
     local event = NetworkManager.GetEvent(eventName)
+    if not event then return end  -- §AGX/SEC: Studio-only event outside Studio
     event:FireAllClients(...)
 end
 
+--- §AGX/SEC: returns the RBXScriptConnection (nil when the event is
+--- Studio-only and we're live) so callers can tear the listener down.
 function NetworkManager.OnClientEvent(eventName, callback)
     local event = NetworkManager.GetEvent(eventName)
-    event.OnServerEvent:Connect(function(player, ...)
+    if not event then return nil end  -- §AGX/SEC: Studio-only event outside Studio
+    return event.OnServerEvent:Connect(function(player, ...)
         if isRateLimited(eventName, player) then
             return
         end
@@ -426,6 +455,12 @@ end
 function NetworkManager.IsReadyGated(eventName)
     local entry = EVENTS[eventName]
     return entry ~= nil and entry.readyGated == true
+end
+
+--- §AGX/SEC: true if the manifest marks this event Studio-only.
+function NetworkManager.IsStudioOnly(eventName)
+    local entry = EVENTS[eventName]
+    return entry ~= nil and entry.studioOnly == true
 end
 
 --- Returns the rate limit for an event (the resolved value, including

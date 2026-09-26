@@ -25,7 +25,14 @@ local PlaceBootstrap = {}
 
 local SSS = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
 local SharedModules = SSS:WaitForChild("Modules")
+
+-- §AGX/SEC: §T0P2-ADMIN — the whole remote admin surface (DebugCommand,
+-- AdminAction, ModifySystemStat, AdminTesting, TestingUI) exists ONLY in
+-- Studio. Live servers never create those remotes, so a custom client
+-- has nothing to fire at. Read once: IsStudio() can't change at runtime.
+PlaceBootstrap.IS_STUDIO = RunService:IsStudio()
 
 -- §PERF/BP: boot timeline — every Load (require + Init) is timed here,
 -- which covers the entire module boot of all five places.
@@ -34,18 +41,34 @@ local BootProfiler = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChi
 -- Admin allowlist is centralised in PlayerDataConfig.AdminUserIds.
 local _AdminCfg = require(SharedModules:WaitForChild("PlayerDataConfig"))
 
---- Returns true if the player is the game creator OR is in the allowlist.
+--- §AGX/SEC: §T0P2-ADMIN + X16 — the single admin guard (AdminTesting
+--- uses it too). Always false outside Studio, so even a stray handler
+--- can't grant anything in a live server. Inside Studio a player is
+--- admin when they are:
+---   • in PlayerDataConfig.AdminUserIds, or
+---   • the owner of a USER-owned universe. X16: for a group-owned game
+---     game.CreatorId is the GROUP id, so comparing it to a UserId both
+---     locks the owner out and admits whoever's UserId equals the group id.
+---   • a Studio local-server test account (Player1, Player2, … have
+---     UserId <= 0; they only exist in Studio's "Start" test servers).
 function PlaceBootstrap.IsAdmin(player)
-    if not player then return false end
-    if player.UserId == game.CreatorId then return true end
-    return _AdminCfg.AdminUserIds and _AdminCfg.AdminUserIds[player.UserId] == true
+    if not PlaceBootstrap.IS_STUDIO then return false end
+    if typeof(player) ~= "Instance" or not player:IsA("Player") then return false end
+    local userId = player.UserId
+    if _AdminCfg.AdminUserIds and _AdminCfg.AdminUserIds[userId] == true then return true end
+    if game.CreatorType == Enum.CreatorType.User and game.CreatorId ~= 0
+        and userId == game.CreatorId then
+        return true
+    end
+    return userId <= 0
 end
 
 --- Build a per-place bootstrap context. The returned table exposes:
 ---   • loaded         — `[moduleName] = moduleTable` of every Load'd module
 ---   • Load(parent, name)    — pcall-require, runs Init() if present, returns the module
 ---   • RequireLoaded(name)   — hard-error if `name` isn't in `loaded`
----   • IsAdmin(player)
+---   • IsAdmin(player)        — Studio-only (§AGX/SEC)
+---   • IsStudio               — gate for every admin/debug remote (§AGX/SEC)
 ---   • placeName              — the string passed in
 ---   • SharedModules          — reference to ServerScriptService.Modules
 function PlaceBootstrap.MakeContext(placeName)
@@ -57,6 +80,7 @@ function PlaceBootstrap.MakeContext(placeName)
         loaded        = {},
         initFailed    = {},  -- §AGX/X16: name → Init() error
         IsAdmin       = PlaceBootstrap.IsAdmin,
+        IsStudio      = PlaceBootstrap.IS_STUDIO,  -- §AGX/SEC: gate DebugCommand wiring
     }
 
     BootProfiler.SetContext(placeName)

@@ -2,15 +2,15 @@
 --[[
     Admin-only testing and debugging panel server handler.
 
-    §T0P2/X25: ALL requests are validated server-side — the player must be
-    the game creator OR be in PlayerDataConfig.AdminUserIds (single source
-    of truth). Client-side UI is purely cosmetic — no trust is given.
+    §T0P2/X25: ALL requests are validated server-side through
+    PlaceBootstrap.IsAdmin (allowlist in PlayerDataConfig.AdminUserIds,
+    user-owned creator, Studio test accounts). Client-side UI is purely
+    cosmetic — no trust is given.
 
-    ⚠ §T0P2/X16 (parked in docs/TODO.md): this whole module + the
-    AdminAction/DebugCommand remote surface is scheduled for REMOVAL
-    before public release — admin tooling moves to Studio runtime
-    console commands. Any remote admin surface is attack surface for
-    custom clients, even gated.
+    §AGX/SEC: §T0P2-ADMIN — STUDIO ONLY. Outside Studio Init() returns
+    before touching the network: the AdminAction / AdminActionResult
+    remotes are never created (NetworkManager marks them studioOnly) and
+    no handler is connected. Live servers have no admin surface at all.
 
     Supported actions (sent via "AdminAction" RemoteEvent):
         "ResetData"          – Wipe account progression to defaults (level 1, 0 currencies)
@@ -32,6 +32,7 @@
 local AdminTesting = {}
 
 local _Players = game:GetService("Players")  -- reserved for future use
+local RunService = game:GetService("RunService")
 local Modules = script.Parent
 
 -- Lazy-load to avoid circular deps
@@ -80,13 +81,16 @@ end
 -- GUARD
 -- ═══════════════════════════════════════════════════════════
 
--- Developer allowlist is centralised in PlayerDataConfig.AdminUserIds.
--- Do NOT maintain a separate local ADMIN_IDS copy here.
+-- §AGX/SEC: X16 — one admin guard for the whole codebase. The old
+-- local copy trusted game.CreatorId without checking CreatorType (a
+-- group id for group-owned games). PlaceBootstrap.IsAdmin is Studio-only
+-- and CreatorType-aware. Do NOT maintain a separate copy here.
+local PlaceBootstrap = nil
 local function isAdmin(player)
-	if not player then return false end
-	if player.UserId == game.CreatorId then return true end
-	local cfg = getConfig()
-	return cfg.AdminUserIds and cfg.AdminUserIds[player.UserId] == true
+	if not PlaceBootstrap then
+		PlaceBootstrap = require(Modules:WaitForChild("PlaceBootstrap"))
+	end
+	return PlaceBootstrap.IsAdmin(player)
 end
 
 local function reply(player, ok, message)
@@ -354,13 +358,16 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 function AdminTesting.Init()
+	-- §AGX/SEC: §T0P2-ADMIN — no remotes, no handler outside Studio.
+	if not RunService:IsStudio() then return end
+
 	local net = getNet()
 
 	net.GetEvent("AdminAction")
 	net.GetEvent("AdminActionResult")
 
 	net.OnClientEvent("AdminAction", function(player, actionName, ...)
-		-- Gate: only the game creator can use this panel
+		-- Gate: Studio admins only (PlaceBootstrap.IsAdmin)
 		if not isAdmin(player) then
 			warn("[AdminTesting] Blocked non-admin request from", player.Name)
 			reply(player, false, "Access denied")

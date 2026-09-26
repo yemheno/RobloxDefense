@@ -106,7 +106,8 @@ ctx.Load(SharedModules, "ResourceManager")
 ctx.Load(SharedModules, "MonitoringSystem")
 ctx.Load(SharedModules, "SharedEventHandlers")
 ctx.Load(SharedModules, "BonusExpSystem")
-ctx.Load(SharedModules, "AdminTesting")
+-- §AGX/SEC: §T0P2-ADMIN — admin panel backend is Studio-only.
+if ctx.IsStudio then ctx.Load(SharedModules, "AdminTesting") end
 
 -- §AGX/UI-P3: D15 exit from the Plaza (shell-spec F4/B9). The menu's
 -- `leave` entry fires RequestReturnToLobby; only NetworkManager and

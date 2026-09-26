@@ -199,7 +199,8 @@ else
     applyLaneAnchor()
 end
 
-ctx.Load(SharedModules, "AdminTesting")
+-- §AGX/SEC: §T0P2-ADMIN — admin panel backend is Studio-only.
+if ctx.IsStudio then ctx.Load(SharedModules, "AdminTesting") end
 
 -- TeleportDataReader cleanup on leave
 Players.PlayerRemoving:Connect(function(player)
@@ -314,12 +315,19 @@ end)
 if MobSpawner and VoteManager then
     MobSpawner.SetPreSpawnHook(function(_waveNumber)
         task.wait(0.1)  -- let OnWaveStarted callbacks fire
-        while VoteManager.IsVoteActive() do task.wait(0.25) end
+        -- §AGX/SEC: bounded (mirrors Horde's 12 s cap). A normal vote is
+        -- 10 s + 5 s grace; a stuck vote flag used to stall the wave forever.
+        local deadline = os.clock() + 30
+        while VoteManager.IsVoteActive() and os.clock() < deadline do task.wait(0.25) end
     end)
 end
 
 MobSpawner.OnWaveCompleted(function(waveNumber)
     -- §AGX/X27: record the wave for the HighestWave leaderboard.
+    -- §AGX/SEC: semantics = highest wave COMPLETED. `waveNumber` is the
+    -- wave just cleared (MobSpawner.FireWaveCompleted(currentWave)), the
+    -- same number AchievementManager.OnWaveCompleted gets. Horde's level
+    -- watcher reports the level it just survived to match.
     GameStateManager.RecordWaveReached(waveNumber)
 
     -- Wave completion XP bonus: 15 + (15 × wave) to every active player.
@@ -340,28 +348,32 @@ end)
 -- ───────────────────────────────────────────────────────────
 -- DEBUG COMMANDS (admin-only)
 -- ───────────────────────────────────────────────────────────
-NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
-    if not IsAdmin(player) then return end
-    local args = {...}
+-- §AGX/SEC: §T0P2-ADMIN — the DebugCommand remote exists only in Studio
+-- (NetworkManager studioOnly); outside Studio nothing is wired here.
+if ctx.IsStudio then
+    NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
+        if not IsAdmin(player) then return end
+        local args = {...}
 
-    if command == "testDamage" then
-        local tier = args[1] or "normal"
-        local hp = args[2] or 50
-        local atk = args[3] or 10
-        DefenseLine.TestDamage(tier, hp, atk)
-    elseif command == "healLine" then
-        local amount = args[1] or 100
-        DefenseLine.Heal(amount)
-    elseif command == "setLineHP" then
-        local hp = args[1] or DefenseLine.GetMaxHealth()
-        DefenseLine.SetHealth(hp)
-    elseif command == "skipWave" then
-        MobSpawner.ForceCompleteWave()
-    elseif command == "addXP" then
-        local amount = args[1] or 100
-        DataManager.AddExperience(player, amount)
-    end
-end)
+        if command == "testDamage" then
+            local tier = type(args[1]) == "string" and args[1] or "normal"  -- §AGX/SEC: type-check client args
+            local hp = tonumber(args[2]) or 50
+            local atk = tonumber(args[3]) or 10
+            DefenseLine.TestDamage(tier, hp, atk)
+        elseif command == "healLine" then
+            local amount = tonumber(args[1]) or 100  -- §AGX/SEC: type-check client arg
+            DefenseLine.Heal(amount)
+        elseif command == "setLineHP" then
+            local hp = tonumber(args[1]) or DefenseLine.GetMaxHealth()  -- §AGX/SEC: type-check client arg
+            DefenseLine.SetHealth(hp)
+        elseif command == "skipWave" then
+            MobSpawner.ForceCompleteWave()
+        elseif command == "addXP" then
+            local amount = tonumber(args[1]) or 100  -- §AGX/SEC: type-check client arg
+            DataManager.AddExperience(player, amount)
+        end
+    end)
+end
 
 -- ───────────────────────────────────────────────────────────
 -- AMBIENT LOOPS (vitals + regen) — shared with Horde/CentralBoss.
