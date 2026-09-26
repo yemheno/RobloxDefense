@@ -1,6 +1,8 @@
 # BALANCE NUMBERS — Complete Gameplay Reference
 
 > Maintained reference for all gameplay numbers. Last updated March 2026 (post card/vote system).
+>
+> **Updated 2026-09-26 (§AGX):** economy pass X23/X25/X41/X42/X43. Sections touched: §1 Respec, §9 Difficulty, §10 Refinement + Temper Pity, §17 Waves, §18 Drops, §19 Death, §29 Cards/Quests, §30 Quests, §33 Economy Anchor, §34 Daily Login, §47 Respec Economy.
 
 ---
 
@@ -86,10 +88,14 @@ Sample XP requirements:
 
 ### Respec Costs
 
-| Bracket | Essence | Merits |
-|---|---|---|
-| Below Level 100 | **25** | **20,000** |
-| Level 100+ | **40** | **50,000** |
+*Updated 2026-09-26 (§AGX/X42).*
+
+| Bracket | Cost |
+|---|---|
+| All levels | **25 Essence** or **1 Respec Scroll** |
+
+- Was 25 / 40 Essence (below / from level 100) "or 20,000 / 50,000 Merits". The Merit option was never read by any code path and has been removed: Merit income rises ~10× from level 10 to 200, so a Merit price is a wall early and free late. Essence income is flat, so the level-100 step was dropped too.
+- The Respec Scroll sells for the same 25 Essence (shop), so it is never worse than a direct respec. Free respec on each ascension boss clear.
 
 ### Class Unlock Requirements
 
@@ -469,16 +475,17 @@ heal × (1 + HealingPercent / 100)
 
 ## 9. Difficulty Tiers
 
-**Source:** `DifficultyConfig.lua`
+**Source:** `DifficultyConfig.lua` · *Updated 2026-09-26 (§AGX/X25): mob multipliers aligned to the code.*
 
 | Parameter | Normal | Hard | Nightmare |
 |---|---|---|---|
-| HP Mult | 1.0 | **1.5** | **2.5** |
-| Damage Mult | 1.0 | **1.3** | **1.8** |
-| Armor Mult | 1.0 | **1.2** | **1.5** |
+| Required Level | — | **30** | **80** |
+| HP Mult | 1.0 | **1.45** | **2.15** |
+| Damage Mult | 1.0 | **1.25** | **1.6** |
+| Armor Mult | 1.0 | **1.15** | **1.35** |
 | Speed Bonus | 0 | **+1** | **+2** |
-| Count Mult | 1.0 | **1.25** | **1.5** |
-| Interval Mult | 1.0 | **0.85** | **0.7** |
+| Count Mult | 1.0 | **1.10** | **1.20** |
+| Interval Mult | 1.0 | **0.95** | **0.90** |
 | Merit Mult | 1.0 | **1.25** | **1.75** |
 | Essence Mult | 1.0 | **1.25** | **2.0** |
 | XP Mult | 1.0 | **1.25** | **1.5** |
@@ -507,6 +514,8 @@ Sample XP thresholds: Lv1→2: **88**, Lv10→11: **880**, Lv50→51: **20,080**
 
 ### Refinement System
 
+**Source:** `GearUpgradeConfig.lua`, `EquipmentRefinement.lua` · *Updated 2026-09-26 (§AGX/X43): +11→+15 softened; +0→+11 unchanged.*
+
 **Refinement resets to +0 on tier upgrade.** Temper also resets.
 
 | Refinement | Success % | Cost (Merits) |
@@ -522,27 +531,55 @@ Sample XP thresholds: Lv1→2: **88**, Lv10→11: **880**, Lv50→51: **20,080**
 | +8 → +9 | 40% | 12,000 |
 | +9 → +10 | 30% | 18,000 |
 | +10 → +11 | 22% | 27,000 |
-| +11 → +12 | 15% | 40,000 |
-| +12 → +13 | 10% | 60,000 |
-| +13 → +14 | 6% | 90,000 |
-| +14 → +15 | 3% | 140,000 |
+| +11 → +12 | **20%** (was 15%) | **30,000** (was 40,000) |
+| +12 → +13 | **18%** (was 10%) | **36,000** (was 60,000) |
+| +13 → +14 | **14%** (was 6%) | **42,000** (was 90,000) |
+| +14 → +15 | **10%** (was 3%) | **50,000** (was 140,000) |
 
 - **Max refinement:** +15
 - **Ceilings (safe floors):** 0, 3, 6, 9, 12
 - **Downgrade on fail:** Deterministic per step position — steps 1–2 above floor: no loss; step 3 above floor: lose 1 level (never below floor)
+- **Chapter cap:** attempts at or above `ChapterConfig.MAX_REFINE` (+8 / +11 / +13 / +15) are refused. Only attempts from +11 up changed in §AGX/X43, and Chapter 2's last possible attempt is at +10, so Chapters 1–2 are identical to before.
+
+**Expected Merits per climb from +0** (exact DP of the code rules, confirmed by a 40,000-trial Monte Carlo):
+
+| Target | Before §AGX/X43 | After | p90 after |
+|---|---|---|---|
+| +8 | 34.5k | 34.5k | 52k |
+| +11 | 253k | 253k | 419k |
+| +12 | 494k | **454k** | 571k |
+| +13 | 1.08M | **649k** | 918k |
+| +15 | 2.39M | **960k** | 1.12M |
+| **Chapter 4 per piece** (T10 to +12, T11 to +13, T12 to +15) | **3.96M** | **2.06M** | — |
+
+Time per Chapter 4 piece at level 175 (542 × (1 + 0.1 × 174) ≈ 9,970 Merits per 12-wave run on Normal; runs ≈ 10 min, drops are personal so party play earns the same):
+
+| Difficulty | Merits/run | Before | After |
+|---|---|---|---|
+| Normal | ≈10.0k | ≈66 h | **≈34 h** |
+| Hard (×1.25 Merits × 1.10 count) | ≈13.7k | ≈48 h | **≈25 h** |
+| Nightmare (×1.75 × 1.20) | ≈20.9k | ≈32 h | **≈16 h** |
+
+Target: 15–25 h per endgame piece for a dedicated (Hard/Nightmare) player. The floor is the three re-climbs through +0…+11 (≈253k each, Chapter 1–2 costs), so going lower means changing `TIER_MIN_REFINE` or the reset-on-tier-up rule, which is a feel decision for Pablo.
 
 ### Temper Pity System
 
-On failure, temper accumulates. When temper reaches the threshold for the current band, the next attempt is guaranteed to succeed. Temper resets to 0 on success or tier upgrade.
+*Updated 2026-09-26 (§AGX/X23): rewritten to match the code, which is canonical (`EquipmentRefinement.lua:156-192`).*
 
-**Temper Gain Per Step:** +1 (band +0→+3), +2 (band +3→+6), +3 (band +6→+9 or above)
+1. **Gain per failed attempt, by step inside the band** (`TEMPER_GAIN_BY_STEP = {1, 2, 3}`): a fail from the ceiling itself (step 1, e.g. +9) adds **+1**, from one above (step 2, e.g. +10) adds **+2**, from two above (step 3, e.g. +11) adds **+3**. This is the same in every band.
+2. **Pity fires on the failed attempt that reaches the band's threshold**: the item jumps straight to **floor + 3** (the next ceiling) on that same attempt. There is no "next attempt guaranteed" state.
+3. **Chapter cap (§AGX/X9):** the jump is clamped to the chapter's max refinement. If the clamp cuts it short, the item lands **on the cap** and the temper bar is **kept** (it pays off once the next chapter raises the cap). If the item is already at the clamped target, the pity does nothing and the normal fail result applies.
+4. **Reset:** temper goes to 0 when a normal success lands on a ceiling (+3/+6/+9/+12/+15), when an unclamped pity fires, and on tier upgrade. Successes that don't reach a ceiling keep the temper.
+5. Band +0→+3 always succeeds (100%), so its fallback threshold (10) never matters.
 
 | Ceiling Band | Threshold |
 |---|---|
 | +3 → +6 | **10** |
 | +6 → +9 | **18** |
 | +9 → +12 | **28** |
-| +12 → +15 | **36** |
+| +12 → +15 | **18** (was 36, §AGX/X43) |
+
+The old text here ("next attempt guaranteed", per-band gain, reset on any success) would have cost ≈32.5M Merits to +15 against the code's 2.39M (now 0.96M).
 
 ### Tier System
 
@@ -578,6 +615,9 @@ On failure, temper accumulates. When temper reaches the threshold for the curren
 | IX → X | 250 | +11 |
 | X → XI | 350 | +12 |
 | XI → XII | 500 | +13 |
+| **Total I → XII** | **1,650** | |
+
+Per chapter: Ch1 (I→V) 90, Ch2 (→VIII) 280, Ch3 (→X) 430, Ch4 (→XII) 850 Essence per piece.
 
 ### Reroll System
 
@@ -966,15 +1006,27 @@ Difficulty multipliers are applied **after** level scaling.
 
 ### Hand-Crafted Waves
 
+*Updated 2026-09-26 (§AGX/X25): all 12 Lane waves are hand-crafted (`WaveConfig.lua:25-38`). Counts are Normal; `countMult` and `intervalMult` from §9 apply on top.*
+
 | Wave | Mob Count | Spawn Interval | Mobs | Guaranteed |
 |---|---|---|---|---|
-| 1 | 3 | 2.0s | Zombie | — |
-| 2 | 5 | 1.8s | Zombie | — |
-| 3 | 6 | 1.5s | Zombie | — |
-| 4 | 8 | 1.3s | Zombie | — |
-| 5 | 5 | 1.5s | Zombie | **Ogre** |
+| 1 | 10 | 2.5s | Zombie | — |
+| 2 | 12 | 2.4s | Zombie | — |
+| 3 | 14 | 2.3s | Zombie | — |
+| 4 | 16 | 2.1s | Zombie | **Troll** |
+| 5 | 18 | 2.0s | Zombie | — |
+| 6 | 20 | 1.9s | Zombie | — |
+| 7 | 22 | 1.8s | Zombie | **Troll** |
+| 8 | 24 | 1.7s | Zombie | — |
+| 9 | 26 | 1.6s | Zombie | — |
+| 10 | 28 | 1.5s | Zombie | **Ogre** |
+| 11 | 30 | 1.4s | Zombie | — |
+| 12 | 32 | 1.3s | Zombie | **Ogre** |
+| **Total** | **252** | | | **4 minibosses** |
 
-### Procedural Generation (Wave 6+)
+### Procedural Generation (Wave 13+, unused in Lane)
+
+Lane runs stop at wave 12, so this generator only matters for other callers.
 
 | Parameter | Value |
 |---|---|
@@ -1029,9 +1081,15 @@ Waves where the **EliteBounty** tactical card may appear: **4, 7, 10, 12** only.
 
 ### Level Scaling (Merits only)
 
-Formula: `amount = base × (1 + (mobLevel - 1) × 0.1)`
+Formula: `amount = base × (1 + (scaleLevel - 1) × 0.1)`
 
 Essence drops have `noScale=true` — always flat amounts.
+
+### Who Gets Drops
+
+*Updated 2026-09-26 (§AGX/X44).* Drops are **personal, one roll per party member per party kill**: every XP-eligible party member (and always the killer) rolls the mob's drop table independently. Amounts scale with the recipient's **own** level, `scaleLevel = min(mob RewardLevel, max(5, own level))`, and the §36 delta window uses mob RewardLevel − own level. Mode, difficulty, BountyBoard and MeritBonus each apply once. Mob count does not scale with party size, so a party member earns about what a solo player does.
+
+**Per-run budget (Lane, 12 waves, own level L):** Merits ≈ 542 × (1 + 0.1(L−1)) on Normal (≈1.0k at L10, 5.9k at L100, 11.3k at L200); Essence from drops ≈ 4 minibosses × 30% × 3 = **3.6** (×1.25 Hard, ×2 Nightmare).
 
 ---
 
@@ -1049,6 +1107,19 @@ Essence drops have `noScale=true` — always flat amounts.
 **Phases:**
 1. **Knocked Down** (10s) — crawl speed, no skills/attacks/resource gen, resource drains at -10/s, allies can revive
 2. **Dead** — grayscale overlay, respawn button, teleport to spawn on respawn
+
+### Party-Wipe Revive
+
+*Updated 2026-09-26 (§AGX/X25, documents §AGX/X40).* When the whole party is down, the run pauses for a **15 s** decision window.
+
+| Parameter | Value |
+|---|---|
+| Free wipe-revives per run | Normal **3**, Hard **2**, Nightmare **1** (unknown difficulty → 1) |
+| Paid wipe-revives per run | **1**, after the free ones are used |
+| Paid price | **25 Essence** (placeholder; ≈6,250 Merits at the §33 anchor) |
+| Paid option shown | Only to players who can already afford it |
+| Invulnerability after revive | **3 s** |
+| Nothing left to offer | The run ends immediately |
 
 ---
 
@@ -1426,21 +1497,16 @@ HordeModeSpawner applies timed modifiers from `RunModifiers.GetModifier()` at ea
 | Tie-break | Random among tied options |
 | No-vote fallback | All 3 options equally likely |
 
-### Supply Vote Cadence (Horde Mode only)
+### Horde Vote Cadence (Horde Mode only)
+
+*Updated 2026-09-26 (§AGX/X25): one alternating loop (`HordeModeMain.server.lua:390-438`).*
 
 | Parameter | Value |
 |---|---|
-| First vote at | **45s** |
-| Interval | Every **45s** |
-| Total in 630s run | **14 votes** |
-
-### Threat Vote Cadence (Horde Mode only)
-
-| Parameter | Value |
-|---|---|
-| First vote at | **90s** |
-| Interval | Every **90s** |
-| Total in 630s run | **7 votes** |
+| Loop | One vote every **45 s** of play time, alternating supply → threat |
+| Supply votes | First at **45 s**, then every **90 s** → **7** per 630 s run |
+| Threat votes | First at **90 s**, then every **90 s** → **7** per run |
+| Total | **7 + 7** (was documented as 14 supply + 7 threat) |
 
 ### Tactical Vote Cadence (Lane Defense only)
 
@@ -1478,7 +1544,7 @@ HordeModeSpawner applies timed modifiers from `RunModifiers.GetModifier()` at ea
 | **Class Battery** | Restore 20–35% class resource | — |
 | **Power Surge** | Random buff: +8–12% DMG (20–25s) OR +6–10% CritChance (18–22s) OR +10–14% AtkSpd (15–18s) | — |
 | **Emergency Pulse** | Instant heal 12–18% max HP | — |
-| **Essence Drop** | Grant essence (Normal: 15–25, Hard: 20–30, NM: 25–40) | — |
+| **Essence Drop** | Grant essence: base Normal 8–12, Hard 10–15, NM 16–24, **× Horde 0.6** → 5–7 / 6–9 / 10–14 | Personal cooldown **150 s** (at most every other supply vote) |
 | **Second Wind** | +6–10% max HP for **45s** | — |
 | **Weapon Oil** | +5–8% damage for **30s** | — |
 | **Bounty Board** | 2× merits from kills for **30s** | Cooldown: **120s** |
@@ -1527,7 +1593,22 @@ Threat vote always draws **1 card from each lane** (Greed, Control, Relief).
 | **Frenzy Banner** | +8–12% attack speed for **180s** | +0–2% | Any wave |
 | **Iron Wall** | +4–7% armor for **180s** | -2–4% | Any wave |
 | **Rallying Cry** | +5–8% damage + +3–5% crit for **180s** | +2–4% | Any wave |
-| **Scavenge** | Grant Essence (Normal: 15–25, Hard: 20–30, NM: 25–35) | +1–3% | Any wave |
+| **Scavenge** | Grant Essence (Normal: 8–12, Hard: 10–15, NM: 16–24) | +1–3% | Waves **3, 6, 9, 12** only |
+
+### Essence Card Budget
+
+*Updated 2026-09-26 (§AGX/X41).* Cards were ≈19× the Essence drops (Scavenge ≈70/run offered on any wave; Horde Essence Drop ≈52/run and skipping the Horde ×0.6). Target: cards are a **meaningful bonus (≈3× drops)**, and the whole Essence ladder is paced by, not ahead of, the Merit ladder.
+
+| Source (always picked when offered) | Offers / run | Normal | Hard | Nightmare |
+|---|---|---|---|---|
+| Lane drops | — | 3.6 | 4.5 | 7.2 |
+| Scavenge (waves 3/6/9/12: 3 × 3/10 + 3/11) | ≈1.17 | ≈11.7 | ≈14.6 | ≈23.4 |
+| **Lane total** | | **≈15.3** | **≈19.1** | **≈30.6** |
+| Horde Essence Drop (7 supply votes, 3 of 8 offered, cooldown) | ≈1.98 picks | ≈11.9 | ≈14.9 | ≈23.8 |
+
+- Tier ladder (1,650 per piece) on Lane Normal: ≈108 runs per piece with cards (was ≈23), ≈458 with drops only.
+- Per chapter and per piece, Essence needed vs Merit-ladder runs at Normal: Ch1 90 E (≈6 runs) vs ≈8 runs; Ch2 280 E (≈18) vs ≈28; Ch3 430 E (≈28) vs ≈53; Ch4 850 E (≈56) vs ≈207. So Essence never gates a single piece, still keeps up with a weapon **and** an armor piece in every chapter, and leaves room for respecs and the paid wipe-revive.
+- Difficulty ratio 1.0 / 1.25 / 2.0 matches DifficultyConfig `essenceMult` (not applied twice).
 
 ---
 
@@ -1535,8 +1616,8 @@ Threat vote always draws **1 card from each lane** (Greed, Control, Relief).
 
 | Quest | Rewards |
 |---|---|
-| A Line in the Sand (complete 1 defense) | **100 Essence**, 35% XP |
-| Veteran Defender (complete 5 defenses) | **10 Merits**, **300 Essence** |
+| A Line in the Sand (complete 1 defense) | **25 Essence**, 35% XP |
+| Veteran Defender (complete 5 defenses) | **2,500 Merits**, **10 Essence** |
 
 ### NPC Shop Prices (Blacksmith)
 
@@ -1563,10 +1644,12 @@ Threat vote always draws **1 card from each lane** (Greed, Control, Relief).
 
 | Quest ID | Title | Objectives | Rewards |
 |---|---|---|---|
-| `first_defense` | A Line in the Sand | Complete 1 Defense mission | 100 Essence, 35% XP |
-| `veteran_defender` | Veteran Defender | Complete 5 Defense missions | 10 Merits, 300 Essence |
+| `first_defense` | A Line in the Sand | Complete 1 Defense mission | 25 Essence, 35% XP |
+| `veteran_defender` | Veteran Defender | Complete 5 Defense missions | 2,500 Merits, 10 Essence |
 
 > Both quests are non-repeatable (one-time only).
+>
+> *Updated 2026-09-26 (§AGX/X41):* was 100 Essence and "10 Merits, 300 Essence" (400 Essence one-time ≈ 111 runs of drops; the second quest's amounts looked swapped). 25 Essence pays the first two tier-ups (10 + 15). 2,500 Merits ≈ 3 runs at the level you finish 5 runs, plus 10 Essence; ≈5,000 Merits of value at the §33 anchor.
 
 ---
 
@@ -1663,6 +1746,18 @@ Required to advance to the next chapter:
 | Listing Tax | **12%** |
 | New Account Cap (first 7 days) | 3 listings/day, 5 purchases/day |
 
+### Economy Anchor Rate (1 Essence = 250 Merits)
+
+*Added 2026-09-26 (§AGX/X42).* Every fixed Merit↔Essence price derives from **1 Essence ≈ 250 Merits**. Why 250: it sits between the Robux packs (5,000 M for 49 R$ vs 50 E for 99 R$ ≈ 202:1) and the auction's global floor (240), and it is the earn ratio of a mid-game player (Lane Normal ≈ 15 E and ≈ 3.7k M per run at level ≈ 60). Late-game players earn Merits faster, so the auction bands below rise with level on purpose.
+
+| Price | Essence | Merit equivalent | Status |
+|---|---|---|---|
+| Respec (talents or stats) | 25 | 6,250 | Flat, all levels (was 25/40 E, or an unread 20k/50k M) |
+| Respec Scroll (shop) | 25 | 6,250 | Was 50 E, 2× a direct respec |
+| Wipe-revive (paid) | 25 | 6,250 | Unchanged |
+| Veteran Defender quest | 10 + 2,500 M | ≈5,000 | Was 10 M + 300 E |
+| Robux packs (disabled) | — | 202:1 | Off-anchor by ≈20%; re-price when monetization is wired |
+
 ### Essence Market Anchor (Merits per Essence)
 
 | Scope | Min | Max |
@@ -1677,44 +1772,50 @@ Required to advance to the next chapter:
 
 ## 34. Daily Login Rewards
 
-**Source:** `DailyLoginManager.lua`
+**Source:** `DailyLoginManager.lua` · *Updated 2026-09-26 (§AGX/X25, documents §AGX/X47).*
 
-Cycle: **30 days**, repeats indefinitely via modulo.
+Each claim (once per UTC day) pays **two tracks**:
+
+1. **Calendar** (below): indexed by **total days claimed** (`totalDays`), cycling every 30. It never resets, so a missed day only delays it. Per 30 claims: **26,500 Merits, 228 Essence, 1 Respec Scroll**.
+2. **Spree bonus**: consecutive-day streak (missing a UTC day resets it to 1). Pays **10 Merits × spree** (capped at 30 → 300/day) plus Essence milestones on spree day **7 (+5)**, **14 (+10)** and **30 (+20)**, repeating every 30. A full 30-day spree adds **4,650 Merits and 35 Essence** (≈+18% Merits).
+
+Calendar table (Essence and day 27/28 amounts corrected to the code):
 
 | Day | Merits | Essence | Special |
 |---|---|---|---|
 | 1 | 100 | — | — |
-| 2 | 150 | 2 | — |
-| 3 | 200 | — | — |
-| 4 | 250 | 2 | — |
+| 2 | 150 | — | — |
+| 3 | 200 | 2 | — |
+| 4 | 250 | — | — |
 | 5 | 300 | 3 | — |
-| 6 | 350 | 3 | — |
+| 6 | 350 | — | — |
 | **7** | **1,000** | **10** | Weekly bonus |
-| 8 | 200 | 3 | — |
+| 8 | 200 | — | — |
 | 9 | 250 | 3 | — |
-| 10 | 300 | 4 | — |
+| 10 | 300 | — | — |
 | 11 | 350 | 4 | — |
-| 12 | 400 | 4 | — |
+| 12 | 400 | — | — |
 | 13 | 450 | 5 | — |
 | **14** | **2,000** | **20** | Bi-weekly bonus |
-| 15 | 300 | 4 | — |
+| 15 | 300 | — | — |
 | 16 | 350 | 4 | — |
-| 17 | 400 | 5 | — |
+| 17 | 400 | — | — |
 | 18 | 450 | 5 | — |
-| 19 | 500 | 5 | — |
+| 19 | 500 | — | — |
 | 20 | 550 | 6 | — |
 | **21** | **3,000** | **30** | Three-week bonus |
-| 22 | 400 | 5 | — |
-| 23 | 450 | 6 | — |
-| 24 | 500 | 6 | — |
-| 25 | 550 | 7 | — |
-| 26 | 600 | 7 | — |
-| 27 | 700 | 8 | — |
-| 28 | 750 | 9 | — |
+| 22 | 400 | — | — |
+| 23 | 450 | 5 | — |
+| 24 | 500 | — | — |
+| 25 | 550 | 6 | — |
+| 26 | 600 | — | — |
+| 27 | 650 | 7 | — |
+| 28 | 700 | 8 | — |
 | 29 | 800 | 10 | — |
-| **30** | **10,000** | **100** | + 1 RespecToken |
+| **30** | **10,000** | **100** | + 1 Respec Scroll |
+| **Total** | **26,500** | **228** | |
 
-Streak resets if a day is missed. Fallback reward: 100 Merits.
+Missing a day resets only the spree, not the calendar. Fallback reward: 100 Merits.
 
 ---
 
@@ -1879,7 +1980,7 @@ Accessory rarity scores: Common 5, Uncommon 15, Rare 30, Epic 60, Legendary 100.
 | Parameter | Value |
 |---|---|
 | Run Duration | **630 s** (10 min 30 s) |
-| Supply Vote Interval | **45 s** |
+| Vote Interval | **45 s**, alternating supply / threat (7 + 7 per run; *§AGX/X25, 2026-09-26*) |
 | Vote Result Display | **3.5 s** |
 | Level Tick Interval | **75 s** |
 | Max Auto Level | **30** |
@@ -1957,7 +2058,7 @@ earned during Horde runs.
 | Supply votes per run | 7 (Horde) |
 | Combine ratio | **4 fragments → 1 respec_scroll** (auto-combined inside `InventoryManager.AddItem`) |
 | Scroll consumption | Consumed by `TalentManager.RespecTalents` and `SharedEventHandlers.RespecStats` via `InventoryManager.ConsumeItem`. |
-| Essence fallback | `PlayerDataConfig.GetRespecCost(level)` — unchanged. |
+| Essence fallback | `PlayerDataConfig.GetRespecCost(level)` — flat **25 Essence** (§AGX/X42, 2026-09-26; was 25/40). The shop scroll costs the same 25. |
 | Stack caps | `respec_fragment` = 99, `respec_scroll` = 99 (hoarding is fine). |
 
 ### Probability Math

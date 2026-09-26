@@ -286,7 +286,7 @@ function SharedEventHandlers.Register(deps)
 		end
 	end)
 
-	-- ── RespecStats (full stat respec: 500 Essence or 1 token) ────
+	-- ── RespecStats (full stat respec: GetRespecCost().essence — 25 — or 1 token; §AGX/X42) ────
 	NetworkManager.GetEvent("RespecStats")
 	NetworkManager.GetEvent("RespecResult")
 	NetworkManager.OnClientEvent("RespecStats", function(player)

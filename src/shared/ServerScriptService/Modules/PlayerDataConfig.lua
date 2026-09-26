@@ -360,13 +360,22 @@ end
 
 --============================================
 -- RESPEC COST (§18)
--- Before level 100: 25 Essence or 20,000 Merits
--- Level 100+: 40 Essence or 50,000 Merits
--- Free respec on each ascension boss clear
+-- §AGX/X42: flat 25 Essence at every level (or 1 respec_scroll, which the
+-- shop also sells for 25 Essence). Free respec on each ascension boss clear.
+--   • The Merit option (20,000 / 50,000) was never read by either respec
+--     path, so it is removed rather than wired: Merit income grows ~10×
+--     from level 10 to 200, so a Merit price is either a wall early or
+--     free late, and it would drain the Essence sink respec exists for.
+--   • HIGH was 40: Essence income is flat (not level-scaled), so a level
+--     step made respec pricier for no economic reason, and it made the
+--     scroll price incoherent (a 25 E scroll would undercut it).
+--   • 25 E ≈ 6,250 Merits at the 250:1 anchor (BALANCE_NUMBERS §33), the
+--     same as the wipe-revive price.
+-- LOW/HIGH are kept so GetRespecCost callers (.essence) keep working.
 --============================================
 PlayerDataConfig.RESPEC_COSTS = {
-	LOW  = { essence = 25, merits = 20000 },
-	HIGH = { essence = 40, merits = 50000 },
+	LOW  = { essence = 25 },
+	HIGH = { essence = 25 },
 }
 
 function PlayerDataConfig.GetRespecCost(level)

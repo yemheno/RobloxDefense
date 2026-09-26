@@ -165,10 +165,14 @@ ShopConfig.Consumables = {
         levelReq = 5,
     },
     -- Special
+    -- §AGX/X42: 50 → 25 Essence. It cost 2× a direct respec (25), so no
+    -- one had a reason to buy it. Now equal: the scroll is a prepaid,
+    -- stackable respec usable for talents OR stats (PlayerDataConfig
+    -- RESPEC_COSTS).
     {
         itemId   = "respec_scroll",
         tab      = "Consumables",
-        price    = 50,
+        price    = 25,
         currency = "Essence",
         levelReq = 10,
     },

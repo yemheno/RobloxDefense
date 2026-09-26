@@ -51,9 +51,9 @@
     Economy anchors:
       • 99 Robux  = 50 Essence  (Essence is premium)
       • Weapon tier ladder I→XII = ~1,650 Essence total
-      • Respec = 25–40 Essence
+      • Respec = 25 Essence flat (§AGX/X42)
       • Daily login = 2–10 Essence/day; day-30 bonus = 100 Essence
-      • 30-wave run ≈ 5,000–6,000 Merits
+      • 12-wave Lane run ≈ 542 × (1 + 0.1(L−1)) Merits on Normal (§AGX/X25)
       • Old achievement lifetime cap ≈ 100K Merits + 500–600 Essence + 2 Respecs
 
     Reward bands (tier 10 cap per band):

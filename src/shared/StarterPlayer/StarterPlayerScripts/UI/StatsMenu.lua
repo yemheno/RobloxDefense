@@ -313,7 +313,7 @@ local function StatsMenu(props)
 				}),
 			}),
 
-			-- Full Respec button (uses 1 Respec Token if owned, otherwise 500 Essence)
+			-- Full Respec button (uses 1 Respec Scroll if owned, otherwise 25 Essence — §AGX/X42)
 			respecBtn = React.createElement("TextButton", {
 				Position         = UDim2.fromScale(0.39, 0.11),
 				Size             = UDim2.fromScale(0.28, 0.07),

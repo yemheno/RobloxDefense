@@ -95,7 +95,8 @@ end
     Talent points = SUM of every owned weapon's level across EVERY class.
     Each class has 2 weapons, each weapon caps at 50, so the per-class
     ceiling is 100 points.  Alpha launches with 4 classes (Aegis, Arcanist,
-    Hunter, LifeSteward) = 8 weapons × 50 = 320 points at full endgame.
+    Hunter, LifeSteward) = 8 weapons × 50 = 400 points at full endgame.
+    -- §AGX/X25: was "= 320" (8 × 50 is 400).
     Budget grows linearly as new classes ship.
 
     BonusTalentPoints (data.Account) can be granted by events/quests
@@ -206,7 +207,10 @@ function TalentManager.Init()
 		TalentManager.SendState(player)
 	end)
 
-	-- Client → Server: full respec (costs 500 Essence or 1 RespecToken)
+	-- Client → Server: full respec (costs 1 respec_scroll, else
+	-- PlayerDataConfig.GetRespecCost(level).essence = 25 Essence).
+	-- §AGX/X42: was "500 Essence or 1 RespecToken" (stale). Essence-only by
+	-- design; the unused Merit option was removed from PlayerDataConfig.
 	net.GetEvent("RespecResult")
 	net.OnClientEvent("RespecTalents", function(player)
 		local dm   = getDataManager()

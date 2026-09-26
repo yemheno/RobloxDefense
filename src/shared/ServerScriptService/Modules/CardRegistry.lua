@@ -75,6 +75,35 @@ local function randFloat(lo, hi)
     return math.floor((lo + math.random() * (hi - lo)) * 100 + 0.5) / 100
 end
 
+-- §AGX/X41: Essence card base amounts per difficulty (Normal / Hard /
+-- Nightmare ≈ 1.0 / 1.25 / 2.0, the same ratio as DifficultyConfig's
+-- essenceMult, which is NOT applied again on top). Shared by Scavenge (Lane)
+-- and EssenceDrop (Horde, which then takes the Horde ×0.6 below).
+-- Was 15–25 / 20–30 / 25–35(40): ≈70 Essence/run from Scavenge alone vs
+-- ≈3.6 from Lane drops (19×). Now ≈12/run (≈3× drops); see BALANCE_NUMBERS §29.
+local ESSENCE_CARD_RANGE = { Normal = {8,12}, Hard = {10,15}, Nightmare = {16,24} }
+
+-- §AGX/X41: Horde reward multiplier for card Essence, read from
+-- GameModeConfig so it can't drift from the ×0.6 DropManager applies to
+-- every Horde Essence drop. Supply cards only exist in Horde, so the card
+-- type identifies the mode (VoteManager deps carry no modeId).
+local _hordeEssenceMult = nil
+local function getHordeEssenceMult()
+    if _hordeEssenceMult then return _hordeEssenceMult end
+    local mult = 1
+    local mod = script.Parent:FindFirstChild("GameModeConfig")
+    if mod then
+        local ok, gmc = pcall(require, mod)
+        local mode = ok and gmc and gmc.GetMode and gmc.GetMode("HordeMode")
+        local rm = mode and mode.rewardMultipliers
+        if rm and type(rm.essenceMult) == "number" then
+            mult = rm.essenceMult
+        end
+    end
+    _hordeEssenceMult = mult
+    return mult
+end
+
 -- ─────────────────────────────────────────────────────────────────────
 -- CARD DEFINITIONS
 -- ─────────────────────────────────────────────────────────────────────
@@ -181,11 +210,18 @@ CARDS.EssenceDrop = {
     name        = "Essence Drop",
     cardType    = "supply",
     description = "Each player receives a small essence cache.",
+    -- §AGX/X41: personal cooldown so it can win at most every other supply
+    -- vote (supply votes are ~95–120 s apart on the wall clock), i.e. ≤4 of
+    -- the 7 per run. Was offered 7 × 3/8 ≈ 2.6 times/run with no limit.
+    cooldownKey = "EssenceDrop",
+    cooldownSec = 150,
     apply = function(deps)
-        local base = { Normal = {15,25}, Hard = {20,30}, Nightmare = {25,40} }
-        local range = base[deps.difficulty] or base.Normal
+        -- §AGX/X41: shared base table × Horde essenceMult (0.6), like every
+        -- other Horde Essence reward. Normal 8–12 → 5–7.
+        local range = ESSENCE_CARD_RANGE[deps.difficulty] or ESSENCE_CARD_RANGE.Normal
+        local modeMult = getHordeEssenceMult()
         for _, player in ipairs(deps.players) do
-            local amount = randRange(range[1], range[2], 5)
+            local amount = math.max(1, math.floor(randRange(range[1], range[2]) * modeMult + 0.5))
             if deps.currencyManager then
                 deps.currencyManager.AddEssence(player, amount)
             end
@@ -623,12 +659,18 @@ CARDS.Scavenge = {
     id          = "Scavenge",
     name        = "Scavenge",
     cardType    = "tactical",
-    description = "Each player receives 15–30 essence. Danger +1–3%.",
+    -- §AGX/X41: description matches the code (was "15–30", code 15–35).
+    description = "Each player receives 8–12 essence (more on Hard/Nightmare). Danger +1–3%.",
+    -- §AGX/X41: only offered every third wave (3/6/9/12), so ≈1.2 offers per
+    -- run instead of ≈3.5. EliteBounty uses the same eligible() pattern.
+    eligible = function(runState)
+        local w = runState.waveNumber
+        return type(w) == "number" and w % 3 == 0
+    end,
     apply = function(deps)
-        local base = { Normal = {15,25}, Hard = {20,30}, Nightmare = {25,35} }
-        local range = base[deps.difficulty] or base.Normal
+        local range = ESSENCE_CARD_RANGE[deps.difficulty] or ESSENCE_CARD_RANGE.Normal
         for _, player in ipairs(deps.players) do
-            local amount = randRange(range[1], range[2], 5)
+            local amount = randRange(range[1], range[2])
             if deps.currencyManager then
                 deps.currencyManager.AddEssence(player, amount)
             end

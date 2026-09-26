@@ -109,8 +109,11 @@ return {
 				objectives  = {
 					{ type = "CompleteMode", mode = "Defense", count = 1, label = "Complete 1 Defense" },
 				},
+				-- §AGX/X41: 100 → 25 Essence. 100 was ≈28 runs of Lane drops;
+				-- 25 pays the first two tier-ups (10 + 15) — a welcome gift,
+				-- not a stockpile.
 				rewards     = {
-					{ type = "Essence", amount = 100 },
+					{ type = "Essence", amount = 25 },
 					{ type = "XP",      percent = 35 },
 				},
 				repeatable  = false,
@@ -122,9 +125,13 @@ return {
 				objectives   = {
 					{ type = "CompleteMode", mode = "Defense", count = 5, label = "Complete 5 Defenses" },
 				},
+				-- §AGX/X41: was 10 Merits / 300 Essence (looked swapped; 300 E
+				-- ≈ 83 runs of drops). Now 2,500 Merits (≈3 runs at the level
+				-- you finish 5 runs) + 10 Essence ≈ 5,000 Merits of value at
+				-- the 250:1 anchor (BALANCE_NUMBERS §33).
 				rewards      = {
-					{ type = "Merits",  amount = 10  },
-					{ type = "Essence", amount = 300 },
+					{ type = "Merits",  amount = 2500 },
+					{ type = "Essence", amount = 10   },
 				},
 				repeatable   = false,
 				prerequisite = "first_defense",

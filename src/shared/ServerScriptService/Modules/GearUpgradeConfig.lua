@@ -57,8 +57,10 @@ GearUpgradeConfig.TEMPER_GAIN_BY_STEP = { 1, 2, 3 }
 GearUpgradeConfig.TEMPER_THRESHOLDS = {
 	[3]  = 10,  -- band +3→+6  (rates 90/80/70%)
 	[6]  = 18,  -- band +6→+9  (rates 60/50/40%)
-	[9]  = 28,  -- band +9→+12 (rates 30/22/15%)
-	[12] = 36,  -- band +12→+15 (rates 10/6/3%)
+	[9]  = 28,  -- band +9→+12 (rates 30/22/20%)
+	-- §AGX/X43: 36 → 18. With the softer band-12 rates below, pity is the
+	-- backstop, not the main route: expected +12→+15 cost ≈ 0.51M (was 1.9M).
+	[12] = 18,  -- band +12→+15 (rates 18/14/10%)
 }
 
 -- Success chance per refinement level (per §13)
@@ -74,18 +76,27 @@ GearUpgradeConfig.REFINEMENT_SUCCESS = {
 	[8]  = 0.40,  -- +8 → +9
 	[9]  = 0.30,  -- +9 → +10
 	[10] = 0.22,  -- +10 → +11
-	[11] = 0.15,  -- +11 → +12
-	[12] = 0.10,  -- +12 → +13
-	[13] = 0.06,  -- +13 → +14
-	[14] = 0.03,  -- +14 → +15
+	-- §AGX/X43: late-game Merit wall. Only attempts that Chapter 3+ can make
+	-- change (Ch2's cap +11 means its last attempt is at +10), so Chapters 1–2
+	-- are untouched. Was 15/10/6/3%.
+	[11] = 0.20,  -- +11 → +12
+	[12] = 0.18,  -- +12 → +13
+	[13] = 0.14,  -- +13 → +14
+	[14] = 0.10,  -- +14 → +15
 }
 
 -- Refinement attempt cost in Merits (per §13).
+-- §AGX/X43: +11..+14 were 40k/60k/90k/140k. With the rates above and the
+-- band-12 threshold of 18, the Chapter 4 ladder per piece (T10 to +12, T11
+-- to +13, T12 to +15; exact DP of EquipmentRefinement's rules, incl. the
+-- §AGX/X9 cap clamp) drops from ≈3.96M to ≈2.06M Merits: ≈25 h on Hard or
+-- ≈16 h on Nightmare at level 175 (was ≈48 h / ≈32 h). +12: 494k → 454k;
+-- +15: 2.39M → 0.96M. +0..+10 unchanged (Chapters 1–2 identical).
 GearUpgradeConfig.REFINEMENT_COST = {
 	[0]  = 300,    [1]  = 500,    [2]  = 800,    [3]  = 1200,
 	[4]  = 1800,   [5]  = 3000,   [6]  = 5000,   [7]  = 8000,
-	[8]  = 12000,  [9]  = 18000,  [10] = 27000,  [11] = 40000,
-	[12] = 60000,  [13] = 90000,  [14] = 140000,
+	[8]  = 12000,  [9]  = 18000,  [10] = 27000,  [11] = 30000,
+	[12] = 36000,  [13] = 42000,  [14] = 50000,
 }
 GearUpgradeConfig.REFINEMENT_CURRENCY = "Merits"
 

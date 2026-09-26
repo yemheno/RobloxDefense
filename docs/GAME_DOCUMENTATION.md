@@ -224,7 +224,7 @@ rojo serve lobby.project.json          # Lobby place
 │  - NO DefenseLine (no lane to defend)                            │
 │  • TopDown camera, FaceMouse (PC) / JoystickAim (mobile)         │
 │  • MobAI uses SetHordeModeTargeting(true) for 360° mob attacks   │
-│  • Card/Vote cadence: Supply every 45s, Threat every 90s         │
+│  • Card/Vote cadence: one vote per 45s, alternating (7+7)        │
 │  • Fixed run duration: 630s (10:30) → spawner stops → mob clear  │
 │    → TriggerVictory → auto-return to lobby                       │
 │  • RunModifiers applied per-run (HP/damage/armor/speed scalars,  │
@@ -784,7 +784,9 @@ Sources: `party` (from PartyManager), `event`, `premium` (future).
 | Currency | Primary Source | Primary Sink |
 |----------|---------------|--------------|
 | **Merits** | Mob kills, quests, achievements, daily login | Weapon refinement, bonus reroll, shops |
-| **Essence** | Boss kills (30%), quests, achievements, daily login | Tier upgrades, respec, shops |
+| **Essence** | Miniboss kills (30%, 2–4) and boss kills (75%, 8–20), flat; the Scavenge / Essence Drop vote cards; quests; achievements; daily login | Tier upgrades, respec, paid wipe-revive, shops |
+
+*Updated 2026-09-26 (§AGX/X25, X41, X42):* drops are personal (every eligible party member rolls on every party kill, §AGX/X44). A Lane Normal run gives ≈3.6 Essence from drops plus ≈11.7 from Scavenge if always taken. Fixed prices use one anchor, **1 Essence ≈ 250 Merits** (BALANCE_NUMBERS §33).
 
 ### CurrencyManager
 
@@ -851,20 +853,23 @@ XP from kills: `baseXP × mobTypeMult × levelDiffScaling × (1 + XPBonus/100)`.
 
 ### Tier System (I–XII)
 
+*Updated 2026-09-26 (§AGX/X25): aligned to `GearUpgradeConfig.lua`. "Cost" and "Min Refine" are what it takes to reach this tier from the one before.*
+
 | Tier | Bonus Slots | ATK Bonus | Value Mult | Pool Unlocks | Cost (Essence) | Min Refine |
 |------|-------------|-----------|------------|--------------|----------------|------------|
 | I | 2 | 0% | 1.0× | 3 | — | — |
 | II | 2 | 5% | 1.1× | 4 | 10 | +1 |
-| III | 2 | 10% | 1.2× | 5 | 20 | +3 |
-| IV | 3 | 15% | 1.3× | 6 | 35 | +5 |
-| V | 3 | 20% | 1.4× | 7 | 55 | +6 |
-| VI | 3 | 25% | 1.5× | 8 | 80 | +7 |
-| VII | 4 | 30% | 1.6× | 10 | 110 | +8 |
-| VIII | 4 | 35% | 1.7× | 12 | 150 | +9 |
-| IX | 4 | 40% | 1.8× | 14 | 200 | +10 |
-| X | 5 | 45% | 1.9× | 18 | 300 | +11 |
-| XI | 5 | 50% | 2.0× | 25 | 500 | +13 |
-| XII | 5 | 60% | 2.2× | all | — | — |
+| III | 3 | 10% | 1.2× | 5 | 15 | +3 |
+| IV | 3 | 15% | 1.3× | 6 | 25 | +4 |
+| V | 3 | 20% | 1.4× | 7 | 40 | +6 |
+| VI | 4 | 25% | 1.5× | 8 | 60 | +7 |
+| VII | 4 | 30% | 1.6× | 9 | 90 | +8 |
+| VIII | 4 | 35% | 1.7× | 10 | 130 | +9 |
+| IX | 5 | 40% | 1.8× | 11 | 180 | +10 |
+| X | 5 | 45% | 1.9× | 12 | 250 | +11 |
+| XI | 5 | 50% | 2.0× | 13 | 350 | +12 |
+| XII | 5 | 60% | 2.2× | all | 500 | +13 |
+| **Total** | | | | | **1,650** | |
 
 > **On tier up:** Refinement resets to +0 and temper resets to 0. Tier caps are enforced by `ChapterConfig`.
 
@@ -874,19 +879,27 @@ XP from kills: `baseXP × mobTypeMult × levelDiffScaling × (1 + XPBonus/100)`.
 |----------|-------|
 | Max refinement | +15 |
 | Ceilings (safe points) | +0, +3, +6, +9, +12 |
-| Downgrade on fail | Falls to nearest ceiling below |
-| Success rates | +0→100%, +1→85%, +2→70%, +3→60%, +4→50%, +5→40%, +6→30%, +7→20%, +8→15%, +9→10%, +10→8%, +11→5%, +12→4%, +13→2%, +14→1% |
-| Currency | Merits (300 → 140,000 escalating) |
+| Downgrade on fail | By step inside the band: a fail at the ceiling or one above it loses nothing; a fail two above the ceiling (e.g. at +11) drops 1 level, never below the ceiling |
+| Success rates | +0/+1/+2 → 100%, +3 → 90%, +4 → 80%, +5 → 70%, +6 → 60%, +7 → 50%, +8 → 40%, +9 → 30%, +10 → 22%, +11 → 20%, +12 → 18%, +13 → 14%, +14 → 10% |
+| Currency | Merits (300 → 50,000 per attempt; see BALANCE_NUMBERS §10) |
+| Chapter cap | Attempts at or above the chapter's max (+8 / +11 / +13 / +15) are refused |
 | Refinement resets on tier up | Yes — refinement and temper reset to 0 on tier upgrade |
 
-**Temper Pity System:** On each failed refinement, temper accumulates (1/2/3 per step). When temper reaches the band threshold, the next attempt is guaranteed success.
+*Updated 2026-09-26 (§AGX/X23, X43):* success rates and pity now match the code. The +11 → +15 attempts were softened (were 15/10/6/3% at 40k/60k/90k/140k), cutting the Chapter 4 ladder per piece from ≈3.96M to ≈2.06M Merits; +0 → +11 is unchanged.
+
+**Temper Pity System** (the code is canonical, `EquipmentRefinement.lua:156-192`):
+
+- Each failed attempt adds temper by its **step inside the band**: +1 at the ceiling, +2 one above, +3 two above.
+- On the failed attempt that brings temper to the band's threshold, the item **jumps straight to the next ceiling** (floor + 3). There is no "next attempt guaranteed" state.
+- The jump is clamped to the chapter cap (§AGX/X9). When the clamp cuts it short, the item lands on the cap and **keeps** its temper for the next chapter.
+- Temper resets to 0 when a normal success lands on a ceiling, when an unclamped pity fires, and on tier upgrade.
 
 | Refinement Band | Temper Threshold |
 |-----------------|------------------|
 | +3 → +6 | 10 |
 | +6 → +9 | 18 |
 | +9 → +12 | 28 |
-| +12 → +15 | 36 |
+| +12 → +15 | 18 (was 36) |
 
 ### Random Bonuses
 
@@ -1043,6 +1056,8 @@ Phase 2 — Dead (after 10s if not revived):
     → Client shows grayscale overlay + respawn button
     → On "RequestRespawn": restores HP, teleports to spawn, fires "Alive"
 ```
+
+**Party-wipe revive** (*updated 2026-09-26, §AGX/X25; behaviour from §AGX/X40*): when everyone is down, the run pauses for a 15 s window. Each run has **free** wipe-revives by difficulty (**Normal 3, Hard 2, Nightmare 1**), then **one paid** revive (25 Essence, shown only to players who can afford it). Revived players get 3 s of invulnerability. With nothing left to offer, the run ends at once.
 
 ### Projectile Hit Types
 
@@ -1324,27 +1339,22 @@ Where `POWER_OFFSET = 9`.
 
 ### Wave System
 
-**Waves 1–5:** Hand-crafted definitions (escalating Zombie counts, Wave 5 includes guaranteed Ogre miniboss).
+*Updated 2026-09-26 (§AGX/X25).* A Lane run is **12 hand-crafted waves** (`WaveConfig.lua:25-38`): 10, 12, 14 … 32 Zombies (+2 per wave), spawn interval 2.5 s → 1.3 s, with guaranteed minibosses on wave 4 (Troll), 7 (Troll), 10 (Ogre) and 12 (Ogre). That is **252 mobs** on Normal, including the 4 minibosses; difficulty `countMult` / `intervalMult` apply on top.
 
-**Waves 6+:** Procedurally generated:
-- Base mob count: 5, +1 per wave, max 30
-- Spawn interval: 1.5s → 0.5s (decreases with wave)
-- Miniboss every 5 waves from wave 5 onward
-- Random mobs: Zombie pool
-- Random minibosses: Ogre/Troll pool
+The procedural generator (5 mobs +1 per wave, max 30; a miniboss every 5 waves) is only used past wave 12, which Lane never reaches.
 
 ### Difficulty Multipliers
 
-WaveConfig applies multipliers from DifficultyConfig when generating wave data:
+WaveConfig applies multipliers from DifficultyConfig when generating wave data (*updated 2026-09-26, §AGX/X25: aligned to `DifficultyConfig.lua`; Hard needs level 30, Nightmare level 80*):
 
 | Multiplier | Normal | Hard | Nightmare |
 |------------|--------|------|-----------|
-| HP | 1.0× | 1.5× | 2.5× |
-| Damage | 1.0× | 1.3× | 1.8× |
-| Armor | 1.0× | 1.2× | 1.5× |
+| HP | 1.0× | 1.45× | 2.15× |
+| Damage | 1.0× | 1.25× | 1.6× |
+| Armor | 1.0× | 1.15× | 1.35× |
 | Speed bonus | +0 | +1 | +2 |
-| Mob count | 1.0× | 1.25× | 1.5× |
-| Spawn interval | 1.0× | 0.85× | 0.7× |
+| Mob count | 1.0× | 1.10× | 1.20× |
+| Spawn interval | 1.0× | 0.95× | 0.90× |
 | Merit reward | 1.0× | 1.25× | 1.75× |
 | Essence reward | 1.0× | 1.25× | 2.0× |
 | XP reward | 1.0× | 1.25× | 1.5× |
@@ -1418,7 +1428,7 @@ $$\text{Damage} = \text{MaxHP} \times \text{BasePct} \times \text{RemainingHpFac
 1. **Player XP** — shared across nearby party members (200-stud range)
 2. **Weapon XP** — killer only
 3. **Armor XP** — killer only
-4. **Loot drops** — killer only, via DropManager
+4. **Loot drops** — personal: every XP-eligible party member (and always the killer) rolls their own drop on each party kill, scaled by their **own** level (§AGX/X44; *updated 2026-09-26*)
 5. **Kill callbacks** — subscribers (AchievementManager, etc.)
 6. **Client MobDeath notification** — all clients
 
@@ -1449,7 +1459,7 @@ Managed by `DropTableConfig`:
 | Miniboss | Merits 8–15 (100%), Essence 2–4 (30%, no level scaling) |
 | Boss | Merits 25–50 (100%), Essence 8–20 (75%, no level scaling) |
 
-Currency drops scale +10% per mob level above 1 (unless `noScale` flag).
+Currency drops scale +10% per level above 1 (unless `noScale` flag), using the recipient's own level `min(mob RewardLevel, max(5, own level))` (§AGX/X44). Mode, difficulty, BountyBoard and MeritBonus multipliers each apply once.
 
 ### Wave Completion XP
 
@@ -1479,7 +1489,9 @@ TalentClient.lua               ← client-side state sync
 
 ### Talent Points
 
-$$\text{TotalPoints} = (\text{Level} - 1) \times 1 + \text{BonusTalentPoints}$$
+$$\text{TotalPoints} = \sum \text{(levels of every owned weapon, all classes)} + \text{BonusTalentPoints}$$
+
+*Updated 2026-09-26 (§AGX/X25):* matches `TalentManager.TalentPointProvider` (minimum 1). With 4 classes × 2 weapons × level 50, the endgame budget is **400** points.
 
 ### Tree Structure
 
@@ -1508,8 +1520,8 @@ $$\text{TotalPoints} = (\text{Level} - 1) \times 1 + \text{BonusTalentPoints}$$
 - Refund: leaf-only removal (≤1 allocated neighbor), BFS connectivity verified as safety net
 
 ### Respec
-- **Cost (below level 100):** 25 Essence + 20,000 Merits
-- **Cost (level 100+):** 40 Essence + 50,000 Merits
+- **Cost:** 1 Respec Scroll, otherwise **25 Essence** at any level (*updated 2026-09-26, §AGX/X42*: was 25 / 40 Essence "+" 20,000 / 50,000 Merits; the Merit part was never charged and has been removed)
+- Respec Scroll: shop price 25 Essence; also from 4 fragments (Horde), the day-30 login reward and achievements
 - Clears all nodes except start, rebuilds aggregator
 
 ### Keystone Examples
@@ -1677,10 +1689,11 @@ Equipping an accessory pushes its stat bonuses to BonusManager; unequipping clea
 
 ### DailyLoginManager
 
-30-day cycling streak. Data in `data.Account.DailyLogin`.
+*Updated 2026-09-26 (§AGX/X25; behaviour from §AGX/X47).* Data in `data.Account.DailyLogin` (`lastClaimDate`, `streak`, `totalDays`). One claim per UTC day pays two tracks:
 
-- **Streak rules:** Claim once per day. If today's date = yesterday + 1 → streak continues. Otherwise streak resets to 1. Cycles after 30.
-- **Claim check:** `today ≠ lastClaimDate`
+- **Calendar:** the 30-day table below, indexed by **total days claimed** (`totalDays`). It never resets, so missing a day only delays it. Per 30 claims: 26,500 Merits, 228 Essence, 1 Respec Scroll.
+- **Spree:** consecutive-day streak (`streak`); missing a UTC day resets it to 1. Bonus of **10 Merits × spree** (capped at 300/day) plus **+5 / +10 / +20 Essence** on spree days 7 / 14 / 30. A full 30-day spree adds 4,650 Merits and 35 Essence.
+- **Claim check:** `today ≠ lastClaimDate` (UTC dates)
 
 ### Reward Schedule Highlights
 
@@ -1690,9 +1703,9 @@ Equipping an accessory pushes its stat bonuses to BonusManager; unequipping clea
 | 7 | 1,000 | 10 | Weekly milestone |
 | 14 | 2,000 | 20 | — |
 | 21 | 3,000 | 30 | — |
-| 30 | 10,000 | 100 | +1 RespecToken |
+| 30 | 10,000 | 100 | +1 Respec Scroll |
 
-Days between milestones escalate gradually (100–350 Merits + small Essence).
+Days between milestones escalate gradually (100–800 Merits, Essence on about every other day).
 
 ---
 
@@ -2052,13 +2065,13 @@ Orchestrates the vote lifecycle:
 
 | Mode | Vote Type | Interval | Notes |
 |------|-----------|----------|-------|
-| **Horde** | Supply | Every 45s | Beneficial cards (economy, utility) |
-| **Horde** | Threat | Every 90s | Risk/reward cards (mob buffs + danger bonus) |
+| **Horde** | Supply | Every 90s, first at 45s (7 per run) | Beneficial cards (economy, utility) |
+| **Horde** | Threat | Every 90s, first at 90s (7 per run) | Risk/reward cards (mob buffs + danger bonus) |
 | **Lane** | Tactical | Per wave start | Wave blocks on vote via pre-spawn hook |
 
 ### Horde Run Duration
 
-Horde Mode runs have a fixed duration of **630 seconds (10:30)** designed to fit 14 supply windows (×45s) and 7 threat windows (×90s).
+Horde Mode runs have a fixed duration of **630 seconds (10:30)** of play time: one vote loop fires every 45 s and alternates supply/threat, so a run has **7 supply + 7 threat** votes (*updated 2026-09-26, §AGX/X25*).
 
 **End-of-run sequence:**
 
@@ -2307,7 +2320,7 @@ LaneDefense:
 HordeMode:
   GameStateManager: PREPARING → DEFENDING
     → HordeModeSpawner.Start() (phase-based infinite spawning)
-    → Vote loops: Supply every 45s, Threat every 90s
+    → Vote loop: every 45s, alternating Supply / Threat (7 + 7)
     → RunModifiers accumulate from voted cards
     → RUN_DURATION (630s) elapses
       → hordeRunActive = false (vote loops exit)
