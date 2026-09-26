@@ -44,6 +44,10 @@ local currentState = STATES.IDLE
 local stateStartTime = 0
 local MobSpawner = nil  -- Lazy loaded
 local countdownThread = nil  -- Thread spawned by StartCountdown
+-- §AGX/T11-JAN: bumped on every SetState. The Victory/Defeat auto-return
+-- delay only re-checked the state NAME, so Victory → Idle → new run →
+-- Victory inside ReturnToLobbyDelay let the first run's timer fire early.
+local stateEpoch = 0
 -- §AGX/UX-02: flags the HUD can't rebuild from transitions alone; sent in
 -- the RequestGameState snapshot so a (re)mounted HUD shows the right buttons.
 local runEnded = false       -- true after Defeat/Victory until the next run starts
@@ -127,6 +131,7 @@ function GameStateManager.SetState(newState)
 
 	local oldState = currentState
 	currentState = newState
+	stateEpoch += 1  -- §AGX/T11-JAN
 	stateStartTime = os.clock()
 
 	-- §AGX/UX-02: same rules the HUD applies to transitions (§AGX/X14).
@@ -185,8 +190,9 @@ function GameStateManager.OnStateEnter(newState, oldState)
 		print("[GameStateManager] 🎉 VICTORY! All waves completed!")
 		-- Optional: Return to lobby after delay
 		if CONFIG.ReturnToLobbyDelay > 0 then
+			local epoch = stateEpoch  -- §AGX/T11-JAN
 			task.delay(CONFIG.ReturnToLobbyDelay, function()
-				if currentState == STATES.VICTORY then
+				if currentState == STATES.VICTORY and stateEpoch == epoch then
 					GameStateManager.ReturnToLobby()
 				end
 			end)
@@ -196,8 +202,9 @@ function GameStateManager.OnStateEnter(newState, oldState)
 		print("[GameStateManager] 💀 DEFEAT!")
 		-- Optional: Return to lobby after delay
 		if CONFIG.ReturnToLobbyDelay > 0 then
+			local epoch = stateEpoch  -- §AGX/T11-JAN
 			task.delay(CONFIG.ReturnToLobbyDelay, function()
-				if currentState == STATES.DEFEAT then
+				if currentState == STATES.DEFEAT and stateEpoch == epoch then
 					GameStateManager.ReturnToLobby()
 				end
 			end)

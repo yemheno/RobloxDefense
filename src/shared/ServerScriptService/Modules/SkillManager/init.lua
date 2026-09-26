@@ -532,6 +532,9 @@ end
 
 function SkillManager.StartCooldown(player, skillId, duration)
 	if not playerCooldowns[player] then
+		-- §AGX/T11-JAN: a late call for a player who already left (RemovePlayer
+		-- ran) used to re-create the Player-keyed entry, which then never cleared.
+		if not player.Parent then return end
 		playerCooldowns[player] = {}
 	end
 
@@ -574,6 +577,8 @@ end
 
 function SkillManager.ApplyBuff(player, buffId, buffData)
 	if not activeBuffs[player] then
+		-- §AGX/T11-JAN: same re-create-after-leave leak as StartCooldown.
+		if not player.Parent then return end
 		activeBuffs[player] = {}
 	end
 

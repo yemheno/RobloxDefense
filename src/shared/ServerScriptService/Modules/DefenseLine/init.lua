@@ -21,6 +21,10 @@ local DefenseAnimation = require(script:WaitForChild("DefenseAnimation"))
 -- State
 local defenseLinePart = nil
 local isInitialized = false
+-- §AGX/T11-JAN: run generation, bumped by Reset(). A breach whose
+-- PlayHitAnimation delay straddles a Reset used to apply the previous run's
+-- damage to the fresh line.
+local runGeneration = 0
 
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
@@ -153,7 +157,17 @@ function DefenseLine.OnMobReachedLine(mob, mobData)
 	local finalDamage = baseDamage * comboMultiplier
 
 	-- Play animation (client-side, §AGX/X35), then apply damage + Destroy
+	local gen = runGeneration  -- §AGX/T11-JAN
 	DefenseAnimation.PlayHitAnimation(mob, function()
+		-- §AGX/T11-JAN: run was reset mid-animation → clean up, no damage.
+		if gen ~= runGeneration then
+			DefenseDetection.ClearMob(mob)
+			if mob and mob.Parent then
+				mob:Destroy()
+			end
+			return
+		end
+
 		-- Apply damage
 		DefenseHealth.TakeDamage(finalDamage, {
 			source = "mob",
@@ -197,6 +211,7 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 function DefenseLine.Reset()
+	runGeneration += 1  -- §AGX/T11-JAN
 	DefenseHealth.Reset()
 	DefenseCombo.Reset()
 	DefenseDetection.Reset()

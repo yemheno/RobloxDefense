@@ -47,7 +47,7 @@ local playerJanitors = setmetatable({}, { __mode = "k" })
 local function getPlayerJanitor(player)
 	local jan = playerJanitors[player]
 	if not jan then
-		jan = Janitor.new()
+		jan = Janitor.new("WeaponManager.player")  -- §AGX/T11-JAN: JAN2 label
 		playerJanitors[player] = jan
 	end
 	return jan
@@ -132,16 +132,21 @@ function WeaponManager.Init()
 		end
 	end
 
-	-- Future joins: PRE-spawn AND character-added
-	Players.PlayerAdded:Connect(function(player)
+	-- §AGX/T11-JAN: one wire per player. A player joining between the
+	-- PlayerAdded connect and the GetPlayers() loop was wired twice (two
+	-- CharacterAdded conns → two setups per respawn).
+	local function wirePlayer(player)
+		if playerJanitors[player] then return end
 		ensureWeaponSetup(player)
 		wireCharacterAdded(player)
-	end)
+	end
+
+	-- Future joins: PRE-spawn AND character-added
+	Players.PlayerAdded:Connect(wirePlayer)
 
 	-- Existing players (Init ran late)
 	for _, player in ipairs(Players:GetPlayers()) do
-		ensureWeaponSetup(player)
-		wireCharacterAdded(player)
+		wirePlayer(player)
 	end
 
 	-- Clean up on player leaving

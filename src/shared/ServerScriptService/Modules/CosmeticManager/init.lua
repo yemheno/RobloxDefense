@@ -43,6 +43,10 @@ local NetworkManager    = nil
 local PlayerDataManager = nil
 local CosmeticConfig    = nil
 
+-- §AGX/T11-JAN: per-player Janitor (Audit_4.7 §5.1) for the CharacterAdded conn.
+local Janitor = require(Modules:WaitForChild("Janitor"))
+local playerJanitors = setmetatable({}, { __mode = "k" })
+
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
 -- ═══════════════════════════════════════════════════════════
@@ -112,32 +116,54 @@ function CosmeticManager.Init()
 	end)
 
 	-- ── Player lifecycle ──────────────────────────────────
+	-- §AGX/T11-JAN: §T1.1-JAN1. The PlayerAdded handler and the
+	-- existing-players loop each wired an untracked CharacterAdded conn (and a
+	-- player joining between the two got both). One wirePlayer, guarded by the
+	-- per-player Janitor, owns the conn plus the in-flight settle thread;
+	-- PlayerRemoving destroys it.
+	local function reapplyAfterSpawn(player)
+		task.wait(0.5)  -- wait for body parts + data to be ready
+		CosmeticManager.SetupPlayer(player)  -- re-run now that data is loaded
+		CosmeticManager.ApplyPlayerVisuals(player)
+	end
+
+	local function wirePlayer(player, isExisting)
+		if playerJanitors[player] then return end
+		local jan = Janitor.new("CosmeticManager.player")
+		playerJanitors[player] = jan
+		jan:Add(player.CharacterAdded:Connect(function()
+			-- Keyed: a newer respawn replaces an older still-waiting pass
+			-- (both would apply to player.Character anyway).
+			jan:Add(task.spawn(reapplyAfterSpawn, player), "respawnApply")
+		end))
+		if isExisting then
+			jan:Add(task.spawn(function()
+				CosmeticManager.SetupPlayer(player)
+				if player.Character then
+					task.wait(0.3)
+					CosmeticManager.ApplyPlayerVisuals(player)
+				end
+			end), "initialApply")
+		else
+			CosmeticManager.SetupPlayer(player)
+		end
+	end
+
 	Players.PlayerAdded:Connect(function(player)
-		CosmeticManager.SetupPlayer(player)
-		player.CharacterAdded:Connect(function()
-			task.wait(0.5)  -- wait for body parts + data to be ready
-			CosmeticManager.SetupPlayer(player)  -- re-run now that data is loaded
-			CosmeticManager.ApplyPlayerVisuals(player)
-		end)
+		wirePlayer(player, false)
 	end)
 
 	-- Handle already-connected players
 	for _, player in ipairs(Players:GetPlayers()) do
-		task.spawn(function()
-			CosmeticManager.SetupPlayer(player)
-			if player.Character then
-				task.wait(0.3)
-				CosmeticManager.ApplyPlayerVisuals(player)
-			end
-			player.CharacterAdded:Connect(function()
-				task.wait(0.5)  -- wait for body parts + data to be ready
-				CosmeticManager.SetupPlayer(player)  -- re-run now that data is loaded
-				CosmeticManager.ApplyPlayerVisuals(player)
-			end)
-		end)
+		wirePlayer(player, true)
 	end
 
 	Players.PlayerRemoving:Connect(function(player)
+		local jan = playerJanitors[player]
+		if jan then
+			jan:Destroy()
+			playerJanitors[player] = nil
+		end
 		PlayerCosmeticManager.CleanupPlayer(player)
 	end)
 

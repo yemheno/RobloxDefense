@@ -20,7 +20,7 @@ local playerJanitors = setmetatable({}, { __mode = "k" })
 local function getPlayerJanitor(player)
 	local jan = playerJanitors[player]
 	if not jan then
-		jan = Janitor.new()
+		jan = Janitor.new("AttackHandler.player")  -- §AGX/T11-JAN: JAN2 label
 		playerJanitors[player] = jan
 	end
 	return jan
@@ -92,6 +92,10 @@ function AttackHandler.Init()
 
 	-- Setup CharacterAdded handler for all players (new and existing)
 	local function setupPlayerCharacterHandler(player)
+		-- §AGX/T11-JAN: a player who joins between the PlayerAdded connect
+		-- and the GetPlayers() loop below reached this twice and got two
+		-- CharacterAdded + two DeathState handlers. Wire once per player.
+		if playerJanitors[player] then return end
 		-- §A2 helper: clear all attack-ticket state for a fresh "spawn".
 		-- The monotonic attackId guard prevents replay attacks WITHIN a
 		-- character lifetime, but the client legitimately resets its

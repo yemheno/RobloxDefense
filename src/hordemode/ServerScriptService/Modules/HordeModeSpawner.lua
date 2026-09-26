@@ -47,6 +47,7 @@ end
 -- SetDifficulty() multiplies the chosen tier on top.
 local GameModeConfig = require(game:GetService("ServerScriptService"):WaitForChild("Modules"):WaitForChild("GameModeConfig"))
 local MobSpawnHelper = require(game:GetService("ServerScriptService"):WaitForChild("Modules"):WaitForChild("MobSpawnHelper"))  -- §T3/W9
+local Janitor        = require(game:GetService("ServerScriptService"):WaitForChild("Modules"):WaitForChild("Janitor"))  -- §AGX/T11-JAN
 local _hordeModeCfg  = GameModeConfig.GetMode("HordeMode")
 local _baseMobMults  = _hordeModeCfg and _hordeModeCfg.mobMultipliers or {}
 
@@ -350,8 +351,16 @@ local function createPlayerSpawner(player)
         markers[i] = marker
     end
 
+    -- §AGX/T11-JAN: per-player spawner lifetime on a Janitor (markers +
+    -- spawn thread). destroyPlayerSpawner tears it down on leave / Stop().
+    local jan = Janitor.new("HordeModeSpawner.player")
+    for _, marker in ipairs(markers) do
+        jan:Add(marker)
+    end
+
     local spawnerData = {
         markers   = markers,
+        janitor   = jan,
         nextIndex = 1,
         -- §HMS1 spawn-rate accounting:
         -- spawnDebt = number of intervals where we couldn't place a mob
@@ -565,26 +574,18 @@ local function createPlayerSpawner(player)
         end
     end)
 
-    spawnerData.spawnThread = spawnThread
+    spawnerData.spawnThread = jan:Add(spawnThread)  -- §AGX/T11-JAN
 end
 
 local function destroyPlayerSpawner(player)
     local spawnerData = playerSpawners[player]
     if not spawnerData then return end
 
-    -- Cancel spawn loop
-    if spawnerData.spawnThread then
-        task.cancel(spawnerData.spawnThread)
-    end
-
-    -- Destroy marker Parts
-    for _, marker in ipairs(spawnerData.markers) do
-        if marker and marker.Parent then
-            marker:Destroy()
-        end
-    end
-
+    -- §AGX/T11-JAN: cancel the spawn loop + destroy the marker Parts via the
+    -- spawner's Janitor (reverse-add: thread first, then markers — same
+    -- order as before; the cancel is now pcall-wrapped).
     playerSpawners[player] = nil
+    spawnerData.janitor:Destroy()
 end
 
 -- ─────────────────────────────────────────────────────────────────────

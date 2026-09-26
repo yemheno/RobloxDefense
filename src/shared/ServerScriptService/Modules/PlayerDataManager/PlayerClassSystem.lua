@@ -5,6 +5,22 @@ local PlayerClassSystem = {}
 local Modules = script.Parent.Parent
 local Config = require(Modules:WaitForChild("PlayerDataConfig"))
 
+-- §AGX/T11-JAN: lazy ReadyGate getter (Audit_4.7 §5.3; false = looked, not found).
+local _ReadyGate = nil
+local function getReadyGate()
+	if _ReadyGate ~= nil then
+		return _ReadyGate or nil
+	end
+	local mod = Modules:FindFirstChild("ReadyGate")
+	if not mod then
+		_ReadyGate = false
+		return nil
+	end
+	local ok, result = pcall(require, mod)
+	_ReadyGate = ok and result or false
+	return _ReadyGate or nil
+end
+
 -- Set by PlayerDataManager
 PlayerClassSystem.PlayerDataManager = nil
 PlayerClassSystem.GetDataStore = nil
@@ -139,18 +155,27 @@ function PlayerClassSystem.UnlockClass(player, className)
 
 	-- §EASY/E6: class-unlock toast — rides the existing AchievementUnlocked
 	-- pipeline (AchievementClient → toast queue), no new client code.
-	task.spawn(function()
+	-- §AGX/T11-JAN: routed through ReadyGate (Audit_4.7 §5.5). The login
+	-- auto-unlock (CheckAndUnlockEligibleClasses from SetupPlayer) fires
+	-- before ClientReady, so a raw FireClient dropped the toast. ReadyGate
+	-- queues until the handshake and sends immediately once ready. No
+	-- task.spawn needed: ReadyGate.FireClient never yields.
+	local payload = {
+		id   = "class_unlock_" .. className,
+		name = "Class Unlocked!",
+		desc = className .. " is now available in the Class menu.",
+		icon = "🗡",
+	}
+	local rg = getReadyGate()
+	if rg then
+		rg.FireClient(player, "AchievementUnlocked", payload)
+	else
 		local nmMod = Modules:FindFirstChild("NetworkManager")
 		local ok, nm = nmMod and pcall(require, nmMod)
 		if ok and nm and nm.FireClient then
-			nm.FireClient(player, "AchievementUnlocked", {
-				id   = "class_unlock_" .. className,
-				name = "Class Unlocked!",
-				desc = className .. " is now available in the Class menu.",
-				icon = "🗡",
-			})
+			nm.FireClient(player, "AchievementUnlocked", payload)
 		end
-	end)
+	end
 	return true
 end
 

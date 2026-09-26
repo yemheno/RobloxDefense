@@ -26,6 +26,7 @@ local VisualEquipmentManager = {}
 
 local Players       = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
+local Janitor       = require(script.Parent:WaitForChild("Janitor"))  -- §AGX/T11-JAN
 
 -- Accessory folder references set in Init
 local WeaponsFolder = nil  -- ServerStorage.Weapons
@@ -71,23 +72,31 @@ function VisualEquipmentManager.Init()
 	-- two connections, so every respawn ran ReattachAll twice (the
 	-- long-standing AttachClassWeapon 2× double-attach). Connections are
 	-- also tracked now and disconnected on leave.
-	local wiredPlayers = setmetatable({}, { __mode = "k" })  -- [player] = conn
+	-- §AGX/T11-JAN: [player] = Janitor (house pattern, Audit_4.7 §5.1). It
+	-- also owns the 0.5 s settle thread, keyed so a quick re-respawn replaces
+	-- the older pass (both reattach to player.Character anyway) and a leave
+	-- cancels it.
+	local wiredPlayers = setmetatable({}, { __mode = "k" })  -- [player] = Janitor
 
 	local function wirePlayer(player)
 		if wiredPlayers[player] then return end
-		wiredPlayers[player] = player.CharacterAdded:Connect(function(_character)
-			task.wait(0.5)
-			VisualEquipmentManager.ReattachAll(player)
-		end)
+		local jan = Janitor.new("VisualEquipmentManager.player")
+		wiredPlayers[player] = jan
+		jan:Add(player.CharacterAdded:Connect(function(_character)
+			jan:Add(task.spawn(function()
+				task.wait(0.5)
+				VisualEquipmentManager.ReattachAll(player)
+			end), "respawnReattach")
+		end))
 	end
 
 	-- Cleanup on player leaving
 	Players.PlayerRemoving:Connect(function(player)
 		VisualEquipmentManager.ClearAll(player)
 		playerVisuals[player.UserId] = nil
-		local conn = wiredPlayers[player]
-		if conn then
-			conn:Disconnect()
+		local jan = wiredPlayers[player]
+		if jan then
+			jan:Destroy()
 			wiredPlayers[player] = nil
 		end
 	end)
@@ -565,4 +574,4 @@ function VisualEquipmentManager.ReattachAll(player)
 	end
 end
 
-return VisualEquipmentManager
+return VisualEquipmentManager

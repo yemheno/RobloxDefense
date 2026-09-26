@@ -12,6 +12,7 @@ local StatsManager = require(Modules:WaitForChild("StatsManager"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local MobBehaviors   = require(Modules:WaitForChild("MobBehaviors"))
 local MobSpawnHelper = require(Modules:WaitForChild("MobSpawnHelper"))  -- §AGX/X45: PinServerOwnership
+local Janitor        = require(Modules:WaitForChild("Janitor"))  -- §AGX/T11-JAN: per-mob lifetime
 
 -- Lazy-loaded
 local HitTracker = nil
@@ -295,6 +296,13 @@ function MobAI.RegisterMob(mob, mobId, level, difficultyOverrides)
 		frenzyMult   = 1.0,  -- last applied mult; cached so we only push WalkSpeed when it changes
 	}
 
+	-- §AGX/T11-JAN: a re-register of the same model used to overwrite the
+	-- entry and orphan the previous Died/AncestryChanged conns.
+	local previous = activeMobs[mob]
+	if previous and previous.janitor then
+		previous.janitor:Destroy()
+		previous.janitor = nil
+	end
 	activeMobs[mob] = mobData
 
 	-- §AGX/X45: pin mob physics to the server. RegisterMob is the one
@@ -320,16 +328,18 @@ function MobAI.RegisterMob(mob, mobId, level, difficultyOverrides)
 	-- §T3/W4 (§14b): track the per-mob connections so UnregisterMob can
 	-- disconnect them explicitly — a mob :Destroy()ed without firing Died
 	-- no longer leaves dangling closures holding the mob table alive.
-	mobData.connections = {
-		humanoid.Died:Connect(function()
-			MobAI.OnMobDied(mob)
-		end),
-		mob.AncestryChanged:Connect(function(_, parent)
-			if not parent then
-				MobAI.UnregisterMob(mob)
-			end
-		end),
-	}
+	-- §AGX/T11-JAN: the two conns live on a per-mob Janitor (house pattern,
+	-- counted as "MobAI.mob" in the JAN2 telemetry). UnregisterMob destroys it.
+	local mobJan = Janitor.new("MobAI.mob")
+	mobData.janitor = mobJan
+	mobJan:Add(humanoid.Died:Connect(function()
+		MobAI.OnMobDied(mob)
+	end))
+	mobJan:Add(mob.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			MobAI.UnregisterMob(mob)
+		end
+	end))
 
 	local tierText = config.mobTier ~= "normal" and " [" .. config.mobTier:upper() .. "]" or ""
 	local skillCount = #(config.skillPriority or {})
@@ -365,11 +375,10 @@ function MobAI.UnregisterMob(mob)
 		activeMobs[mob].state = STATES.DEAD
 
 		-- §T3/W4: disconnect the tracked per-mob connections.
-		if activeMobs[mob].connections then
-			for _, conn in ipairs(activeMobs[mob].connections) do
-				pcall(conn.Disconnect, conn)
-			end
-			activeMobs[mob].connections = nil
+		-- §AGX/T11-JAN: via the per-mob Janitor.
+		if activeMobs[mob].janitor then
+			activeMobs[mob].janitor:Destroy()
+			activeMobs[mob].janitor = nil
 		end
 
 		-- Clean up pending skill hits and basic attacks for this mob.

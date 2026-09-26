@@ -25,7 +25,11 @@ end
 -- (AllocateStat etc.) leave it nil/false and get proportional rescaling
 -- so a +VIT allocation doesn't full-heal you mid-fight.
 function PlayerStatSystem.ApplyHealthToCharacter(player, character, freshSpawn)
-	local humanoid = character:WaitForChild("Humanoid")
+	-- §AGX/T11-JAN: bounded wait. An unbounded WaitForChild on a character
+	-- that was destroyed before its Humanoid replicated parked this thread
+	-- (and any synchronous caller) forever.
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	if not humanoid then return end
 	local totalHealth = math.floor(PlayerStatSystem.GetTotalStat(player, "Health"))
 
 	-- IMPORTANT: Read Health before setting MaxHealth, because Roblox auto-clamps

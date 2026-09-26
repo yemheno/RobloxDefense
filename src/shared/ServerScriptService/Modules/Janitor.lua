@@ -30,6 +30,22 @@
       jan:Destroy()                          → tear down all in reverse-add
       jan:LinkToInstance(instance)           → auto-destroy on AncestryChanged
       jan:IsDestroyed()                      → bool
+      Janitor.new(label?)                    → label groups telemetry counts
+      Janitor.SetTelemetryEnabled(bool)      → debug snapshot loop on/off
+      Janitor.GetLiveCounts()                → { [label] = liveCount }
+
+    Telemetry (§T1.1-JAN2)
+    ----------------------
+    Every Janitor is counted per label while alive (new → +1, first
+    Destroy → -1). Counting is one table write, always on. The 60 s
+    snapshot print is DEBUG-ONLY and off by default. Turn it on with ANY of:
+      • TELEMETRY_ENABLED = true below (whole session), or
+      • game:SetAttribute("JanitorTelemetry", true) at runtime (works from
+        the Studio command bar, which has its own module cache, so calling
+        SetTelemetryEnabled there would not reach the game's copy), or
+      • Janitor.SetTelemetryEnabled(true) from server code.
+    A label whose live count keeps climbing across snapshots while the
+    player count is flat is the leak.
 
     Supported value types
     ---------------------
@@ -60,6 +76,16 @@
 
 local Janitor = {}
 Janitor.__index = Janitor
+
+-- §AGX/T11-JAN: JAN2 telemetry. Default OFF so it is never noisy in production.
+local TELEMETRY_ENABLED  = false
+local TELEMETRY_INTERVAL = 60
+local UNLABELLED         = "unlabelled"
+
+local liveByLabel    = {}   -- [label] = live Janitor count
+local createdByLabel = {}   -- [label] = total ever created (monotonic)
+local peakByLabel    = {}   -- [label] = highest live count seen
+local telemetryThread = nil
 
 -- ─────────────────────────────────────────────────────────────────────
 -- INTERNALS
@@ -108,11 +134,18 @@ end
 -- PUBLIC API
 -- ─────────────────────────────────────────────────────────────────────
 
-function Janitor.new()
+-- §AGX/T11-JAN: optional label groups this Janitor in the JAN2 telemetry.
+function Janitor.new(label)
+    label = (type(label) == "string" and label ~= "") and label or UNLABELLED
+    local live = (liveByLabel[label] or 0) + 1
+    liveByLabel[label]    = live
+    createdByLabel[label] = (createdByLabel[label] or 0) + 1
+    if live > (peakByLabel[label] or 0) then peakByLabel[label] = live end
     return setmetatable({
         _items     = {},   -- ordered list of { kind, value, key? } or false (tombstone)
         _byKey     = {},   -- key → index in _items
         _destroyed = false,
+        _label     = label,
     }, Janitor)
 end
 
@@ -169,6 +202,9 @@ end
 function Janitor:Destroy()
     if self._destroyed then return end
     self._destroyed = true
+    -- §AGX/T11-JAN: JAN2 live count drops exactly once per Janitor.
+    local label = self._label or UNLABELLED
+    liveByLabel[label] = math.max(0, (liveByLabel[label] or 1) - 1)
 
     for i = #self._items, 1, -1 do
         local entry = self._items[i]
@@ -202,6 +238,65 @@ end
 
 function Janitor:IsDestroyed()
     return self._destroyed
+end
+
+-- ─────────────────────────────────────────────────────────────────────
+-- TELEMETRY  (§T1.1-JAN2, debug-only)
+-- ─────────────────────────────────────────────────────────────────────
+
+--- Snapshot of live Janitors per label (copy; safe to mutate).
+function Janitor.GetLiveCounts()
+    local out = {}
+    for label, n in pairs(liveByLabel) do out[label] = n end
+    return out
+end
+
+--- Print one snapshot line per label: live / peak / created.
+function Janitor.PrintSnapshot()
+    local labels = {}
+    for label in pairs(createdByLabel) do table.insert(labels, label) end
+    table.sort(labels)
+    local total = 0
+    local parts = {}
+    for _, label in ipairs(labels) do
+        local live = liveByLabel[label] or 0
+        total += live
+        table.insert(parts, string.format("%s=%d (peak %d, made %d)",
+            label, live, peakByLabel[label] or 0, createdByLabel[label] or 0))
+    end
+    print(string.format("[Janitor] live=%d | %s", total,
+        #parts > 0 and table.concat(parts, ", ") or "none"))
+end
+
+--- Turn the 60 s snapshot loop on or off at runtime.
+function Janitor.SetTelemetryEnabled(enabled)
+    TELEMETRY_ENABLED = enabled == true
+    if TELEMETRY_ENABLED and not telemetryThread then
+        telemetryThread = task.spawn(function()
+            while TELEMETRY_ENABLED do
+                task.wait(TELEMETRY_INTERVAL)
+                if TELEMETRY_ENABLED then Janitor.PrintSnapshot() end
+            end
+            telemetryThread = nil
+        end)
+    elseif not TELEMETRY_ENABLED and telemetryThread then
+        pcall(task.cancel, telemetryThread)
+        telemetryThread = nil
+    end
+end
+
+function Janitor.IsTelemetryEnabled()
+    return TELEMETRY_ENABLED
+end
+
+-- §AGX/T11-JAN: runtime toggle via attribute (see header). One
+-- module-lifetime connection; no-op cost while the attribute is unset.
+TELEMETRY_ENABLED = TELEMETRY_ENABLED or game:GetAttribute("JanitorTelemetry") == true
+game:GetAttributeChangedSignal("JanitorTelemetry"):Connect(function()
+    Janitor.SetTelemetryEnabled(game:GetAttribute("JanitorTelemetry") == true)
+end)
+if TELEMETRY_ENABLED then
+    Janitor.SetTelemetryEnabled(true)
 end
 
 return Janitor

@@ -160,23 +160,26 @@ end
 -- GetAttribute per player per hit. The set of players with ShowAllDamage
 -- changes rarely — maintain it on the attribute signal instead.
 local spectators = {}  -- [player] = true while ShowAllDamage == true
+-- §AGX/T11-JAN: [player] = Janitor (was = true). The attribute conn is now
+-- torn down on PlayerRemoving instead of relying on the Player instance
+-- being destroyed (not guaranteed under every PlayerInstanceDestroyBehavior).
+local Janitor = require(Modules:WaitForChild("Janitor"))
 local spectatorsWired = setmetatable({}, { __mode = "k" })
 
 local function wireSpectator(player)
 	if spectatorsWired[player] then return end
-	spectatorsWired[player] = true
+	local jan = Janitor.new("DamageHandler.spectator")
+	spectatorsWired[player] = jan
 	if player:GetAttribute("ShowAllDamage") == true then
 		spectators[player] = true
 	end
-	-- Connection lives on the Player instance — auto-disconnected when
-	-- the player leaves (instance destroyed).
-	player:GetAttributeChangedSignal("ShowAllDamage"):Connect(function()
+	jan:Add(player:GetAttributeChangedSignal("ShowAllDamage"):Connect(function()
 		if player:GetAttribute("ShowAllDamage") == true then
 			spectators[player] = true
 		else
 			spectators[player] = nil
 		end
-	end)
+	end))
 end
 
 Players.PlayerAdded:Connect(wireSpectator)
@@ -185,6 +188,12 @@ for _, p in ipairs(Players:GetPlayers()) do
 end
 Players.PlayerRemoving:Connect(function(p)
 	spectators[p] = nil
+	-- §AGX/T11-JAN: drop the per-player attribute conn.
+	local jan = spectatorsWired[p]
+	if jan then
+		jan:Destroy()
+		spectatorsWired[p] = nil
+	end
 end)
 
 -- §PERF/F5 (Tibia window): hits are queued and flushed every

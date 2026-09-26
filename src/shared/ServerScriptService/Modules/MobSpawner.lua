@@ -63,6 +63,16 @@ local spawnPoint = nil
 
 local currentWave = 0
 local waveState = "idle"
+-- §AGX/T11-JAN: run generation. Reset() bumps it so a wave thread from the
+-- previous run (parked in the pre-spawn hook, the spawn loop, the clear
+-- poll or the auto-advance delay) exits instead of resuming. The old
+-- `waveState == "idle"` check alone missed Reset → StartWave (state back to
+-- "spawning", two spawn threads) and Reset during AutoAdvanceDelay (state
+-- "idle", so it restarted at wave 1).
+local waveGeneration = 0
+local function waveAborted(gen)
+	return waveState == "idle" or gen ~= waveGeneration
+end
 local mobsSpawnedThisWave = 0
 local mobsToSpawnThisWave = 0
 
@@ -325,14 +335,16 @@ function MobSpawner.StartWave(waveNumber)
 
 	FireWaveStarted(waveNumber, mobsToSpawnThisWave, waveData.level)
 
+	local gen = waveGeneration  -- §AGX/T11-JAN
 	task.spawn(function()
-		MobSpawner.SpawnWave(waveData)
+		MobSpawner.SpawnWave(waveData, gen)
 	end)
 
 	return true
 end
 
-function MobSpawner.SpawnWave(waveData)
+function MobSpawner.SpawnWave(waveData, gen)
+	gen = gen or waveGeneration  -- §AGX/T11-JAN
 	-- Wait for pre-spawn hook (e.g. tactical vote) before spawning.
 	-- §2.2d: pcall the hook so a thrown error can't dead-lock the wave,
 	-- and log the actual elapsed time on both success and timeout so we
@@ -375,6 +387,9 @@ function MobSpawner.SpawnWave(waveData)
 			))
 		end
 	end
+
+	-- §AGX/T11-JAN: Reset during the hook wait → don't announce a dead wave.
+	if waveAborted(gen) then return end
 
 	-- §LD-V2: now that the pre-spawn hook (vote / card display / etc.) has
 	-- resolved, broadcast the WaveStarted client event so the HUD banner
@@ -427,9 +442,9 @@ function MobSpawner.SpawnWave(waveData)
 	-- MAX_WAVE_REQUEUES per slot) so the wave completes at the intended count.
 	local MAX_WAVE_REQUEUES = 3
 	for _, mobId in ipairs(waveData.guaranteed or {}) do
-		if waveState == "idle" then return end -- abort if reset during spawn
+		if waveAborted(gen) then return end -- abort if reset during spawn (§AGX/T11-JAN: + generation)
 		local spawned, tries = nil, 0
-		while not spawned and tries < MAX_WAVE_REQUEUES and waveState ~= "idle" do
+		while not spawned and tries < MAX_WAVE_REQUEUES and not waveAborted(gen) do
 			spawned = MobSpawner.SpawnMob(mobId, level, effectiveOverrides)
 			tries = tries + 1
 			if not spawned then
@@ -440,7 +455,7 @@ function MobSpawner.SpawnWave(waveData)
 				task.wait(0.25)
 			end
 		end
-		if not spawned and waveState ~= "idle" then
+		if not spawned and not waveAborted(gen) then
 			-- §T3/W9: with never-fail clone, reaching here means a CONFIG
 			-- error (unknown mobId / missing template) — requeues can't fix it.
 			warn(string.format(
@@ -461,7 +476,7 @@ function MobSpawner.SpawnWave(waveData)
 	end
 
 	for i = 1, mobCount do
-		if waveState == "idle" then return end -- abort if reset during spawn
+		if waveAborted(gen) then return end -- abort if reset during spawn (§AGX/T11-JAN: + generation)
 		local mobId
 		if minibossesInjected > 0 then
 			-- Pick the heaviest available mob type for injected minibosses
@@ -474,7 +489,7 @@ function MobSpawner.SpawnWave(waveData)
 		end
 		-- §2.2b: re-queue on SpawnMob failure so wave counts stay intact.
 		local spawned, tries = nil, 0
-		while not spawned and tries < MAX_WAVE_REQUEUES and waveState ~= "idle" do
+		while not spawned and tries < MAX_WAVE_REQUEUES and not waveAborted(gen) do
 			spawned = MobSpawner.SpawnMob(mobId, level, effectiveOverrides)
 			tries = tries + 1
 			if not spawned then
@@ -485,7 +500,7 @@ function MobSpawner.SpawnWave(waveData)
 				task.wait(0.25)
 			end
 		end
-		if not spawned and waveState ~= "idle" then
+		if not spawned and not waveAborted(gen) then
 			-- §T3/W9: only reachable on a config error now (see above).
 			warn(string.format(
 				"[MobSpawner] Wave slot %s UNRECOVERABLE (config error?) after %d re-queues — wave count will be short.",
@@ -496,22 +511,25 @@ function MobSpawner.SpawnWave(waveData)
 		task.wait(spawnInterval)
 	end
 
+	-- §AGX/T11-JAN: the last task.wait(spawnInterval) can straddle a Reset.
+	if waveAborted(gen) then return end
 	waveState = "active"
-	MobSpawner.WaitForWaveClear()
+	MobSpawner.WaitForWaveClear(gen)
 end
 
-function MobSpawner.WaitForWaveClear()
+function MobSpawner.WaitForWaveClear(gen)
+	gen = gen or waveGeneration  -- §AGX/T11-JAN
 	waveState = "clearing"
 
 	while MobAI.IsAnyMobAlive() do
 		task.wait(0.5)
 		-- Abort if Reset() was called externally (e.g. game over / defeat)
-		if waveState == "idle" then return end
+		if waveAborted(gen) then return end
 	end
 
 	-- Double-check: another system may have called Reset() between the last
 	-- IsAnyMobAlive() check and here — bail if state was already reset.
-	if waveState ~= "clearing" then return end
+	if waveState ~= "clearing" or gen ~= waveGeneration then return end
 
 	waveState = "idle"
 
@@ -530,6 +548,9 @@ function MobSpawner.WaitForWaveClear()
 		task.wait(CONFIG.AutoAdvanceDelay)
 		-- Check again after delay — game may have ended during the wait
 		if waveState ~= "idle" then return end
+		-- §AGX/T11-JAN: Reset() leaves state "idle" too; without this a
+		-- Reset inside AutoAdvanceDelay restarted the run at wave 1.
+		if gen ~= waveGeneration then return end
 		MobSpawner.StartNextWave()
 	end
 end
@@ -639,6 +660,7 @@ function MobSpawner.Reset()
 	end
 	currentWave = 0
 	waveState = "idle"
+	waveGeneration += 1  -- §AGX/T11-JAN: orphan any in-flight wave thread
 	mobsSpawnedThisWave = 0
 	mobsToSpawnThisWave = 0
 	-- §T3/W1: clear the per-run level anchors. Servers are one-run today

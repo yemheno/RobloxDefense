@@ -92,6 +92,25 @@ local voteResolveThread = nil
 local voteListenerConn  = nil
 local voteListenerConnPersonal = nil
 
+-- §AGX/T11-JAN: run-scoped Janitor for the post-resolve timers (VoteCountdown
+-- broadcast + the voteActive=false grace flip). They used to be bare
+-- task.delays that outlived Reset(): a Reset followed by a new vote inside
+-- VOTE_RESULT_GRACE_SEC let the OLD timer clear voteActive mid-vote
+-- (unpausing the world) and send a stray VoteCountdown. Reset destroys it.
+local Janitor = require(script.Parent:WaitForChild("Janitor"))
+local runJanitor = Janitor.new("VoteManager.run")
+
+local function schedulePostResolve()
+    runJanitor:Add(task.delay(VOTE_RESULT_DISPLAY_SEC, function()
+        NetworkManager.FireAllClients("VoteCountdown", {
+            seconds = VOTE_RESULT_COUNTDOWN_SEC,
+        })
+    end))
+    runJanitor:Add(task.delay(VOTE_RESULT_GRACE_SEC, function()
+        voteActive = false
+    end))
+end
+
 -- Cooldown tracking for SHARED votes: { [cooldownKey] = lastWinTimestamp }
 local cooldowns = {}
 
@@ -170,6 +189,10 @@ function VoteManager.Setup(deps)
         personalVote[player]          = nil
         personalCooldowns[player]     = nil
         fragmentRolledThisRun[player] = nil
+        -- §AGX/T11-JAN: drop the leaver's ref from the vote snapshot too
+        -- (every read already skips p.Parent == nil; this just releases it).
+        local idx = table.find(eligiblePlayers, player)
+        if idx then table.remove(eligiblePlayers, idx) end
     end)
 
 end
@@ -634,14 +657,7 @@ function VoteManager._ClosePersonal()
     -- the countdown event still uses FireAllClients — every player gets
     -- the same 'Get ready!' counter regardless of who picked first.
     personalVote = {}
-    task.delay(VOTE_RESULT_DISPLAY_SEC, function()
-        NetworkManager.FireAllClients("VoteCountdown", {
-            seconds = VOTE_RESULT_COUNTDOWN_SEC,
-        })
-    end)
-    task.delay(VOTE_RESULT_GRACE_SEC, function()
-        voteActive = false
-    end)
+    schedulePostResolve()  -- §AGX/T11-JAN: run-scoped (was two bare task.delays)
 end
 
 -- ─────────────────────────────────────────────────────────────────────
@@ -751,14 +767,7 @@ function VoteManager._Resolve()
     --   t=GRACE   : voteActive = false → world resumes.
     -- All three are scheduled deterministically; clients align off
     -- the same broadcast events.
-    task.delay(VOTE_RESULT_DISPLAY_SEC, function()
-        NetworkManager.FireAllClients("VoteCountdown", {
-            seconds = VOTE_RESULT_COUNTDOWN_SEC,
-        })
-    end)
-    task.delay(VOTE_RESULT_GRACE_SEC, function()
-        voteActive = false
-    end)
+    schedulePostResolve()  -- §AGX/T11-JAN: run-scoped (was two bare task.delays)
 end
 
 -- ─────────────────────────────────────────────────────────────────────
@@ -775,6 +784,9 @@ function VoteManager.Reset()
         pcall(task.cancel, voteResolveThread)
         voteResolveThread = nil
     end
+    -- §AGX/T11-JAN: drop this run's pending post-resolve timers.
+    runJanitor:Destroy()
+    runJanitor = Janitor.new("VoteManager.run")
 end
 
 return VoteManager
