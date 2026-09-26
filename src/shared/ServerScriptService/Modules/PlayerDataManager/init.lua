@@ -15,9 +15,16 @@ local AUTO_SAVE_INTERVAL = 60  -- seconds between auto-saves
 -- `_session = { jobId, placeId, time }` next to Account/Classes/… (there
 -- is no wrapper table and adding one would break every existing save).
 -- It is stripped on load and never lives in the in-memory data.
-local LOCK_STALE_AFTER   = 90   -- s; a lock older than this is dead and may be stolen
-local LOCK_WAIT_MAX      = 20   -- s; how long a load waits on another live server's lock
+-- §AGX/X3r3: was 90 — one failed/slow 60 s heartbeat let a live lock go stale; ≥ 3 × AUTO_SAVE_INTERVAL.
+local LOCK_STALE_AFTER   = 200  -- s; a lock older than this is dead and may be stolen
+-- §AGX/X3r5: was 20 — give a slow teleport-source leave-save more time before we kick.
+local LOCK_WAIT_MAX      = 30   -- s; how long a load waits on another live server's lock
 local FINAL_SAVE_RETRIES = 3    -- §AGX/X3: extra attempts for the lock-releasing leave save
+-- §AGX/X3r3: a failed heartbeat (auto-save) is retried once after this delay.
+local HEARTBEAT_RETRY_DELAY = 10
+-- §AGX/X3r1: cap on a rejoin waiting for this server's own release save
+-- (worst case ≈ 3 s force-wait + 4 UpdateAsyncs + 1+2+4 s backoff).
+local RELEASE_WAIT_MAX = 25
 
 -- §AGX/X2: number of SavePlayer / lock-release calls currently running.
 -- BindToClose waits for this to reach 0 so leave-saves that started
@@ -58,7 +65,30 @@ local wipedPlayers = {}
 -- the player's next server wait until it goes stale, so the UpdateAsync
 -- transform aborts non-releasing writes for these keys. Cleared when
 -- the player sets up again.
+-- §AGX/X3r8: also cleared once the release save succeeds (releasedPlayers takes over).
 local releasingPlayers = {}
+
+-- §AGX/X3r1: keys with a release save running right now. Set before the
+-- force-wait (savingPlayers is only set after it) and cleared by the
+-- SavePlayer wrapper after its pcall, so a same-server rejoin can wait
+-- for the release write to land before loading.
+local releaseInFlight = {}
+-- §AGX/X3r12: per-key session generation. Bumped when a new session for
+-- the key starts on this server; a save captured under an older generation
+-- (e.g. an auto-save still queued in UpdateAsync across a quick same-server
+-- rejoin) aborts instead of writing its stale snapshot over the new session.
+local sessionGen = {}
+
+
+-- §AGX/X3r7: keys whose release save succeeded this session. Lets a
+-- second release (BindToClose + PlayerRemoving) be skipped, and keeps
+-- the transform refusing plain saves after releasingPlayers is cleared
+-- (§AGX/X3r8). Cleared when the player sets up again.
+local releasedPlayers = {}
+
+-- Guard: prevent double-setup if PlayerAdded fires during Init() loop.
+-- §AGX/X3r9: hoisted from PLAYER SETUP so the auto-save loop in Init can read it.
+local setupInProgress = {}
 -- Child systems (loaded in Init)
 local ClassSystem
 local StatSystem
@@ -129,21 +159,6 @@ function PlayerDataManager.Init()
 	Players.PlayerAdded:Connect(PlayerDataManager.SetupPlayer)
 	Players.PlayerRemoving:Connect(PlayerDataManager.RemovePlayer)
 
-	for _, player in ipairs(Players:GetPlayers()) do
-		PlayerDataManager.SetupPlayer(player)
-	end
-
-	-- Auto-save loop
-	task.spawn(function()
-		while not shuttingDown do  -- §AGX/X2: stop once shutdown saves begin
-			task.wait(AUTO_SAVE_INTERVAL)
-			if shuttingDown then break end
-			for _, player in ipairs(Players:GetPlayers()) do
-				PlayerDataManager.SavePlayer(player)
-			end
-		end
-	end)
-
 	-- Save all on server shutdown. §PERSIST1: force=true so the dedup
 	-- can't skip the terminal save when an auto-save is in flight.
 	-- §T0P2/X6: saves run in PARALLEL. Sequentially, each force-save can
@@ -155,6 +170,8 @@ function PlayerDataManager.Init()
 	-- usual case is ReturnTeleporter emptying the server, whose
 	-- PlayerRemoving leave-saves are still in flight when this runs.
 	-- §AGX/X3: these are final saves, so they release the session lock.
+	-- §AGX/X3r4: registered BEFORE the existing-players setup below, so a
+	-- shutdown during that (yielding) setup still saves/releases.
 	game:BindToClose(function()
 		shuttingDown = true
 		for _, player in ipairs(Players:GetPlayers()) do
@@ -167,6 +184,37 @@ function PlayerDataManager.Init()
 		end
 		if pendingSaves > 0 then
 			warn("[PlayerDataManager] BindToClose deadline hit with", pendingSaves, "save(s) unfinished")
+		end
+	end)
+
+	-- §AGX/X3r4: spawned — SetupPlayer yields on the DataStore (and up to
+	-- LOCK_WAIT_MAX on a lock), which used to block the place's boot.
+	for _, player in ipairs(Players:GetPlayers()) do
+		task.spawn(PlayerDataManager.SetupPlayer, player)
+	end
+
+	-- §AGX/X3r3: one heartbeat save; a failed write is retried once after
+	-- HEARTBEAT_RETRY_DELAY so a single DataStore hiccup can't let the lock
+	-- age toward LOCK_STALE_AFTER.
+	local function HeartbeatSave(player)
+		if PlayerDataManager.SavePlayer(player) ~= "error" then return end
+		task.wait(HEARTBEAT_RETRY_DELAY)
+		if shuttingDown or not player.Parent then return end
+		PlayerDataManager.SavePlayer(player)
+	end
+
+	-- Auto-save loop
+	task.spawn(function()
+		while not shuttingDown do  -- §AGX/X2: stop once shutdown saves begin
+			task.wait(AUTO_SAVE_INTERVAL)
+			if shuttingDown then break end
+			for _, player in ipairs(Players:GetPlayers()) do
+				-- §AGX/X3r9: nothing to save yet while setup is loading — skip silently.
+				if not setupInProgress[player] then
+					-- §AGX/X3r3: spawned so slow saves don't stretch the heartbeat period.
+					task.spawn(HeartbeatSave, player)
+				end
+			end
 		end
 	end)
 
@@ -336,7 +384,10 @@ local function LoadRawData(userId, player)
 			task.wait(delay)
 			delay = delay * 2
 		end
-		if player and not player.Parent then
+		-- §AGX/X3r2: also give up on shutdown — this load is counted in
+		-- pendingSaves, so waiting out LOCK_WAIT_MAX would only stall
+		-- BindToClose. We hold no lock on this path (success returned above).
+		if (player and not player.Parent) or shuttingDown then
 			return LOAD_ABANDONED
 		end
 	end
@@ -392,31 +443,15 @@ end
 --============================================
 -- PLAYER SETUP / REMOVAL
 --============================================
--- Guard: prevent double-setup if PlayerAdded fires during Init() loop.
-local setupInProgress = {}
+-- (setupInProgress is declared at the top — §AGX/X3r9.)
 
-function PlayerDataManager.SetupPlayer(player)
-	if setupInProgress[player] or playerDataStore[player] then
-		return  -- already setting up or already set up
-	end
-	setupInProgress[player] = true
-
-	-- §T0P2/X17: a rejoin after an admin wipe starts a fresh life for
-	-- this key — lift the save tombstone.
-	local userKey = tostring(player.UserId)
-	wipedPlayers[userKey] = nil
-
-	-- §AGX/X3: a quick rejoin to THIS server can arrive while the previous
-	-- session's leave-save is still running. Our own jobId never blocks
-	-- the lock, so wait for that save here (capped) or we'd load the
-	-- pre-save record.
-	local waitedForSave = 0
-	while savingPlayers[userKey] and waitedForSave < 10 do
-		task.wait(0.1)
-		waitedForSave += 0.1
-	end
-	releasingPlayers[userKey] = nil  -- §AGX/X3: new session for this key
-
+-- §AGX/X3r2: the lock-taking part of SetupPlayer — load, then either
+-- store the data or bail out (abandon / shutdown / kick). Split out so
+-- SetupPlayer can count it in pendingSaves under a pcall: a load still
+-- running at shutdown holds a fresh lock, and BindToClose must wait for
+-- it to be stored-and-released or handed back. Returns the stored data,
+-- or nil when setup must stop (setupInProgress already cleared).
+local function LoadAndStorePlayerData(player, userKey)
 	-- Try loading persisted data; fall back to fresh defaults only on genuine first visit.
 	local doneDataLoad = BootProfiler.Begin("DataLoad " .. player.Name)  -- §PERF/BP
 	local rawSaved = LoadRawData(player.UserId, player)
@@ -427,14 +462,19 @@ function PlayerDataManager.SetupPlayer(player)
 	-- Without this guard we'd store data for a departed Player (strong
 	-- key → leaks forever) and fire dataReadyCallbacks for a ghost,
 	-- setting up downstream state whose cleanup hook already fired.
-	if not player.Parent or rawSaved == LOAD_ABANDONED then
+	-- §AGX/X3r2: same on shutdown — BindToClose already snapshotted the
+	-- player list, so nobody would release a lock taken by this load.
+	-- No yield between here and the store below, so this check is final.
+	if not player.Parent or rawSaved == LOAD_ABANDONED or shuttingDown then
 		setupInProgress[player] = nil
 		-- §AGX/X3: the load took the session lock; hand it back so the
 		-- player's next server doesn't wait on it.
 		if rawSaved ~= LOAD_FAILED and rawSaved ~= LOAD_LOCKED and rawSaved ~= LOAD_ABANDONED then
+			-- Runs up to its first yield now, so its pendingSaves += 1
+			-- lands before our caller's decrement.
 			task.spawn(ReleaseLockOnly, userKey)
 		end
-		return
+		return nil
 	end
 
 	if rawSaved == LOAD_FAILED then
@@ -442,7 +482,7 @@ function PlayerDataManager.SetupPlayer(player)
 		warn("[PlayerDataManager] CRITICAL: Cannot load data for", player.Name, "— kicking to prevent data loss.")
 		setupInProgress[player] = nil
 		player:Kick("Unable to load your saved data. Please rejoin. If this persists, contact support.")
-		return
+		return nil
 	end
 
 	-- §AGX/X3: another server still owns this save (its leave-save never
@@ -451,7 +491,7 @@ function PlayerDataManager.SetupPlayer(player)
 		warn("[PlayerDataManager] Session still locked by another server for", player.Name, "— kicking.")
 		setupInProgress[player] = nil
 		player:Kick("Your data is still being saved by another server. Please rejoin in a minute.")
-		return
+		return nil
 	end
 
 	local data = CreateDefaultData()
@@ -469,6 +509,67 @@ function PlayerDataManager.SetupPlayer(player)
 
 	playerDataStore[player] = data
 	setupInProgress[player] = nil
+	return data
+end
+
+function PlayerDataManager.SetupPlayer(player)
+	if setupInProgress[player] or playerDataStore[player] then
+		return  -- already setting up or already set up
+	end
+	setupInProgress[player] = true
+
+	-- §T0P2/X17: a rejoin after an admin wipe starts a fresh life for
+	-- this key — lift the save tombstone.
+	local userKey = tostring(player.UserId)
+	wipedPlayers[userKey] = nil
+
+	-- §AGX/X3: a quick rejoin to THIS server can arrive while the previous
+	-- session's leave-save is still running. Our own jobId never blocks
+	-- the lock, so wait for that save here (capped) or we'd load the
+	-- pre-save record.
+	-- §AGX/X3r1: wait on releaseInFlight, not savingPlayers — savingPlayers
+	-- is only set after the release save's 3 s force-wait (and an auto-save
+	-- finishing clears it early); 25 s covers the release's full retry chain.
+	local waitedForSave = 0
+	while releaseInFlight[userKey] and waitedForSave < RELEASE_WAIT_MAX do
+		task.wait(0.1)
+		waitedForSave += 0.1
+	end
+	-- §AGX/X3r1: player left, or shutdown began, during the wait — no lock taken yet.
+	if not player.Parent or shuttingDown then
+		setupInProgress[player] = nil
+		return
+	end
+	-- §AGX/X3r1: still running after the cap — loading now could read the
+	-- pre-save record, and the old release finishing later would mark this
+	-- new session released (blocking its saves). Kick like LOAD_LOCKED.
+	if releaseInFlight[userKey] then
+		warn("[PlayerDataManager] Release save for", player.Name, "still running after",
+			RELEASE_WAIT_MAX, "s — kicking.")
+		setupInProgress[player] = nil
+		player:Kick("Your data is still being saved. Please rejoin in a minute.")
+		return
+	end
+	releasingPlayers[userKey] = nil  -- §AGX/X3: new session for this key
+	sessionGen[userKey] = (sessionGen[userKey] or 0) + 1  -- §AGX/X3r12
+	releasedPlayers[userKey] = nil   -- §AGX/X3r7: likewise for the release-done marker
+
+	-- §AGX/X3r2: count the lock-taking load so BindToClose waits for it;
+	-- pcall guarantees the decrement.
+	pendingSaves += 1
+	local loadOk, data = pcall(LoadAndStorePlayerData, player, userKey)
+	pendingSaves -= 1
+	if not loadOk then
+		warn("[PlayerDataManager] CRITICAL: SetupPlayer load errored for", player.Name, ":", data)
+		setupInProgress[player] = nil
+		playerDataStore[player] = nil
+		task.spawn(ReleaseLockOnly, userKey)  -- no-op unless the lock is ours
+		if player.Parent then
+			player:Kick("Unable to load your saved data. Please rejoin. If this persists, contact support.")
+		end
+		return
+	end
+	if not data then return end
 	BootProfiler.Mark("DataReady " .. player.Name)  -- §PERF/BP
 
 	-- ── Sanitize Allocated tables ────────────────────────────────────────
@@ -555,6 +656,8 @@ function PlayerDataManager.RemovePlayer(player)
 	-- §AGX/X3: release=true — this save hands the session lock back (the
 	-- teleport destination is waiting on it) and retries with backoff
 	-- before we drop the in-memory copy below.
+	-- §AGX/X3r7: on shutdown BindToClose's release usually got here first;
+	-- SavePlayer skips this one if a release is in flight or done for the key.
 	PlayerDataManager.SavePlayer(player, true, true)
 	playerDataStore[player] = nil
 
@@ -617,17 +720,23 @@ end
 -- BindToClose): it clears the session lock in the same UpdateAsync and
 -- retries FINAL_SAVE_RETRIES times with backoff. Other saves refresh
 -- the lock's timestamp (auto-save is the lock heartbeat).
-local function WriteRecord(key, data, release)
+local function WriteRecord(key, data, release, gen)
 	local abortReason = nil
 	local ok, err = pcall(function()
 		LOCAL_DATASTORE:UpdateAsync(key, function(old)
 			abortReason = nil  -- transform can run more than once; reset per call
+			if gen ~= nil and sessionGen[key] ~= gen then
+				abortReason = "stale session"
+				return nil
+			end
 			-- §T0P2/X17: re-check the tombstone at write time too.
 			if wipedPlayers[key] then
 				abortReason = "wiped"
 				return nil
 			end
-			if not release and releasingPlayers[key] then
+			-- §AGX/X3r8: releasedPlayers keeps this guard after a successful
+			-- release clears releasingPlayers.
+			if not release and (releasingPlayers[key] or releasedPlayers[key]) then
 				abortReason = "lock already released"
 				return nil
 			end
@@ -649,6 +758,8 @@ local function WriteRecord(key, data, release)
 end
 
 local function SavePlayerImpl(player, force, release)
+	-- §AGX/X3r12: capture the session generation before any yield.
+	local gen = player and sessionGen[tostring(player.UserId)]
 	if DEBUG_SAVE then
 		print(string.format("[PlayerDataManager] SavePlayer ENTRY: %s force=%s",
 			tostring(player and player.Name), tostring(force == true)))
@@ -703,7 +814,7 @@ local function SavePlayerImpl(player, force, release)
 	local backoff = 1
 	local status, detail
 	for attempt = 1, attempts do
-		status, detail = WriteRecord(key, data, release)
+		status, detail = WriteRecord(key, data, release, gen)
 		if status ~= "error" then break end
 		if attempt < attempts then
 			warn("[PlayerDataManager] Save error for", player.Name, "(attempt "
@@ -720,21 +831,48 @@ local function SavePlayerImpl(player, force, release)
 	elseif status == "aborted" then
 		warn("[PlayerDataManager] Save skipped for", player.Name, "—", detail)
 	else
+		-- §AGX/X3r8: release landed — drop the in-progress marker;
+		-- releasedPlayers keeps plain saves out and dedups a 2nd release (r7).
+		if release then
+			releasingPlayers[key] = nil
+			releasedPlayers[key] = true
+		end
 		print("[PlayerDataManager] Saved data for", player.Name,
 			release and "(final)" or (force and "(force)" or ""))
 	end
+	return status  -- §AGX/X3r3: HeartbeatSave retries on "error"
 end
 
 -- §AGX/X2: every save goes through this counted wrapper so BindToClose
 -- can wait for leave-saves already in flight. pcall guarantees the
 -- decrement even if the save body throws.
+-- §AGX/X3r3: returns SavePlayerImpl's status ("ok"/"aborted"/"error",
+-- nil when skipped) so the heartbeat can retry a failed write.
 function PlayerDataManager.SavePlayer(player, force, release)
-	pendingSaves += 1
-	local ok, err = pcall(SavePlayerImpl, player, force, release)
-	pendingSaves -= 1
-	if not ok then
-		warn("[PlayerDataManager] SavePlayer errored for", tostring(player and player.Name), ":", err)
+	-- §AGX/X3r1: mark the release in flight before SavePlayerImpl's
+	-- force-wait (same effect as setting it at its top — nothing yields in
+	-- between) so the wrapper that set it is the one that clears it.
+	local releaseKey = nil
+	if release and player then
+		releaseKey = tostring(player.UserId)
+		-- §AGX/X3r7: one release per key per session — BindToClose and
+		-- PlayerRemoving both release on shutdown; skip the second.
+		if releaseInFlight[releaseKey] or releasedPlayers[releaseKey] then
+			return nil
+		end
+		releaseInFlight[releaseKey] = true
 	end
+	pendingSaves += 1
+	local ok, result = pcall(SavePlayerImpl, player, force, release)
+	pendingSaves -= 1
+	if releaseKey then
+		releaseInFlight[releaseKey] = nil  -- §AGX/X3r1: cleared after the pcall, always
+	end
+	if not ok then
+		warn("[PlayerDataManager] SavePlayer errored for", tostring(player and player.Name), ":", result)
+		return "error"
+	end
+	return result
 end
 
 --============================================

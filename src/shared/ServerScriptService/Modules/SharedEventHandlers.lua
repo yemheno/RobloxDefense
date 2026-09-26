@@ -19,6 +19,8 @@
 
 local SharedEventHandlers = {}
 
+local Players = game:GetService("Players")  -- §AGX/X3r11: keybind state cleanup on leave
+
 -- ═══════════════════════════════════════════════════════════
 -- INTERNAL STATE (set by Register)
 -- ═══════════════════════════════════════════════════════════
@@ -102,13 +104,19 @@ local KEYBIND_PLATFORMS_FALLBACK = { Keyboard = true, Gamepad = true, Touch = tr
 -- SettingsUI binds mouse buttons that way, so these stay valid values.
 local KEYBIND_EXTRA_INPUT_NAMES = { MouseButton1 = true, MouseButton2 = true, MouseButton3 = true }
 local lastKeybindSave = setmetatable({}, { __mode = "k" })
+-- §AGX/X3r6: trailing-edge coalescing. A save inside the interval is no
+-- longer dropped: its validated table waits here and one delayed flush
+-- per player applies the latest one.
+local pendingKeybinds = setmetatable({}, { __mode = "k" })
+local keybindFlushScheduled = setmetatable({}, { __mode = "k" })
 
 local function isValidKeyName(v)
 	if type(v) ~= "string" or #v == 0 or #v > KEYBIND_MAX_NAME_LEN then return false end
 	if utf8.len(v) == nil then return false end
 	if KEYBIND_EXTRA_INPUT_NAMES[v] then return true end
 	local ok, item = pcall(function() return Enum.KeyCode[v] end)
-	return ok and item ~= nil
+	-- §AGX/X3r10: only a real KeyCode EnumItem counts, not any non-nil value.
+	return ok and typeof(item) == "EnumItem"
 end
 
 -- Allowed platforms for one action: the platform keys of its defaults.
@@ -168,6 +176,19 @@ function SharedEventHandlers.PushStatsUpdate(player)
 	if payload then
 		NetworkManager.FireClient(player, "StatsUpdate", payload)
 	end
+end
+
+-- §AGX/X3r6: write the latest pending keybind snapshot (if any) into
+-- the profile. Shared by the immediate path, the delayed flush and
+-- PlayerRemoving; a no-op once the player's data is gone.
+local function applyPendingKeybinds(player)
+	local clean = pendingKeybinds[player]
+	if clean == nil then return end
+	pendingKeybinds[player] = nil
+	local data = DataManager and DataManager.GetData(player)
+	if not data or not data.Account then return end
+	data.Account.Keybindings = clean
+	lastKeybindSave[player] = os.clock()
 end
 
 function SharedEventHandlers.Register(deps)
@@ -336,12 +357,8 @@ function SharedEventHandlers.Register(deps)
 	-- table, including non-UTF-8 strings that break every profile save.
 	NetworkManager.OnClientEvent("SaveKeybindings", function(player, serialized)
 		if type(serialized) ~= "table" then return end
-		local now = os.clock()
-		local last = lastKeybindSave[player]
-		if last and now - last < KEYBIND_MIN_INTERVAL then return end
 		local data = DataManager.GetData(player)
 		if not data or not data.Account then return end
-		lastKeybindSave[player] = now
 
 		local saved = data.Account.Keybindings
 		local clean = {}
@@ -367,7 +384,33 @@ function SharedEventHandlers.Register(deps)
 				end
 			end
 		end
-		data.Account.Keybindings = clean
+
+		-- §AGX/X3r6: rate limit without dropping the newest snapshot.
+		-- Outside the interval: apply now. Inside it: keep only the latest
+		-- validated table and let one scheduled flush apply it.
+		pendingKeybinds[player] = clean
+		if keybindFlushScheduled[player] then return end
+		local now = os.clock()
+		local last = lastKeybindSave[player]
+		if not last or now - last >= KEYBIND_MIN_INTERVAL then
+			applyPendingKeybinds(player)
+			return
+		end
+		keybindFlushScheduled[player] = true
+		task.delay(KEYBIND_MIN_INTERVAL - (now - last), function()
+			keybindFlushScheduled[player] = nil
+			applyPendingKeybinds(player)
+		end)
+	end)
+
+	-- §AGX/X3r11: drop per-player keybind state on leave. A pending
+	-- snapshot is applied first so the leave-save can still pick it up
+	-- (the save copies data inside its UpdateAsync transform, after a yield).
+	Players.PlayerRemoving:Connect(function(player)
+		applyPendingKeybinds(player)
+		lastKeybindSave[player] = nil
+		pendingKeybinds[player] = nil
+		keybindFlushScheduled[player] = nil
 	end)
 
 	print("[SharedEventHandlers] Registered")
