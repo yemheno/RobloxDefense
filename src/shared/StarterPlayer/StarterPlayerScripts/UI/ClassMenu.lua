@@ -1,7 +1,8 @@
 -- UI/ClassMenu.lua
 --
 -- React component: four-column class selection panel.
--- All sizes are %-based (Scale) so the layout adapts to any screen, including mobile.
+-- §AGX/UI-P6: design px inside UIScaleRoot.Local; the columns wrap (4 / 2 / 1
+-- per row) with the body width, so the layout adapts to phones.
 -- Strings are resolved through Locale so the menu can be translated.
 --
 -- Data flow:
@@ -18,36 +19,33 @@ local Modules        = script.Parent.Parent:WaitForChild("Modules")
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local Locale         = require(Modules:WaitForChild("Locale"))
 local ClassCatalog   = require(Modules:WaitForChild("ClassCatalog"))
-local AppWindow      = require(script.Parent:WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
+-- §AGX/UI-P6: shared components (Theme v2 re-skin, D1 Hybrid / D2).
+--   • Body = design px inside UIScaleRoot.Local, one vertical ScrollingFrame;
+--     1-4 category columns per row depending on the body width (phone sheet
+--     wraps to 2+2 or 1 column instead of squeezing four 0.244-scale columns).
+--   • Class slot = Card (selected = active class, locked = level-locked) with
+--     a full-width Button footer: success = active (ink on green, fixes the
+--     2.8:1 white-on-green V10), secondary = switch, locked = level / match.
+--   • Removed: the private palette C (incl. the dead close_* keys), the
+--     SLOT_* scale constants, TextScaled labels, the fromRGB toast.
+local Common        = script.Parent:WaitForChild("Common")
+local AppWindow     = require(Common:WaitForChild("AppWindow"))  -- §T10/U3
+local Theme         = require(Common:WaitForChild("Theme"))
+local UIScaleRoot   = require(Common:WaitForChild("UIScaleRoot"))
+local Text          = require(Common:WaitForChild("Text"))
+local Button        = require(Common:WaitForChild("Button"))
+local Panel         = require(Common:WaitForChild("Panel"))
+local Card          = require(Common:WaitForChild("Card"))
+local useFormFactor = require(Common:WaitForChild("useFormFactor"))
 
--- ── Colour palette ────────────────────────────────────────────────────────────
-local C = {
-	bg_dark   = Color3.fromRGB( 18,  18,  24),   -- panel & main backdrop fill
-	bg_col    = Color3.fromRGB( 24,  24,  33),   -- individual column background
-	bg_header = Color3.fromRGB( 30,  30,  44),   -- column header strip
-	bg_slot   = Color3.fromRGB( 40,  40,  55),   -- filled class slot card
-	bg_empty  = Color3.fromRGB( 26,  26,  36),   -- placeholder slot card
-	accent    = Color3.fromRGB(105, 190, 255),   -- column header text
-	btn_avail  = Color3.fromRGB( 60, 135, 235),  -- available   → blue
-	btn_active = Color3.fromRGB( 45, 175,  95),  -- active      → green
-	btn_locked = Color3.fromRGB( 58,  58,  78),  -- locked      → muted
-	text       = Color3.fromRGB(225, 225, 230),
-	text_dim   = Color3.fromRGB(140, 140, 160),
-	text_lock  = Color3.fromRGB(110, 110, 132),
-	white      = Color3.fromRGB(255, 255, 255),
-	close_bg   = Color3.fromRGB( 80,  36,  36),
-	close_text = Color3.fromRGB(245, 100, 100),
-}
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
 
--- ── Slot layout constants (all scale, relative to the column Frame) ───────────
---   Header:    Y 0.000 → 0.095
---   Slots:     first slot Y starts at 0.110, each slot is 0.205 tall,
---              step is 0.225 (includes a 0.020 gap)
-local SLOT_Y_START = 0.110
-local SLOT_Y_STEP  = 0.225
-local SLOT_H       = 0.205
-local SLOT_X       = 0.04     -- inset from column left edge
-local SLOT_W       = 0.92     -- fraction of column width
+-- §AGX/UI-P6: design px
+local COL_MIN_W   = 190   -- narrowest category column
+local COL_GAP     = SP.sm
+local EMPTY_SLOT_H = 64
 
 -- ── Helper ───────────────────────────────────────────────────────────────────
 local function getSlotState(entry, playerInfo)
@@ -64,22 +62,17 @@ local function getSlotState(entry, playerInfo)
 end
 
 -- ── ClassSlot ─────────────────────────────────────────────────────────────────
---   props: entry, state, switching, onSwitch, yPos, readOnly
+--   props: entry, state, switching, onSwitch, readOnly, layoutOrder
 local function ClassSlot(props)
 	local entry      = props.entry
 	local state      = props.state
 	local switching  = props.switching
 	local onSwitch   = props.onSwitch
-	local yPos       = props.yPos
 	local readOnly   = props.readOnly  -- when true, class change is blocked
 
 	local isPending   = (switching == entry.id)
 	-- readOnly blocks the switch button regardless of unlock state
 	local isClickable = (state == "available") and (switching == nil) and (not readOnly)
-
-	local btnBg = (state == "active" and C.btn_active)
-		or (state == "locked" and C.btn_locked)
-		or C.btn_avail
 
 	local btnText = (state == "active"  and Locale.Get("class_active"))
 		or (readOnly and state == "available" and Locale.Get("class_locked_match") or nil)
@@ -87,100 +80,49 @@ local function ClassSlot(props)
 		or (isPending          and "…")
 		or Locale.Get("class_switch")
 
-	return React.createElement("Frame", {
-		Position         = UDim2.fromScale(SLOT_X, yPos),
-		Size             = UDim2.fromScale(SLOT_W, SLOT_H),
-		BackgroundColor3 = C.bg_slot,
-		BorderSizePixel  = 0,
-	}, {
-		corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0.05, 0),
-		}),
+	-- §AGX/UI-P6: one Button per state (was one TextButton with 3 fills).
+	local variant = (state == "active" and "success")
+		or ((state == "locked" or (readOnly and state == "available")) and "locked")
+		or "secondary"
 
-		-- Class name (bold, top third)
-		className = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.05, 0.06),
-			Size                   = UDim2.fromScale(0.90, 0.32),
-			BackgroundTransparency = 1,
-			Text                   = Locale.Get(entry.localeKey .. "_name"),
-			TextColor3             = C.text,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-		}),
-
-		-- Short description (small, middle)
-		desc = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.05, 0.38),
-			Size                   = UDim2.fromScale(0.90, 0.27),
-			BackgroundTransparency = 1,
-			Text                   = Locale.Get(entry.localeKey .. "_desc"),
-			TextColor3             = C.text_dim,
-			Font                   = Enum.Font.Gotham,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-		}),
-
-		-- Action button (bottom-right).
-		-- §LD-CM1 fix: was 55 % × 27 % of slot which felt oversized
-		-- relative to the class-name and description rows above it
-		-- ("too big / overflowing" per playtest). Trimmed to a more
-		-- compact 40 % × 20 % pill shape, anchored bottom-right via
-		-- AnchorPoint so it stays glued to the corner regardless of
-		-- the slot's aspect ratio.
-		btn = React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 1),
-			Position         = UDim2.fromScale(0.94, 0.92),
-			Size             = UDim2.fromScale(0.40, 0.20),
-			BackgroundColor3 = btnBg,
-			BorderSizePixel  = 0,
-			AutoButtonColor  = isClickable,
-			Text             = btnText,
-			TextColor3       = C.white,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = isClickable and onSwitch or nil,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
-			-- §LD-CM1: clamp the visible label to 70 % of the button
-			-- height so even long localised strings ("On cooldown (3s)",
-			-- "Class is locked while in defense") don't render edge-to-
-			-- edge inside the pill.
-			pad = React.createElement("UIPadding", {
-				PaddingTop    = UDim.new(0.15, 0),
-				PaddingBottom = UDim.new(0.15, 0),
-				PaddingLeft   = UDim.new(0.10, 0),
-				PaddingRight  = UDim.new(0.10, 0),
-			}),
+	return e(Card, {
+		title       = Locale.Get(entry.localeKey .. "_name"),
+		subtitle    = Locale.Get(entry.localeKey .. "_desc"),
+		selected    = state == "active",
+		locked      = state == "locked",
+		layoutOrder = props.layoutOrder,
+		footer      = e(Button, {
+			name        = "Switch_" .. entry.id,
+			variant     = variant,
+			size        = "sm",
+			width       = UDim.new(1, 0),
+			label       = btnText,
+			loading     = isPending,
+			onActivated = isClickable and onSwitch or nil,
 		}),
 	})
 end
 
 -- ── PlaceholderSlot ───────────────────────────────────────────────────────────
---   props: yPos
 local function PlaceholderSlot(props)
-	return React.createElement("Frame", {
-		Position         = UDim2.fromScale(SLOT_X, props.yPos),
-		Size             = UDim2.fromScale(SLOT_W, SLOT_H),
-		BackgroundColor3 = C.bg_empty,
-		BorderSizePixel  = 0,
+	return e(Panel, {
+		elevation   = "sunken",
+		padding     = "sm",
+		size        = UDim2.new(1, 0, 0, EMPTY_SLOT_H),
+		layoutOrder = props.layoutOrder,
 	}, {
-		corner = React.createElement("UICorner", {
-			CornerRadius = UDim.new(0.05, 0),
-		}),
-		lbl = React.createElement("TextLabel", {
-			Size                   = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Text                   = Locale.Get("class_empty"),
-			TextColor3             = C.text_lock,
-			Font                   = Enum.Font.Gotham,
-			TextScaled             = true,
+		lbl = e(Text, {
+			style = "caption",
+			text  = Locale.Get("class_empty"),
+			color = "text.disabled",
+			align = "center",
+			size  = UDim2.fromScale(1, 1),
 		}),
 	})
 end
 
 -- ── CategoryColumn ────────────────────────────────────────────────────────────
---   props: category, playerInfo, switching, onSwitch, readOnly, LayoutOrder
+--   props: category, playerInfo, switching, onSwitch, readOnly, LayoutOrder, width
 local function CategoryColumn(props)
 	local category   = props.category
 	local playerInfo = props.playerInfo
@@ -188,35 +130,26 @@ local function CategoryColumn(props)
 	local onSwitch   = props.onSwitch
 	local readOnly   = props.readOnly
 
-	local children = {}
-
-	-- Header strip
-	children.header = React.createElement("Frame", {
-		Position         = UDim2.fromScale(0, 0),
-		Size             = UDim2.fromScale(1, 0.095),
-		BackgroundColor3 = C.bg_header,
-		BorderSizePixel  = 0,
-	}, {
-		lbl = React.createElement("TextLabel", {
-			Size                   = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			Text                   = Locale.Get(category.headerKey),
-			TextColor3             = C.accent,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
+	local children = {
+		-- Header (blue body accent, never orange)
+		header = e(Text, {
+			style       = "heading",
+			text        = string.upper(Locale.Get(category.headerKey)),
+			color       = "accent.secondary",
+			align       = "center",
+			layoutOrder = 0,
 		}),
-	})
+	}
 
 	-- Real class slots
 	for i, entry in ipairs(category.classes) do
-		local yPos = SLOT_Y_START + (i - 1) * SLOT_Y_STEP
-		children["slot_" .. i] = React.createElement(ClassSlot, {
-			entry     = entry,
-			state     = getSlotState(entry, playerInfo),
-			switching = switching,
-			yPos      = yPos,
-			readOnly  = readOnly,
-			onSwitch  = function()
+		children["slot_" .. i] = e(ClassSlot, {
+			entry       = entry,
+			state       = getSlotState(entry, playerInfo),
+			switching   = switching,
+			readOnly    = readOnly,
+			layoutOrder = i,
+			onSwitch    = function()
 				onSwitch(entry.id)
 			end,
 		})
@@ -224,17 +157,18 @@ local function CategoryColumn(props)
 
 	-- Placeholders to fill remaining slots
 	for i = #category.classes + 1, ClassCatalog.SlotsPerColumn do
-		local yPos = SLOT_Y_START + (i - 1) * SLOT_Y_STEP
-		children["ph_" .. i] = React.createElement(PlaceholderSlot, {
-			yPos = yPos,
-		})
+		children["ph_" .. i] = e(PlaceholderSlot, { layoutOrder = i })
 	end
 
-	return React.createElement("Frame", {
-		Size             = UDim2.fromScale(0.244, 0.98),
-		BackgroundColor3 = C.bg_col,
-		BorderSizePixel  = 0,
-		LayoutOrder      = props.LayoutOrder,
+	return e(Panel, {
+		name        = "Col_" .. category.id,
+		elevation   = "flat",
+		padding     = "sm",
+		layout      = "vertical",
+		gap         = "sm",
+		size        = UDim2.new(props.width, UDim.new(0, 0)),
+		autoSize    = "Y",
+		layoutOrder = props.LayoutOrder,
 	}, children)
 end
 
@@ -307,62 +241,108 @@ local function ClassMenu(props)
 		end)
 	end
 
+	-- §AGX/UI-P6: columns per row from the body width (design px).
+	local ff = useFormFactor()
+	local bodyW, setBodyW = React.useState(COL_MIN_W * 4)
+	local onBodySize = React.useCallback(function(rbx)
+		local w = rbx.AbsoluteSize.X
+		if w > 0 then setBodyW(w / math.max(ff.uiScale or 1, 0.01)) end
+	end, { ff.uiScale })
+	local nCats = #ClassCatalog.Categories
+	local inner = bodyW - 2 * SP.lg
+	local perRow = math.clamp(math.floor((inner + COL_GAP) / (COL_MIN_W + COL_GAP)), 1, math.max(1, nCats))
+	-- 3 would leave one orphan column: prefer 2 + 2
+	if perRow == 3 and nCats == 4 then perRow = 2 end
+	local colWidth = UDim.new(1 / perRow, -COL_GAP * (perRow - 1) / perRow)
+
 	-- Build the columns children table
 	local colChildren = {
-		layout = React.createElement("UIListLayout", {
+		layout = e("UIListLayout", {
 			FillDirection       = Enum.FillDirection.Horizontal,
-			VerticalAlignment   = Enum.VerticalAlignment.Center,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
+			HorizontalAlignment = Enum.HorizontalAlignment.Left,
+			VerticalAlignment   = Enum.VerticalAlignment.Top,
 			SortOrder           = Enum.SortOrder.LayoutOrder,
-			Padding             = UDim.new(0.006, 0),
+			Padding             = UDim.new(0, COL_GAP),
+			Wraps               = true,
 		}),
 	}
 	for i, category in ipairs(ClassCatalog.Categories) do
-		colChildren["col_" .. category.id] = React.createElement(CategoryColumn, {
+		colChildren["col_" .. category.id] = e(CategoryColumn, {
 			category    = category,
 			playerInfo  = playerInfo,
 			switching   = switching,
 			onSwitch    = handleSwitch,
 			readOnly    = readOnly,
 			LayoutOrder = i,
+			width       = colWidth,
 		})
 	end
 
 	-- §T10/U3: chrome (backdrop, panel, title, close) is owned by
 	-- AppWindow now — this table is only the window BODY.
+	-- §AGX/UI-P6: design px from here down.
 	local panelChildren = {
-		columns = React.createElement("Frame", {
-			Position               = UDim2.fromScale(0, 0.01),
-			Size                   = UDim2.fromScale(1, 0.98),
+		scroll = e("ScrollingFrame", {
+			Name                   = "Scroll",
+			Size                   = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
-		}, colChildren),
+			BorderSizePixel        = 0,
+			CanvasSize             = UDim2.new(0, 0, 0, 0),
+			AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+			ScrollingDirection     = Enum.ScrollingDirection.Y,
+			ScrollBarThickness     = Theme.Metrics.scrollBar,
+			ScrollBarImageColor3   = R.text.secondary,
+			[React.Change.AbsoluteSize] = onBodySize,
+		}, {
+			pad = e("UIPadding", {
+				PaddingLeft = UDim.new(0, SP.lg), PaddingRight = UDim.new(0, SP.lg),
+				PaddingTop = UDim.new(0, SP.md),
+				-- room for the feedback toast over the last row
+				PaddingBottom = UDim.new(0, SP.xxl + SP.xl),
+			}),
+			columns = e("Frame", {
+				Name                   = "Columns",
+				Size                   = UDim2.fromScale(1, 0),
+				AutomaticSize          = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, colChildren),
+		}),
 	}
 
 	if feedback then
-		panelChildren.toast = React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(0.5, 1),
-			Position               = UDim2.fromScale(0.5, 0.97),
-			Size                   = UDim2.fromScale(0.55, 0.065),
-			BackgroundColor3       = Color3.fromRGB(28, 28, 44),
-			BackgroundTransparency = 0.10,
-			BorderSizePixel        = 0,
-			Text                   = feedback,
-			TextColor3             = C.text,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
+		panelChildren.toast = e(Panel, {
+			name        = "Feedback",
+			elevation   = "raised",
+			padding     = "sm",
+			anchorPoint = Vector2.new(0.5, 1),
+			position    = UDim2.new(0.5, 0, 1, -SP.md),
+			size        = UDim2.fromOffset(0, 40),
+			autoSize    = "X",
+			accent      = "accent.secondary",
+			zIndex      = 5,
 		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
+			minW = e("UISizeConstraint", { MinSize = Vector2.new(200, 40) }),
+			lbl = e(Text, {
+				style    = "label",
+				text     = feedback,
+				align    = "center",
+				size     = UDim2.fromScale(0, 1),
+				autoSize = "X",
+				zIndex   = 6,
+			}),
 		})
 	end
 
 	-- §T10/U3: standard windowed chrome.
-	return React.createElement(AppWindow, {
+	return e(AppWindow, {
 		variant = "windowed",
 		title   = Locale.Get("menu_classes_title"),
 		icon    = "classes",
 		onClose = onClose,
 		zIndex  = 10,
-	}, panelChildren)
+	}, {
+		content = e(UIScaleRoot.Local, { name = "ClassBody" }, panelChildren),
+	})
 end
 
 return ClassMenu

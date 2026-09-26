@@ -1,6 +1,11 @@
 -- UI/EquipmentUI.lua
 --[[
-    React component: fullscreen equipment viewer.
+    React component: equipment viewer.
+    §AGX/UI-P6: now an AppWindow (windowed; sheet on phone) instead of a
+    hand-rolled fullscreen Frame + close button; body in design px inside
+    UIScaleRoot.Local; weapon/armor = Panel cards side by side when the body
+    is wide, stacked otherwise; XP = Bar kind "xp". The private palette,
+    the MIN_TAP_PX hit box, the XPBar and the TextScaled title are gone.
 
     Shows two columns:
       • Left  — Weapon (name, level/XP, refinement, tier, ATK, speed, bonuses)
@@ -21,29 +26,22 @@ local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 
--- ── Palette ───────────────────────────────────────────────────────────────────
-local C = {
-	bg         = Color3.fromRGB( 12,  12,  18),
-	panel      = Color3.fromRGB( 22,  22,  32),
-	card       = Color3.fromRGB( 28,  28,  42),
-	card_hi    = Color3.fromRGB( 35,  35,  52),
-	text       = Color3.fromRGB(220, 220, 230),
-	text_dim   = Color3.fromRGB(140, 140, 160),
-	text_val   = Color3.fromRGB(255, 220, 100),
-	weapon_c   = Color3.fromRGB(255, 120,  80),
-	armor_c    = Color3.fromRGB( 80, 180, 255),
-	bonus_c    = Color3.fromRGB(140, 220, 140),
-	bar_bg     = Color3.fromRGB( 35,  35,  50),
-	bar_fill   = Color3.fromRGB(210, 150,  40),
-	btn_bg     = Color3.fromRGB( 35,  35,  52),
-	btn_text   = Color3.fromRGB(105, 190, 255),
-	btn_stroke = Color3.fromRGB( 60, 100, 180),
-	close_bg   = Color3.fromRGB(180,  50,  50),
-	divider    = Color3.fromRGB( 50,  50,  70),
-}
+-- §AGX/UI-P6: shared components
+local Common        = script.Parent:WaitForChild("Common")
+local AppWindow     = require(Common:WaitForChild("AppWindow"))
+local Theme         = require(Common:WaitForChild("Theme"))
+local UIScaleRoot   = require(Common:WaitForChild("UIScaleRoot"))
+local Text          = require(Common:WaitForChild("Text"))
+local Panel         = require(Common:WaitForChild("Panel"))
+local Bar           = require(Common:WaitForChild("Bar"))
+local useFormFactor = require(Common:WaitForChild("useFormFactor"))
 
--- §AGX/UI-P1: minimum tap target (close was 51x21 px on a phone).
-local MIN_TAP_PX = 44
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
+
+local WIDE_MIN = 600   -- §AGX/UI-P6: design px for side-by-side cards
+local LINE_H   = 24
 
 -- ── Stat formatting helper ────────────────────────────────────────────────────
 local STAT_LABELS = {
@@ -68,132 +66,44 @@ local function StatLabel(stat)
 	return STAT_LABELS[stat] or stat
 end
 
--- ── Bonus row sub-component ──────────────────────────────────────────────────
-local function BonusRow(props)
-	return React.createElement("Frame", {
-		Size               = UDim2.fromScale(1, 0),
-		AutomaticSize      = Enum.AutomaticSize.Y,
-		BackgroundTransparency = 1,
-		LayoutOrder        = props.order or 0,
-	}, {
-		layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Horizontal,
-			Padding       = UDim.new(0.02, 0),
-		}),
-		dot = React.createElement("TextLabel", {
-			-- §AGX/UI-P1: V1: was fromScale(0.006, 0.017) of the bonus row
-			-- (~2 px wide). Pixel box for the 14 pt bullet.
-			Size               = UDim2.fromOffset(12, 16),
-			BackgroundTransparency = 1,
-			Text               = "•",
-			TextColor3         = C.bonus_c,
-			Font               = Enum.Font.GothamBold,
-			TextSize           = 14,
-			TextXAlignment     = Enum.TextXAlignment.Center,
-		}),
-		lbl = React.createElement("TextLabel", {
-			Size               = UDim2.fromScale(0.55, 0),
-			AutomaticSize      = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-			Text               = StatLabel(props.stat),
-			TextColor3         = C.text,
-			Font               = Enum.Font.Gotham,
-			TextSize           = 13,
-			TextXAlignment     = Enum.TextXAlignment.Left,
-		}),
-		val = React.createElement("TextLabel", {
-			Size               = UDim2.fromScale(0.30, 0),
-			AutomaticSize      = Enum.AutomaticSize.Y,
-			BackgroundTransparency = 1,
-			Text               = "+" .. tostring(props.value),
-			TextColor3         = C.text_val,
-			Font               = Enum.Font.GothamBold,
-			TextSize           = 13,
-			TextXAlignment     = Enum.TextXAlignment.Right,
-		}),
-	})
-end
-
--- ── Stat line sub-component ──────────────────────────────────────────────────
+-- ── Stat line sub-component (also the bonus row, §AGX/UI-P6) ─────────────────
 local function StatLine(props)
-	return React.createElement("Frame", {
-		Size               = UDim2.new(1, 0, 0, 22),
+	return e("Frame", {
+		Size                   = UDim2.new(1, 0, 0, LINE_H),
 		BackgroundTransparency = 1,
-		LayoutOrder        = props.order or 0,
+		LayoutOrder            = props.order or 0,
 	}, {
-		lbl = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0, 0),
-			Size                   = UDim2.fromScale(0.55, 1),
-			BackgroundTransparency = 1,
-			Text                   = props.label,
-			TextColor3             = C.text_dim,
-			Font                   = Enum.Font.Gotham,
-			TextSize               = 14,
-			TextXAlignment         = Enum.TextXAlignment.Left,
+		lbl = e(Text, {
+			style = "body",
+			text  = (props.bullet and "•  " or "") .. props.label,
+			color = props.bullet and "text.primary" or "text.secondary",
+			size  = UDim2.fromScale(0.6, 1),
 		}),
-		val = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.55, 0),
-			Size                   = UDim2.fromScale(0.45, 1),
-			BackgroundTransparency = 1,
-			Text                   = tostring(props.value),
-			TextColor3             = props.color or C.text,
-			Font                   = Enum.Font.GothamBold,
-			TextSize               = 14,
-			TextXAlignment         = Enum.TextXAlignment.Right,
+		val = e(Text, {
+			style       = "numeric",
+			text        = tostring(props.value),
+			color       = props.color or "text.primary",
+			align       = "right",
+			anchorPoint = Vector2.new(1, 0),
+			position    = UDim2.fromScale(1, 0),
+			size        = UDim2.fromScale(0.4, 1),
 		}),
 	})
 end
 
--- ── XP Bar sub-component ─────────────────────────────────────────────────────
-local function XPBar(props)
-	local pct = math.clamp((props.xp or 0) / math.max(props.required or 1, 1), 0, 1)
-	return React.createElement("Frame", {
-		Size               = UDim2.new(1, 0, 0, 30),
-		BackgroundTransparency = 1,
-		LayoutOrder        = props.order or 0,
-	}, {
-		lbl = React.createElement("TextLabel", {
-			Size               = UDim2.fromScale(0.30, 1),
-			BackgroundTransparency = 1,
-			Text               = "Lv " .. tostring(props.level) .. "/" .. tostring(props.maxLevel),
-			TextColor3         = C.text,
-			Font               = Enum.Font.GothamBold,
-			TextSize           = 14,
-			TextXAlignment     = Enum.TextXAlignment.Left,
-		}),
-		track = React.createElement("Frame", {
-			Position         = UDim2.fromScale(0.32, 0.20),
-			Size             = UDim2.fromScale(0.45, 0.60),
-			BackgroundColor3 = C.bar_bg,
-			BorderSizePixel  = 0,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-			fill = React.createElement("Frame", {
-				Size             = UDim2.fromScale(pct, 1),
-				BackgroundColor3 = C.bar_fill,
-				BorderSizePixel  = 0,
-			}, {
-				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-			}),
-		}),
-		txt = React.createElement("TextLabel", {
-			Position               = UDim2.fromScale(0.79, 0),
-			Size                   = UDim2.fromScale(0.21, 1),
-			BackgroundTransparency = 1,
-			Text                   = tostring(props.xp) .. "/" .. tostring(props.required),
-			TextColor3             = C.text_dim,
-			Font                   = Enum.Font.Gotham,
-			TextSize               = 11,
-			TextXAlignment         = Enum.TextXAlignment.Right,
-		}),
+local function Divider(props)
+	return e("Frame", {
+		Size             = UDim2.new(1, 0, 0, 1),
+		BackgroundColor3 = R.border.subtle,
+		BorderSizePixel  = 0,
+		LayoutOrder      = props.order,
 	})
 end
 
 -- ── Equipment card (weapon or armor) ─────────────────────────────────────────
 local function EquipmentCard(props)
 	local data       = props.data or {}
-	local accentColor = props.accentColor or C.text
-	local cardTitle   = props.title or "Equipment"
+	local cardTitle  = props.title or "Equipment"
 
 	local name       = data.name or "None"
 	local level      = data.level or 1
@@ -204,68 +114,41 @@ local function EquipmentCard(props)
 	local tier       = data.tier or 1
 	local bonuses    = data.bonuses or {}
 
-	-- Build stat lines
 	local statChildren = {}
-	statChildren.layout = React.createElement("UIListLayout", {
-		FillDirection     = Enum.FillDirection.Vertical,
-		SortOrder         = Enum.SortOrder.LayoutOrder,
-		Padding           = UDim.new(0, 3),
+
+	-- Title row + item name
+	statChildren.title = e(Text, {
+		style = "title", text = cardTitle, color = "accent.secondary",
+		align = "center", layoutOrder = 0,
+	})
+	statChildren.name = e(Text, {
+		style = "heading", text = name, align = "center", layoutOrder = 1,
 	})
 
-	-- Title row
-	statChildren.title = React.createElement("TextLabel", {
-		Size               = UDim2.new(1, 0, 0, 28),
-		BackgroundTransparency = 1,
-		Text               = cardTitle,
-		TextColor3         = accentColor,
-		Font               = Enum.Font.GothamBold,
-		TextSize           = 18,
-		TextXAlignment     = Enum.TextXAlignment.Center,
-		LayoutOrder        = 0,
+	-- XP bar (§AGX/UI-P6: Bar kind "xp")
+	statChildren.xpBar = e(Bar, {
+		kind        = "xp",
+		value       = xp,
+		max         = math.max(required, 1),
+		label       = "Lv " .. tostring(level) .. "/" .. tostring(maxLevel),
+		showValue   = true,
+		layoutOrder = 2,
 	})
 
-	-- Name
-	statChildren.name = React.createElement("TextLabel", {
-		Size               = UDim2.new(1, 0, 0, 24),
-		BackgroundTransparency = 1,
-		Text               = name,
-		TextColor3         = C.text,
-		Font               = Enum.Font.GothamBold,
-		TextSize           = 16,
-		TextXAlignment     = Enum.TextXAlignment.Center,
-		LayoutOrder        = 1,
-	})
-
-	-- XP bar
-	statChildren.xpBar = React.createElement(XPBar, {
-		level    = level,
-		maxLevel = maxLevel,
-		xp       = xp,
-		required = required,
-		order    = 2,
-	})
-
-	-- Divider
-	statChildren.div1 = React.createElement("Frame", {
-		Size             = UDim2.new(0.9, 0, 0, 1),
-		BackgroundColor3 = C.divider,
-		BorderSizePixel  = 0,
-		LayoutOrder      = 3,
-	})
+	statChildren.div1 = e(Divider, { order = 3 })
 
 	-- Core stats
 	local statOrder = 10
 	if data.attack then
-		statChildren.atk = React.createElement(StatLine, {
+		statChildren.atk = e(StatLine, {
 			label = "Attack",
 			value = tostring(data.attack),
-			color = C.weapon_c,
 			order = statOrder,
 		})
 		statOrder = statOrder + 1
 	end
 	if data.attackSpeed then
-		statChildren.spd = React.createElement(StatLine, {
+		statChildren.spd = e(StatLine, {
 			label = "ATK Speed",
 			value = string.format("%.1f/s", data.attackSpeed),
 			order = statOrder,
@@ -273,7 +156,7 @@ local function EquipmentCard(props)
 		statOrder = statOrder + 1
 	end
 	if data.attackShape then
-		statChildren.shape = React.createElement(StatLine, {
+		statChildren.shape = e(StatLine, {
 			label = "Shape",
 			value = data.attackShape,
 			order = statOrder,
@@ -281,94 +164,68 @@ local function EquipmentCard(props)
 		statOrder = statOrder + 1
 	end
 	if data.defense then
-		statChildren.def = React.createElement(StatLine, {
+		statChildren.def = e(StatLine, {
 			label = "Defense",
 			value = tostring(data.defense),
-			color = C.armor_c,
 			order = statOrder,
 		})
 		statOrder = statOrder + 1
 	end
 	if data.bonusHealth then
-		statChildren.hp = React.createElement(StatLine, {
+		statChildren.hp = e(StatLine, {
 			label = "Bonus HP",
 			value = "+" .. tostring(data.bonusHealth),
-			color = C.armor_c,
 			order = statOrder,
 		})
 		statOrder = statOrder + 1
 	end
 
 	-- Refinement + Tier
-	statChildren.ref = React.createElement(StatLine, {
+	statChildren.ref = e(StatLine, {
 		label = "Refinement",
 		value = "+" .. tostring(refinement),
-		color = C.text_val,
+		color = "accent.secondary",
 		order = 20,
 	})
-	statChildren.tier = React.createElement(StatLine, {
+	statChildren.tier = e(StatLine, {
 		label = "Tier",
 		value = tostring(tier),
-		color = C.text_val,
+		color = "accent.secondary",
 		order = 21,
 	})
 
-	-- Divider 2
-	statChildren.div2 = React.createElement("Frame", {
-		Size             = UDim2.new(0.9, 0, 0, 1),
-		BackgroundColor3 = C.divider,
-		BorderSizePixel  = 0,
-		LayoutOrder      = 30,
-	})
+	statChildren.div2 = e(Divider, { order = 30 })
 
 	-- Bonuses header
-	statChildren.bonusHdr = React.createElement("TextLabel", {
-		Size               = UDim2.new(1, 0, 0, 20),
-		BackgroundTransparency = 1,
-		Text               = "Random Bonuses (" .. tostring(#bonuses) .. ")",
-		TextColor3         = C.bonus_c,
-		Font               = Enum.Font.GothamBold,
-		TextSize           = 13,
-		TextXAlignment     = Enum.TextXAlignment.Left,
-		LayoutOrder        = 31,
+	statChildren.bonusHdr = e(Text, {
+		style       = "label",
+		text        = "Random Bonuses (" .. tostring(#bonuses) .. ")",
+		color       = "state.success",
+		layoutOrder = 31,
 	})
 
 	-- Bonus rows
 	for i, bonus in ipairs(bonuses) do
-		statChildren["bonus_" .. i] = React.createElement(BonusRow, {
-			stat  = bonus.stat,
-			value = bonus.value,
-			order = 31 + i,
+		statChildren["bonus_" .. i] = e(StatLine, {
+			label  = StatLabel(bonus.stat),
+			value  = "+" .. tostring(bonus.value),
+			color  = "state.success",
+			bullet = true,
+			order  = 31 + i,
 		})
 	end
 
-	return React.createElement("Frame", {
-		Size             = UDim2.fromScale(0.44, 0.85),
-		BackgroundColor3 = C.card,
-		BorderSizePixel  = 0,
-		LayoutOrder      = props.layoutOrder or 0,
-	}, {
-		corner  = React.createElement("UICorner", { CornerRadius = UDim.new(0.02, 0) }),
-		stroke  = React.createElement("UIStroke", {
-			Color     = accentColor,
-			Thickness = 1.5,
-			Transparency = 0.5,
-		}),
-		padding = React.createElement("UIPadding", {
-			PaddingLeft   = UDim.new(0.04, 0),
-			PaddingRight  = UDim.new(0.04, 0),
-			PaddingTop    = UDim.new(0.03, 0),
-			PaddingBottom = UDim.new(0.03, 0),
-		}),
-		content = React.createElement("ScrollingFrame", {
-			Size                   = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			BorderSizePixel        = 0,
-			ScrollBarThickness     = 4,
-			CanvasSize             = UDim2.fromScale(0, 0),
-			AutomaticCanvasSize    = Enum.AutomaticSize.Y,
-		}, statChildren),
-	})
+	return e(Panel, {
+		name        = props.name or "EquipmentCard",
+		elevation   = "raised",
+		padding     = "lg",
+		radius      = "lg",
+		layout      = "vertical",
+		gap         = "xs",
+		size        = UDim2.new(props.width or UDim.new(1, 0), UDim.new(0, 0)),
+		autoSize    = "Y",
+		layoutOrder = props.layoutOrder or 0,
+	}, statChildren)
 end
 
 -- ── EquipmentUI main component ───────────────────────────────────────────────
@@ -454,94 +311,65 @@ local function EquipmentUI(props)
 		end
 	end, {})
 
-	return React.createElement("Frame", {
-		Name                   = "EquipmentUI",
-		Size                   = UDim2.fromScale(1, 1),
-		BackgroundColor3       = C.bg,
-		BackgroundTransparency = 0.05,
-		BorderSizePixel        = 0,
-		ZIndex                 = 10,
-	}, {
-		-- Title
-		title = React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(0.5, 0),
-			Position               = UDim2.fromScale(0.5, 0.02),
-			Size                   = UDim2.fromScale(0.4, 0.06),
-			BackgroundTransparency = 1,
-			Text                   = "⚔  EQUIPMENT  🛡",
-			TextColor3             = C.text,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-		}, {
-			-- §AGX/UI-P1: M11 text floor
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),
-		}),
+	-- §AGX/UI-P6: body width (design px) -> side by side or stacked.
+	local ff = useFormFactor()
+	local bodyW, setBodyW = React.useState(WIDE_MIN)
+	local onBodySize = React.useCallback(function(rbx)
+		local w = rbx.AbsoluteSize.X
+		if w > 0 then setBodyW(w / math.max(ff.uiScale or 1, 0.01)) end
+	end, { ff.uiScale })
+	local wide = bodyW >= WIDE_MIN
+	local gap = SP.lg
+	local cardW = wide and UDim.new(0.5, -gap / 2) or UDim.new(1, 0)
 
-		-- Close button
-		closeBtn = React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0),
-			Position         = UDim2.fromScale(0.98, 0.015),
-			Size             = UDim2.fromScale(0.06, 0.055),
-			BackgroundColor3 = C.close_bg,
-			BorderSizePixel  = 0,
-			Text             = "✕",
-			TextColor3       = Color3.fromRGB(255, 255, 255),
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			ZIndex           = 11,
-			[React.Event.Activated] = onClose,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
-			-- §AGX/UI-P1: transparent 44x44 hit box centred on the visual,
-			-- which keeps its size (desktop unchanged).
-			hit = React.createElement("TextButton", {
-				Name                   = "HitArea",
-				AnchorPoint            = Vector2.new(0.5, 0.5),
-				Position               = UDim2.fromScale(0.5, 0.5),
+	return e(AppWindow, {
+		variant = "windowed",
+		title   = "Equipment",
+		icon    = "equipment",
+		onClose = onClose,
+		zIndex  = 10,
+	}, {
+		content = e(UIScaleRoot.Local, { name = "EquipmentBody" }, {
+			scroll = e("ScrollingFrame", {
+				Name                   = "Scroll",
 				Size                   = UDim2.fromScale(1, 1),
 				BackgroundTransparency = 1,
-				Text                   = "",
-				ZIndex                 = 12,
-				[React.Event.Activated] = onClose,
+				BorderSizePixel        = 0,
+				CanvasSize             = UDim2.new(0, 0, 0, 0),
+				AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+				ScrollingDirection     = Enum.ScrollingDirection.Y,
+				ScrollBarThickness     = Theme.Metrics.scrollBar,
+				ScrollBarImageColor3   = R.text.secondary,
+				[React.Change.AbsoluteSize] = onBodySize,
 			}, {
-				minSize = React.createElement("UISizeConstraint", {
-					MinSize = Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+				pad = e("UIPadding", {
+					PaddingLeft = UDim.new(0, SP.lg), PaddingRight = UDim.new(0, SP.lg),
+					PaddingTop = UDim.new(0, SP.md), PaddingBottom = UDim.new(0, SP.lg),
 				}),
-			}),
-		}),
+				layout = e("UIListLayout", {
+					FillDirection     = wide and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical,
+					VerticalAlignment = Enum.VerticalAlignment.Top,
+					Padding           = UDim.new(0, gap),
+					SortOrder         = Enum.SortOrder.LayoutOrder,
+				}),
 
-		-- Two-column layout
-		-- Shifted left of center and limited to 82% width so the right edge
-		-- (x ≈ 0.85) stays clear of the HUD nav buttons which start at x ≈ 0.865
-		columns = React.createElement("Frame", {
-			AnchorPoint            = Vector2.new(0.5, 0.5),
-			Position               = UDim2.fromScale(0.44, 0.52),
-			Size                   = UDim2.fromScale(0.82, 0.83),
-			BackgroundTransparency = 1,
-		}, {
-			layout = React.createElement("UIListLayout", {
-				FillDirection       = Enum.FillDirection.Horizontal,
-				HorizontalAlignment = Enum.HorizontalAlignment.Center,
-				VerticalAlignment   = Enum.VerticalAlignment.Center,
-				Padding             = UDim.new(0.03, 0),
-				SortOrder           = Enum.SortOrder.LayoutOrder,
-			}),
+				-- Weapon card
+				weaponCard = e(EquipmentCard, {
+					name        = "Weapon",
+					title       = "⚔  WEAPON",
+					data        = weaponData,
+					width       = cardW,
+					layoutOrder = 1,
+				}),
 
-			-- Weapon card
-			weaponCard = React.createElement(EquipmentCard, {
-				title       = "⚔  WEAPON",
-				accentColor = C.weapon_c,
-				data        = weaponData,
-				layoutOrder = 1,
-			}),
-
-			-- Armor card
-			armorCard = React.createElement(EquipmentCard, {
-				title       = "🛡  ARMOR",
-				accentColor = C.armor_c,
-				data        = armorData,
-				layoutOrder = 2,
+				-- Armor card
+				armorCard = e(EquipmentCard, {
+					name        = "Armor",
+					title       = "🛡  ARMOR",
+					data        = armorData,
+					width       = cardW,
+					layoutOrder = 2,
+				}),
 			}),
 		}),
 	})

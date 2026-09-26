@@ -31,6 +31,17 @@
       • two-finger pinch zoom (clamped), + / − / Fit buttons (48 px)
       • opens fitted; on touch the zoom floor keeps nodes ≥ 44 px
 
+    §AGX/UI-P6: Theme v2 re-skin (D1 Hybrid / D2), touch model kept.
+      • The whole body lives in UIScaleRoot.Local, so every constant below
+        is a DESIGN px (phone scale). Screen px from input / AbsoluteSize /
+        AbsolutePosition are converted with UIScaleRoot.toLocal before they
+        reach the view math (pan delta, pinch mid, wheel anchor, canvas
+        size). Pinch ratios and TAP_SLOP stay in screen px.
+      • Colours = Theme roles (private palette removed); detail panel,
+        hover card, legend, zoom and header controls = Panel / Text /
+        Button / IconButton / CurrencyPill. Allocate = the one primary CTA.
+      • Touch detection = useFormFactor().isTouch (the TODO(FormFactor)).
+
     Architecture unchanged:
       Topology  ← TalentTreeConfig (ReplicatedStorage.Shared)
       State     ← TalentClient (subscribe pattern)
@@ -47,9 +58,23 @@ local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local SharedModules  = PlayerScripts:WaitForChild("Modules")
 local TalentClient   = require(SharedModules:WaitForChild("TalentClient"))
 local TreeConfig     = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("TalentTreeConfig"))
-local AppWindow      = require(script.Parent:WaitForChild("Common"):WaitForChild("AppWindow"))  -- §T10/U3
+local Common         = script.Parent:WaitForChild("Common")
+local AppWindow      = require(Common:WaitForChild("AppWindow"))  -- §T10/U3
+-- §AGX/UI-P6: shared components
+local Theme          = require(Common:WaitForChild("Theme"))
+local UIScaleRoot    = require(Common:WaitForChild("UIScaleRoot"))
+local Text           = require(Common:WaitForChild("Text"))
+local Button         = require(Common:WaitForChild("Button"))
+local IconButton     = require(Common:WaitForChild("IconButton"))
+local Panel          = require(Common:WaitForChild("Panel"))
+local CurrencyPill   = require(Common:WaitForChild("CurrencyPill"))
+local useFormFactor  = require(Common:WaitForChild("useFormFactor"))
 
--- ── Layout constants ──────────────────────────────────────────────────────────
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
+
+-- ── Layout constants (§AGX/UI-P6: design px, see header) ─────────────────────
 local DEFAULT_CELL = 42     -- pixels per grid unit at zoom 1 (wheel-zoomable)
 local MIN_CELL     = 22
 local MAX_CELL     = 72
@@ -76,7 +101,7 @@ local EDGE_INSET      = 44     -- px: phone sheet / controls keep clear of notch
 local CTRL_BTN        = 48     -- px: + / − / Fit buttons
 local ACTION_BTN_H    = 48     -- px: Allocate / Refund button
 local SHEET_FRAC      = 0.35   -- phone bottom sheet height (fraction of the canvas)
-local SHEET_MAX_BODY  = 600    -- px: touch canvases shorter than this get the bottom sheet
+local SHEET_MAX_BODY  = 600    -- SCREEN px: touch canvases shorter than this get the bottom sheet
 local SIDE_W          = 320    -- px: desktop side panel width
 -- Nodes scale with cell (diameter = NODE_SIZE * cell / DEFAULT_CELL), so the
 -- touch zoom floor is the cell at which a 1.0× node is MIN_TAP_PX wide (≈51.3).
@@ -86,27 +111,14 @@ local MIN_CELL_TOUCH  = math.min(MAX_CELL, MIN_TAP_PX * DEFAULT_CELL / NODE_SIZE
 -- supports single-node refunds; until then Refund renders disabled with
 -- the reason instead of a button that silently does nothing.
 local INDIVIDUAL_REFUND_ENABLED = false
+-- §AGX/UI-P6: display only; the server charges 1 Respec Scroll or
+-- PlayerDataConfig.RESPEC_COSTS.*.essence (§AGX/X42).
+local RESPEC_ESSENCE = 25
+local TOOLTIP_W      = 360   -- design px: desktop hover card
 
--- ── Palette ───────────────────────────────────────────────────────────────────
-local C = {
-	bg           = Color3.fromRGB( 12,  12,  18),
-	panel        = Color3.fromRGB( 18,  18,  26),
-	allocated    = Color3.fromRGB( 80, 210, 120),
-	allocatable  = Color3.fromRGB(120, 180, 255),
-	locked       = Color3.fromRGB( 55,  55,  70),
-	keystone_bg  = Color3.fromRGB(200, 170,  50),
-	origin_bg    = Color3.fromRGB(255, 220, 100),
-	text         = Color3.fromRGB(220, 220, 230),
-	text_dim     = Color3.fromRGB(140, 140, 160),
-	line_shadow  = Color3.fromRGB( 22,  22,  34),
-	line         = Color3.fromRGB( 45,  45,  65),
-	line_next    = Color3.fromRGB( 70, 110, 170),
-	line_active  = Color3.fromRGB( 60, 180, 100),
-	btn_text     = Color3.fromRGB(105, 190, 255),
-	btn_stroke   = Color3.fromRGB( 60, 100, 180),
-	close_bg     = Color3.fromRGB(180,  50,  50),
-	tooltip_bg   = Color3.fromRGB( 22,  22,  32),
-}
+-- §AGX/UI-P6: the private palette C is gone; every colour is a Theme role.
+-- Node states: allocated = state.success, allocatable = accent.secondary
+-- (blue body accent), origin / keystone = rarity.legendary (gold).
 
 local nodeMap = TreeConfig.GetNodeMap()
 
@@ -135,9 +147,9 @@ local displayPos = {}  -- [id] = { x, y } in grid units
 do
 	-- Adjacency
 	local adj = {}
-	for _, e in ipairs(TreeConfig.Edges) do
-		adj[e[1]] = adj[e[1]] or {}; table.insert(adj[e[1]], e[2])
-		adj[e[2]] = adj[e[2]] or {}; table.insert(adj[e[2]], e[1])
+	for _, ed in ipairs(TreeConfig.Edges) do   -- §AGX/UI-P6: was `e` (now createElement)
+		adj[ed[1]] = adj[ed[1]] or {}; table.insert(adj[ed[1]], ed[2])
+		adj[ed[2]] = adj[ed[2]] or {}; table.insert(adj[ed[2]], ed[1])
 	end
 
 	local startId = TreeConfig.StartNodeId or "start"
@@ -276,16 +288,8 @@ end
 local adjacency = TreeConfig.GetAdjacencyList()
 local START_ID  = TreeConfig.StartNodeId or "start"
 
--- §AGX/UI-P2: local touch detection while FormFactor is mid-edit.
--- TODO(FormFactor): replace with useFormFactor().isTouch once Modules/FormFactor lands.
-local function isTouchDevice()
-	return UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
-end
-
--- §AGX/UI-P2: M11 — every TextScaled label here gets a 12 px floor.
-local function minText()
-	return React.createElement("UITextSizeConstraint", { MinTextSize = 12, MaxTextSize = 40 })
-end
+-- §AGX/UI-P6: isTouchDevice() / minText() removed: touch = useFormFactor().isTouch,
+-- text floors come from Text / Theme.typeFor.
 
 -- ═══════════════════════════════════════════════════════════
 -- BRANCH TINTS  (from node tags — deterministic hue per branch)
@@ -294,7 +298,7 @@ end
 local branchTintCache = {}
 local function branchTint(node)
 	local tag = node.tags and node.tags[1]
-	if not tag then return C.locked end
+	if not tag then return R.state.locked end
 	local cached = branchTintCache[tag]
 	if cached then return cached end
 	local hue = hash01(tag)
@@ -309,16 +313,16 @@ end
 
 -- ── Node visuals ──────────────────────────────────────────────────────────────
 local function getNodeFill(node, isAllocated, isAllocatable)
-	if node.x == 0 and node.y == 0 then return C.origin_bg end
-	if isAllocated then return C.allocated end
+	if node.x == 0 and node.y == 0 then return R.rarity.legendary end
+	if isAllocated then return R.state.success end
 	if isAllocatable then return dimTint(branchTint(node), 0.55) end
 	return dimTint(branchTint(node), 0.28)  -- locked: faint branch identity
 end
 
 local function getNodeRing(node, isAllocated, isAllocatable)
-	if node.type == "keystone" then return C.keystone_bg end
-	if isAllocated then return C.allocated end
-	if isAllocatable then return C.allocatable end
+	if node.type == "keystone" then return R.rarity.legendary end
+	if isAllocated then return R.state.success end
+	if isAllocatable then return R.accent.secondary end
 	return dimTint(branchTint(node), 0.6)
 end
 
@@ -345,8 +349,9 @@ local function TalentNode(props)
 	local sizeMul  = getNodeSizeMultiplier(node)
 	local diameter = NODE_SIZE * (cell / DEFAULT_CELL) * sizeMul
 	local showText = cell >= 30
+	local isOrigin = node.x == 0 and node.y == 0
 
-	return React.createElement("TextButton", {
+	return e("TextButton", {
 		AnchorPoint      = Vector2.new(0.5, 0.5),
 		Position         = UDim2.fromOffset(px, py),
 		Size             = UDim2.fromOffset(diameter, diameter),
@@ -373,40 +378,40 @@ local function TalentNode(props)
 			if props.onLeave then props.onLeave() end
 		end,
 	}, {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-		stroke = React.createElement("UIStroke", {
+		corner = e("UICorner", { CornerRadius = Theme.Radius.pill }),
+		stroke = e("UIStroke", {
 			Color     = getNodeRing(node, isAllocated, isAllocatable),
 			Thickness = (node.type == "keystone" and 3 or 2) * math.max(cell / DEFAULT_CELL, 0.7),
 		}),
 		-- Allocatable pulse ring (second stroke, brighter)
-		glow = isAllocatable and React.createElement("UIStroke", {
-			Color        = C.allocatable,
+		glow = isAllocatable and e("UIStroke", {
+			Color        = R.accent.secondary,
 			Thickness    = 1,
 			Transparency = 0.35,
 		}) or nil,
 		-- §AGX/UI-P2: selection halo so the player sees which node the
-		-- detail panel describes (palette colour, no re-skin).
-		selRing = props.isSelected and React.createElement("Frame", {
+		-- detail panel describes. §AGX/UI-P6: focus role (blue), not white.
+		selRing = props.isSelected and e("Frame", {
 			AnchorPoint            = Vector2.new(0.5, 0.5),
 			Position               = UDim2.fromScale(0.5, 0.5),
 			Size                   = UDim2.new(1, 10, 1, 10),
 			BackgroundTransparency = 1,
 			ZIndex                 = 5,
 		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-			stroke = React.createElement("UIStroke", { Color = C.text, Thickness = 2 }),
+			corner = e("UICorner", { CornerRadius = Theme.Radius.pill }),
+			stroke = e("UIStroke", { Color = R.border.focus, Thickness = Theme.Stroke.focus }),
 		}) or nil,
-		label = showText and React.createElement("TextLabel", {
-			Size                   = UDim2.fromScale(0.85, 0.85),
-			AnchorPoint            = Vector2.new(0.5, 0.5),
-			Position               = UDim2.fromScale(0.5, 0.5),
-			BackgroundTransparency = 1,
-			Text                   = string.sub(node.name, 1, 5),
-			TextColor3             = (node.x == 0 and node.y == 0) and C.bg or C.text,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			TextTruncate           = Enum.TextTruncate.AtEnd,
-			ZIndex                 = 6,
+		-- §AGX/UI-P6: Text fit (label style floor/ceiling) replaces TextScaled.
+		label = showText and e(Text, {
+			style       = "label",
+			text        = string.sub(node.name, 1, 5),
+			color       = isOrigin and "text.onAccent" or "text.primary",
+			align       = "center",
+			fit         = true,
+			anchorPoint = Vector2.new(0.5, 0.5),
+			position    = UDim2.fromScale(0.5, 0.5),
+			size        = UDim2.fromScale(0.85, 0.85),
+			zIndex      = 6,
 		}) or nil,
 	})
 end
@@ -424,29 +429,29 @@ local function EdgeLine(props)
 	local midY   = (props.y1 + props.y2) / 2
 	local thick  = props.thickness or 3
 
-	return React.createElement(React.Fragment, nil, {
-		shadow = React.createElement("Frame", {
+	return e(React.Fragment, nil, {
+		shadow = e("Frame", {
 			AnchorPoint      = Vector2.new(0.5, 0.5),
 			Position         = UDim2.fromOffset(midX, midY),
 			Size             = UDim2.fromOffset(length, thick + 3),
-			BackgroundColor3 = C.line_shadow,
+			BackgroundColor3 = R.surface.sunken,
 			BorderSizePixel  = 0,
 			Rotation         = angle,
 			ZIndex           = 2,
 		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+			corner = e("UICorner", { CornerRadius = Theme.Radius.pill }),
 		}),
-		core = React.createElement("Frame", {
+		core = e("Frame", {
 			AnchorPoint      = Vector2.new(0.5, 0.5),
 			Position         = UDim2.fromOffset(midX, midY),
 			Size             = UDim2.fromOffset(length, thick),
-			BackgroundColor3 = props.color or C.line,
+			BackgroundColor3 = props.color or R.border.subtle,
 			BackgroundTransparency = props.transparency or 0,
 			BorderSizePixel  = 0,
 			Rotation         = angle,
 			ZIndex           = 3,
 		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+			corner = e("UICorner", { CornerRadius = Theme.Radius.pill }),
 		}),
 	})
 end
@@ -503,63 +508,47 @@ local function prereqText(nodeId, allocated)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- Tooltip  (desktop hover only — §AGX/UI-P2: touch uses NodeDetail)
+-- NodeTooltip  (desktop hover only — §AGX/UI-P2: touch uses NodeDetail)
+-- §AGX/UI-P6: renamed from Tooltip (Common/Tooltip is the text bubble);
+-- Panel + Text, design px, auto height, bottom-centre of the canvas.
 -- ═══════════════════════════════════════════════════════════
 
-local function Tooltip(props)
+local function NodeTooltip(props)
 	local node = props.nodeDef
 	if not node then return nil end
 
 	local lines = effectLines(node)
 	local header, branch = nodeHeader(node)
 
-	return React.createElement("Frame", {
-		AnchorPoint      = Vector2.new(0.5, 0),
-		Position         = UDim2.fromScale(0.5, 0.82),
-		Size             = UDim2.fromScale(0.30, 0.16),
-		BackgroundColor3 = C.tooltip_bg,
-		BorderSizePixel  = 0,
-		ZIndex           = 20,
+	return e(Panel, {
+		name        = "NodeTooltip",
+		elevation   = "raised",
+		padding     = "md",
+		layout      = "vertical",
+		gap         = "xs",
+		accent      = branch and branchTint(node) or "border.focus",
+		anchorPoint = Vector2.new(0.5, 1),
+		position    = UDim2.new(0.5, 0, 1, -SP.lg),
+		size        = UDim2.fromOffset(TOOLTIP_W, 0),
+		autoSize    = "Y",
+		zIndex      = 20,
 	}, {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.04, 0) }),
-		stroke = React.createElement("UIStroke", {
-			Color = branch and branchTint(node) or C.btn_stroke,
-			Thickness = 1,
+		nameLbl = e(Text, {
+			style = "label", text = header, layoutOrder = 1, zIndex = 21,
 		}),
-		pad = React.createElement("UIPadding", {
-			PaddingLeft = UDim.new(0.02, 0), PaddingRight = UDim.new(0.02, 0),
-			PaddingTop  = UDim.new(0.05, 0), PaddingBottom = UDim.new(0.05, 0),
-		}),
-		layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			SortOrder     = Enum.SortOrder.LayoutOrder,
-			Padding       = UDim.new(0.02, 0),
-		}),
-		nameLbl = React.createElement("TextLabel", {
-			Size = UDim2.fromScale(1, 0.28), BackgroundTransparency = 1,
-			Text = header, TextColor3 = C.text,
-			Font = Enum.Font.GothamBold, TextScaled = true,
-			TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 1,
-		}, { minText = minText() }),  -- §AGX/UI-P2: M11 12 px floor
-		descLbl = React.createElement("TextLabel", {
-			Size = UDim2.fromScale(1, 0.30), BackgroundTransparency = 1,
-			Text = node.description or "", TextColor3 = C.text_dim,
-			Font = Enum.Font.Gotham, TextScaled = true, TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 2,
-		}, { minText = minText() }),  -- §AGX/UI-P2: M11 12 px floor
-		effectsLbl = React.createElement("TextLabel", {
-			Size = UDim2.fromScale(1, 0.25), BackgroundTransparency = 1,
-			Text = table.concat(lines, "\n"), TextColor3 = C.allocated,
-			Font = Enum.Font.GothamBold, TextScaled = true, TextWrapped = true,
-			TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 3,
-		}, { minText = minText() }),  -- §AGX/UI-P2: M11 12 px floor
-		costLbl = React.createElement("TextLabel", {
-			Size = UDim2.fromScale(1, 0.15), BackgroundTransparency = 1,
+		descLbl = (node.description or "") ~= "" and e(Text, {
+			style = "caption", text = node.description, color = "text.secondary",
+			wrap = true, layoutOrder = 2, zIndex = 21,
+		}) or nil,
+		effectsLbl = #lines > 0 and e(Text, {
+			style = "caption", text = table.concat(lines, "\n"), color = "state.success",
+			wrap = true, layoutOrder = 3, zIndex = 21,
+		}) or nil,
+		costLbl = e(Text, {
+			style = "caption", color = "text.secondary", wrap = true, layoutOrder = 4, zIndex = 21,
 			-- §AGX/UI-P2: D12 — a click no longer spends; say how to allocate.
-			Text = costText(node) .. "   ·   Click: details   Double-click: allocate",
-			TextColor3 = C.text_dim, Font = Enum.Font.Gotham, TextScaled = true,
-			TextXAlignment = Enum.TextXAlignment.Left, LayoutOrder = 4,
-		}, { minText = minText() }),  -- §AGX/UI-P2: M11 12 px floor
+			text = costText(node) .. "   ·   Click: details   Double-click: allocate",
+		}),
 	})
 end
 
@@ -569,24 +558,9 @@ end
 --                 clear of the edges), info left, actions right.
 --   mode "side":  desktop / tablet side panel on the right.
 --   Always a 48 px action button; disabled buttons carry the reason.
+--   §AGX/UI-P6: Panel + scrolling Text column + Button (Allocate = primary
+--   CTA, Refund = danger, disabled = locked) + IconButton close.
 -- ═══════════════════════════════════════════════════════════
-
-local function detailLabel(p)
-	return React.createElement("TextLabel", {
-		Size                   = p.size,
-		BackgroundTransparency = 1,
-		Text                   = p.text,
-		TextColor3             = p.color or C.text,
-		Font                   = p.font or Enum.Font.Gotham,
-		TextScaled             = true,
-		TextWrapped            = p.wrap == true,
-		TextTruncate           = Enum.TextTruncate.AtEnd,
-		TextXAlignment         = Enum.TextXAlignment.Left,
-		TextYAlignment         = Enum.TextYAlignment.Top,
-		LayoutOrder            = p.order,
-		ZIndex                 = 32,
-	}, { minText = minText() })  -- §AGX/UI-P2: M11 12 px floor
-end
 
 local function NodeDetail(props)
 	local node   = props.nodeDef
@@ -601,60 +575,91 @@ local function NodeDetail(props)
 	end
 	local metaText = costText(node) .. "   ·   " .. prereqText(node.id, props.allocated)
 
-	local actionBtn = React.createElement("TextButton", {
-		AnchorPoint      = Vector2.new(1, 1),
-		Position         = UDim2.fromScale(1, 1),
-		Size             = UDim2.new(1, 0, 0, ACTION_BTN_H),
-		BackgroundColor3 = status.enabled and (status.action == "refund" and Color3.fromRGB(140, 50, 50) or C.allocated) or C.locked,
-		BackgroundTransparency = status.enabled and 0 or 0.2,
-		AutoButtonColor  = status.enabled,
-		Active           = status.enabled,
-		BorderSizePixel  = 0,
-		Text             = status.label,
-		TextColor3       = status.enabled and C.bg or C.text_dim,
-		Font             = Enum.Font.GothamBold,
-		TextScaled       = true,
-		ZIndex           = 33,
-		[React.Event.Activated] = function()
-			if status.enabled then props.onAction(status.action) end
-		end,
-	}, {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-		stroke = React.createElement("UIStroke", {
-			Color = C.btn_stroke, Thickness = 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		}),
-		pad = React.createElement("UIPadding", {
-			PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
-			PaddingLeft = UDim.new(0, 8), PaddingRight = UDim.new(0, 8),
-		}),
-		minText = minText(),
+	local actionBtn = e(Button, {
+		name        = "NodeAction",
+		variant     = (not status.enabled) and "locked"
+			or (status.action == "refund" and "danger" or "primary"),
+		size        = "md",   -- 48 design px (ACTION_BTN_H)
+		width       = UDim.new(1, 0),
+		label       = status.label,
+		anchorPoint = Vector2.new(1, 1),
+		position    = UDim2.fromScale(1, 1),
+		zIndex      = 33,
+		onActivated = status.enabled and function() props.onAction(status.action) end or nil,
 	})
 
-	local closeBtn = React.createElement("TextButton", {
-		AnchorPoint      = Vector2.new(1, 0),
-		Position         = UDim2.fromScale(1, 0),
-		Size             = UDim2.fromOffset(44, 44),
-		BackgroundColor3 = C.panel,
-		BorderSizePixel  = 0,
-		Text             = "×",
-		TextColor3       = C.text_dim,
-		Font             = Enum.Font.GothamBold,
-		TextSize         = 24,
-		ZIndex           = 33,
-		[React.Event.Activated] = function() props.onClose() end,
-	}, {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
+	local closeBtn = e(IconButton, {
+		name        = "DetailClose",
+		icon        = "close",
+		variant     = "ghost",
+		size        = "sm",   -- 44
+		anchorPoint = Vector2.new(1, 0),
+		position    = UDim2.fromScale(1, 0),
+		zIndex      = 33,
+		tooltip     = "Close details",
+		onActivated = function() props.onClose() end,
 	})
 
-	local reasonH = status.reason and 32 or 0
+	-- Info column: scrolls when the text is longer than the panel.
+	local info = e("ScrollingFrame", {
+		Name                   = "Info",
+		Size                   = isSheet and UDim2.new(1, -182, 1, 0)
+			or UDim2.new(1, 0, 1, -(ACTION_BTN_H + SP.sm)),
+		BackgroundTransparency = 1,
+		BorderSizePixel        = 0,
+		CanvasSize             = UDim2.new(0, 0, 0, 0),
+		AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+		ScrollingDirection     = Enum.ScrollingDirection.Y,
+		ScrollBarThickness     = Theme.Metrics.scrollBar,
+		ScrollBarImageColor3   = R.text.secondary,
+		ZIndex                 = 31,
+	}, {
+		layout = e("UIListLayout", {
+			FillDirection = Enum.FillDirection.Vertical,
+			SortOrder     = Enum.SortOrder.LayoutOrder,
+			Padding       = UDim.new(0, SP.xs),
+		}),
+		name = e(Text, {
+			style = "label", text = header, layoutOrder = 1, zIndex = 32,
+			-- leave room for the close button in the side panel
+			size = UDim2.new(1, isSheet and 0 or -(Theme.Metrics.iconButton.sm + SP.xs), 0, 22),
+		}),
+		meta = e(Text, {
+			style = "caption", text = metaText, color = "accent.secondary",
+			wrap = true, layoutOrder = 2, zIndex = 32,
+		}),
+		desc = body ~= "" and e(Text, {
+			style = "caption", text = body, color = "text.secondary",
+			wrap = true, layoutOrder = 3, zIndex = 32,
+		}) or nil,
+		reason = status.reason and e(Text, {
+			style = "caption", text = status.reason, color = "state.warning",
+			wrap = true, layoutOrder = 4, zIndex = 32,
+		}) or nil,
+	})
 
+	local children = {}
+
+	if isSheet then
+		-- info column | action column (close on top, 48 px action at bottom)
+		children.info = info
+		children.actions = e("Frame", {
+			AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0),
+			Size = UDim2.new(0, 170, 1, 0), BackgroundTransparency = 1, ZIndex = 31,
+		}, { close = closeBtn, action = actionBtn })
+	else
+		children.info   = info
+		children.close  = closeBtn
+		children.action = actionBtn
+	end
+
+	-- Panel has no ref prop: the outer Frame carries panelRef (overlay hit test).
 	local frameProps = {
-		BackgroundColor3 = C.tooltip_bg,
-		BorderSizePixel  = 0,
-		Active           = true,   -- sink presses so they don't pan the canvas behind
-		ZIndex           = 30,
-		ref              = props.panelRef,
+		Name                   = "NodeDetail",
+		BackgroundTransparency = 1,
+		Active                 = true,   -- sink presses so they don't pan the canvas behind
+		ZIndex                 = 30,
+		ref                    = props.panelRef,
 	}
 	if isSheet then
 		frameProps.AnchorPoint = Vector2.new(0.5, 1)
@@ -662,88 +667,21 @@ local function NodeDetail(props)
 		frameProps.Size        = UDim2.new(1, -2 * EDGE_INSET, SHEET_FRAC, 0)
 	else
 		frameProps.AnchorPoint = Vector2.new(1, 0)
-		frameProps.Position    = UDim2.new(1, -16, 0, 16)
+		frameProps.Position    = UDim2.new(1, -SP.lg, 0, SP.lg)
 		frameProps.Size        = UDim2.new(0, SIDE_W, 0.62, 0)
 	end
 
-	local infoChildren = {
-		layout = React.createElement("UIListLayout", {
-			FillDirection = Enum.FillDirection.Vertical,
-			SortOrder     = Enum.SortOrder.LayoutOrder,
-			Padding       = UDim.new(0, 4),
-		}),
-		name = detailLabel({
-			size = UDim2.new(1, isSheet and 0 or -48, 0, 22), text = header,
-			font = Enum.Font.GothamBold, order = 1,
-		}),
-		meta = detailLabel({
-			size = UDim2.new(1, 0, 0, isSheet and 16 or 34), text = metaText,
-			color = C.btn_text, wrap = not isSheet, order = 2,
-		}),
-		desc = detailLabel({
-			size = UDim2.new(1, 0, 1, -(22 + (isSheet and 16 or 34) + reasonH + 12)),
-			text = body, color = C.text_dim, wrap = true, order = 3,
-		}),
-		reason = status.reason and detailLabel({
-			size = UDim2.new(1, 0, 0, reasonH - 4), text = status.reason,
-			color = C.keystone_bg, wrap = true, order = 4,
-		}) or nil,
-	}
-
-	local children = {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 10) }),
-		stroke = React.createElement("UIStroke", {
-			Color = branch and branchTint(node) or C.btn_stroke, Thickness = 1,
-		}),
-		pad = React.createElement("UIPadding", {
-			PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
-			PaddingTop  = UDim.new(0, 8),  PaddingBottom = UDim.new(0, 8),
-		}),
-		size = React.createElement("UISizeConstraint", {
+	return e("Frame", frameProps, {
+		minSize = e("UISizeConstraint", {
 			MinSize = isSheet and Vector2.new(0, 116) or Vector2.new(0, 300),
 		}),
-	}
-
-	if isSheet then
-		-- info column | action column (close on top, 48 px action at bottom)
-		children.info = React.createElement("Frame", {
-			Size = UDim2.new(1, -182, 1, 0), BackgroundTransparency = 1, ZIndex = 31,
-		}, infoChildren)
-		children.actions = React.createElement("Frame", {
-			AnchorPoint = Vector2.new(1, 0), Position = UDim2.fromScale(1, 0),
-			Size = UDim2.new(0, 170, 1, 0), BackgroundTransparency = 1, ZIndex = 31,
-		}, { close = closeBtn, action = actionBtn })
-	else
-		children.info = React.createElement("Frame", {
-			Size = UDim2.new(1, 0, 1, -(ACTION_BTN_H + 8)), BackgroundTransparency = 1, ZIndex = 31,
-		}, infoChildren)
-		children.close  = closeBtn
-		children.action = actionBtn
-	end
-
-	return React.createElement("Frame", frameProps, children)
-end
-
--- §AGX/UI-P2: 48 px zoom control (shown on every platform).
-local function ZoomButton(props)
-	return React.createElement("TextButton", {
-		Size             = UDim2.fromOffset(CTRL_BTN, CTRL_BTN),
-		BackgroundColor3 = C.panel,
-		BackgroundTransparency = 0.1,
-		BorderSizePixel  = 0,
-		Text             = props.text,
-		TextColor3       = C.btn_text,
-		Font             = Enum.Font.GothamBold,
-		TextSize         = props.textSize or 26,
-		LayoutOrder      = props.order,
-		ZIndex           = 26,
-		[React.Event.Activated] = props.onActivated,
-	}, {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-		stroke = React.createElement("UIStroke", {
-			Color = C.btn_stroke, Thickness = 1,
-			ApplyStrokeMode = Enum.ApplyStrokeMode.Border,
-		}),
+		panel = e(Panel, {
+			elevation = "raised",
+			padding   = "md",
+			radius    = "lg",
+			accent    = branch and branchTint(node) or "border.focus",
+			zIndex    = 30,
+		}, children),
 	})
 end
 
@@ -754,8 +692,14 @@ end
 local function TalentTreeUI(props)
 	local onClose = props.onClose
 
-	-- §AGX/UI-P2: per-render touch check (TODO(FormFactor) in isTouchDevice).
-	local isTouch = isTouchDevice()
+	-- §AGX/UI-P2: per-render touch check. §AGX/UI-P6: FormFactor landed, so
+	-- this is useFormFactor().isTouch (Phone / Tablet); hooks unconditional.
+	local ff = useFormFactor()
+	local uiScale = UIScaleRoot.useUIScale()
+	local isTouch = ff.isTouch == true
+	-- §AGX/UI-P6: screen px -> design px inside the body's UIScaleRoot.Local.
+	local scaleRef = React.useRef(uiScale.target)
+	scaleRef.current = uiScale.target
 	local minCell = isTouch and MIN_CELL_TOUCH or MIN_CELL
 
 	local talentState, setTalentState = React.useState(TalentClient.GetState())
@@ -854,8 +798,9 @@ local function TalentTreeUI(props)
 
 	local function toCanvasLocal(pos)
 		local canvas = canvasRef.current
-		if not canvas then return pos end
-		return toGui(pos) - canvas.AbsolutePosition
+		if not canvas then return UIScaleRoot.toLocal(pos, scaleRef.current) end
+		-- §AGX/UI-P6: screen px -> design px
+		return UIScaleRoot.toLocal(toGui(pos) - canvas.AbsolutePosition, scaleRef.current)
 	end
 
 	local function isInside(gui, pos)
@@ -898,8 +843,8 @@ local function TalentTreeUI(props)
 		local g = gesture.current
 		local delta = pos - g.panStart
 		g.moved = math.max(g.moved, delta.Magnitude)
-		if g.moved > TAP_SLOP then g.tapBlocked = true end
-		setOffset(g.offsetAtStart + delta)
+		if g.moved > TAP_SLOP then g.tapBlocked = true end   -- screen px
+		setOffset(g.offsetAtStart + UIScaleRoot.toLocal(delta, scaleRef.current))  -- §AGX/UI-P6
 	end
 
 	-- Press on the canvas or on a node (both call this; deduped).
@@ -969,7 +914,8 @@ local function TalentTreeUI(props)
 					local lastMid = g.pinchMid or mid
 					g.pinchMid = mid
 					zoomAbout(g.pinchCell * (a - b).Magnitude / g.pinchDist, toCanvasLocal(mid))
-					setOffset(latestDragOffset.current + (mid - lastMid))  -- two-finger pan
+					-- two-finger pan (§AGX/UI-P6: screen -> design px)
+					setOffset(latestDragOffset.current + UIScaleRoot.toLocal(mid - lastMid, scaleRef.current))
 				elseif g.panInput == input then
 					trackPan(pos)
 				end
@@ -1026,7 +972,8 @@ local function TalentTreeUI(props)
 			if not alive then return end
 			local s = canvas.AbsoluteSize
 			if s.X < 2 or s.Y < 2 then return end
-			local v = Vector2.new(s.X, s.Y)
+			-- §AGX/UI-P6: AbsoluteSize is screen px; the view math is design px.
+			local v = UIScaleRoot.toLocal(Vector2.new(s.X, s.Y), scaleRef.current)
 			canvasSizeRef.current = v
 			setCanvasSize(v)
 			if not hasFitted.current then
@@ -1040,7 +987,7 @@ local function TalentTreeUI(props)
 			alive = false
 			conn:Disconnect()
 		end
-	end, {})
+	end, { uiScale.target })   -- §AGX/UI-P6: re-measure when the uiScale changes
 
 	local allocated      = talentState.allocatedNodes or {}
 	local pointsAvail    = talentState.pointsAvailable or 0
@@ -1052,7 +999,9 @@ local function TalentTreeUI(props)
 	-- §AGX/UI-P2: render at no less than the platform floor (guards the
 	-- frame before fitView and a touch/desktop flip).
 	local renderCell = math.clamp(cell, minCell, MAX_CELL)
-	local useSheet   = isTouch and canvasSize.Y < SHEET_MAX_BODY
+	-- §AGX/UI-P6: SHEET_MAX_BODY stays a SCREEN px threshold (canvasSize is
+	-- design px now), so tablets keep the side panel as before.
+	local useSheet   = isTouch and canvasSize.Y * uiScale.target < SHEET_MAX_BODY
 
 	-- Pixel projection of the ORGANIC coordinates
 	local function toPixels(id)
@@ -1074,7 +1023,7 @@ local function TalentTreeUI(props)
 			end
 			if not INDIVIDUAL_REFUND_ENABLED then
 				return { label = "Refund", enabled = false,
-					reason = "Single refunds are off. Use Respec (Scroll / 25 ♦)." }
+					reason = "Single refunds are off. Use Respec (Scroll / " .. RESPEC_ESSENCE .. " Essence)." }
 			end
 			return { label = "Refund", enabled = true, action = "refund" }
 		end
@@ -1143,14 +1092,15 @@ local function TalentTreeUI(props)
 			local x2, y2 = toPixels(edge[2])
 
 			local a1, a2 = allocated[edge[1]], allocated[edge[2]]
-			local color, transparency = C.line, 0.25
+			-- §AGX/UI-P6: roles (dim = border.subtle, next = blue, active = green)
+			local color, transparency = R.border.subtle, 0.25
 			if a1 and a2 then
-				color, transparency = C.line_active, 0
+				color, transparency = R.state.success, 0
 			elseif (a1 and allocatableSet[edge[2]]) or (a2 and allocatableSet[edge[1]]) then
-				color, transparency = C.line_next, 0
+				color, transparency = R.accent.secondary, 0.3
 			end
 
-			children["edge_" .. i] = React.createElement(EdgeLine, {
+			children["edge_" .. i] = e(EdgeLine, {
 				x1 = x1, y1 = y1, x2 = x2, y2 = y2,
 				color = color, transparency = transparency,
 				thickness = math.max(2, 3 * renderCell / DEFAULT_CELL),
@@ -1161,7 +1111,7 @@ local function TalentTreeUI(props)
 	-- Nodes
 	for _, node in ipairs(TreeConfig.Nodes) do
 		local px, py = toPixels(node.id)
-		children["node_" .. node.id] = React.createElement(TalentNode, {
+		children["node_" .. node.id] = e(TalentNode, {
 			nodeDef       = node,
 			isAllocated   = allocated[node.id] == true,
 			isAllocatable = allocatableSet[node.id] == true,
@@ -1177,43 +1127,50 @@ local function TalentTreeUI(props)
 		})
 	end
 
-	children.tooltip = React.createElement(Tooltip, { nodeDef = (not isTouch) and hoveredNode or nil })
+	children.tooltip = e(NodeTooltip, { nodeDef = (not isTouch) and hoveredNode or nil })
 
 	-- §T10/U3: points counter + respec live in the standard header slot.
-	local headerContent = React.createElement(React.Fragment, nil, {
-		points = React.createElement("TextLabel", {
-			AnchorPoint            = Vector2.new(0, 0.5),
-			Position               = UDim2.fromScale(0, 0.5),
-			Size                   = UDim2.fromScale(0.55, 0.8),
-			BackgroundTransparency = 1,
-			Text                   = string.format(
-				"Points: %d / %d   (Available: %d)",
+	-- §AGX/UI-P6: the slot is inside AppWindow's scaled chrome (design px):
+	-- numeric Text + danger Respec Button (44) + essence CurrencyPill.
+	local avail = talentState.pointsAvailable or 0
+	local headerContent = e("Frame", {
+		Name                   = "TalentHeader",
+		Size                   = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+	}, {
+		layout = e("UIListLayout", {
+			FillDirection       = Enum.FillDirection.Horizontal,
+			HorizontalAlignment = Enum.HorizontalAlignment.Right,
+			VerticalAlignment   = Enum.VerticalAlignment.Center,
+			SortOrder           = Enum.SortOrder.LayoutOrder,
+			Padding             = UDim.new(0, SP.sm),
+		}),
+		points = e(Text, {
+			style       = "numeric",
+			text        = string.format(
+				"%d / %d  ·  %d free",
 				talentState.pointsSpent or 0,
 				talentState.pointsTotal or 0,
-				talentState.pointsAvailable or 0
+				avail
 			),
-			TextColor3 = C.btn_text,
-			Font       = Enum.Font.GothamBold,
-			TextScaled = true,
-			ZIndex     = 14,
+			color       = avail > 0 and "accent.secondary" or "text.secondary",
+			size        = UDim2.fromOffset(0, 24),
+			autoSize    = "X",
+			layoutOrder = 1,
 		}),
-		respecBtn = React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0.5),
-			Position         = UDim2.fromScale(1, 0.5),
-			Size             = UDim2.fromScale(0.42, 0.85),
-			BackgroundColor3 = Color3.fromRGB(140, 50, 50),
-			BorderSizePixel  = 0,
-			Text             = "Respec  (Scroll / 25 ♦)"  --[[ §AGX/X42 ]],
-			TextColor3       = C.btn_text,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			ZIndex           = 14,
-			[React.Event.Activated] = function()
+		respecBtn = e(Button, {
+			name        = "Respec",
+			variant     = "danger",
+			size        = "sm",
+			label       = "Respec",
+			layoutOrder = 2,
+			tooltip     = "Resets every talent. Uses a Respec Scroll if you own one, otherwise Essence.",
+			onActivated = function()
 				TalentClient.RespecAll()
 			end,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-			stroke = React.createElement("UIStroke", { Color = C.btn_stroke, Thickness = 1 }),
+		}),
+		respecCost = e(CurrencyPill, {
+			currency = "essence", value = RESPEC_ESSENCE, cost = true, layoutOrder = 3,
 		}),
 	})
 
@@ -1225,7 +1182,7 @@ local function TalentTreeUI(props)
 		and "Tap = Select  |  Drag = Pan  |  Pinch = Zoom"
 		or  "Click = Select  |  Double-click = Allocate  |  Drag = Pan  |  Scroll = Zoom"
 
-	return React.createElement(AppWindow, {
+	return e(AppWindow, {
 		variant       = "fullscreen",
 		title         = "Talent Tree",
 		icon          = "talents",
@@ -1233,113 +1190,117 @@ local function TalentTreeUI(props)
 		headerContent = headerContent,
 		zIndex        = 10,
 	}, {
-		-- Soft radial vignette so the web feels lit from the Origin
-		vignette = React.createElement("Frame", {
-			Size                   = UDim2.fromScale(1, 1),
-			BackgroundColor3       = Color3.fromRGB(30, 28, 44),
-			BackgroundTransparency = 0.55,
-			BorderSizePixel        = 0,
-			ZIndex                 = 10,
-		}, {
-			grad = React.createElement("UIGradient", {
-				Color = ColorSequence.new(Color3.fromRGB(255, 255, 255), Color3.fromRGB(60, 60, 90)),
-				Transparency = NumberSequence.new({
-					NumberSequenceKeypoint.new(0,   1),
-					NumberSequenceKeypoint.new(0.5, 0.75),
-					NumberSequenceKeypoint.new(1,   0.35),
+		-- §AGX/UI-P6: design px from here down (see header).
+		content = e(UIScaleRoot.Local, { name = "TalentBody" }, {
+			-- Soft vignette so the web feels lit from the Origin
+			vignette = e("Frame", {
+				Size                   = UDim2.fromScale(1, 1),
+				BackgroundColor3       = R.surface.raised,
+				BackgroundTransparency = 0.55,
+				BorderSizePixel        = 0,
+				ZIndex                 = 10,
+			}, {
+				grad = e("UIGradient", {
+					Color = ColorSequence.new(R.surface.raised, R.surface.base),
+					Transparency = NumberSequence.new({
+						NumberSequenceKeypoint.new(0,   1),
+						NumberSequenceKeypoint.new(0.5, 0.75),
+						NumberSequenceKeypoint.new(1,   0.35),
+					}),
+					Rotation = 90,
 				}),
-				Rotation = 90,
 			}),
-		}),
 
-		-- (§T10/U3: header chrome — title, points, respec, close — now
-		-- lives in AppWindow; this table is the window BODY.)
+			-- (§T10/U3: header chrome — title, points, respec, close — now
+			-- lives in AppWindow; this table is the window BODY.)
 
-		canvas = React.createElement("Frame", {
-			Position               = UDim2.fromScale(0, 0),
-			Size                   = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			ClipsDescendants       = true,
-			ZIndex                 = 11,
-			ref                    = canvasRef,
-			-- §AGX/UI-P2: shared tracker (mouse drag, touch pan, pinch).
-			[React.Event.InputBegan] = function(_, input)
-				onPointerBegan(input)
-			end,
-		}, children),
-
-		-- §AGX/UI-P2: + / − / Fit (48 px, all platforms), top-left of the body.
-		zoomControls = React.createElement("Frame", {
-			Position               = UDim2.fromOffset(ctrlInset, 12),
-			Size                   = UDim2.fromOffset(CTRL_BTN, CTRL_BTN * 3 + 16),
-			BackgroundTransparency = 1,
-			ZIndex                 = 25,
-			ref                    = controlsRef,
-		}, {
-			layout = React.createElement("UIListLayout", {
-				FillDirection = Enum.FillDirection.Vertical,
-				SortOrder     = Enum.SortOrder.LayoutOrder,
-				Padding       = UDim.new(0, 8),
-			}),
-			zoomIn = React.createElement(ZoomButton, {
-				text = "+", order = 1,
-				onActivated = function()
-					zoomAbout(cellRef.current * ZOOM_STEP, canvasSizeRef.current / 2)
-				end,
-			}),
-			zoomOut = React.createElement(ZoomButton, {
-				text = "−", order = 2,
-				onActivated = function()
-					zoomAbout(cellRef.current / ZOOM_STEP, canvasSizeRef.current / 2)
-				end,
-			}),
-			fit = React.createElement(ZoomButton, {
-				text = "Fit", order = 3, textSize = 16,
-				onActivated = function() fitView() end,
-			}),
-		}),
-
-		-- §AGX/UI-P2: D12 detail panel (sheet on phone, side panel otherwise).
-		detail = selectedNode and React.createElement(NodeDetail, {
-			nodeDef   = selectedNode,
-			status    = nodeStatus(selectedNode),
-			allocated = allocated,
-			mode      = useSheet and "sheet" or "side",
-			panelRef  = panelRef,
-			onClose   = function() setSelectedId(nil) end,
-			onAction  = function(action)
-				if action == "allocate" then
-					TalentClient.AllocateNode(selectedNode.id)
-				elseif action == "refund" then
-					TalentClient.RefundNode(selectedNode.id)
-				end
-			end,
-		}) or nil,
-
-		-- §AGX/UI-P2: hidden under an open phone sheet (it would sit behind it).
-		legend = not (useSheet and selectedNode) and React.createElement("Frame", {
-			AnchorPoint            = Vector2.new(0, 1),
-			Position               = isTouch and UDim2.new(0, EDGE_INSET, 1, -12) or UDim2.fromScale(0.01, 0.98),
-			Size                   = isTouch and UDim2.fromOffset(330, 32) or UDim2.fromScale(0.36, 0.06),
-			BackgroundColor3       = C.panel,
-			BackgroundTransparency = 0.3,
-			BorderSizePixel        = 0,
-			ZIndex                 = 15,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.15, 0) }),
-			pad    = React.createElement("UIPadding", {
-				PaddingLeft = UDim.new(0.03, 0), PaddingRight = UDim.new(0.03, 0),
-			}),
-			lbl = React.createElement("TextLabel", {
+			canvas = e("Frame", {
+				Position               = UDim2.fromScale(0, 0),
 				Size                   = UDim2.fromScale(1, 1),
 				BackgroundTransparency = 1,
-				Text                   = legendText,
-				TextColor3             = C.text_dim,
-				Font                   = Enum.Font.Gotham,
-				TextScaled             = true,
-				ZIndex                 = 16,
-			}, { minText = minText() }),  -- §AGX/UI-P2: M11 12 px floor
-		}) or nil,
+				ClipsDescendants       = true,
+				ZIndex                 = 11,
+				ref                    = canvasRef,
+				-- §AGX/UI-P2: shared tracker (mouse drag, touch pan, pinch).
+				[React.Event.InputBegan] = function(_, input)
+					onPointerBegan(input)
+				end,
+			}, children),
+
+			-- §AGX/UI-P2: + / − / Fit (48 px, all platforms), top-left of the body.
+			-- §AGX/UI-P6: IconButton secondary (blue ring), 48 design px.
+			zoomControls = e("Frame", {
+				Position               = UDim2.fromOffset(ctrlInset, SP.md),
+				Size                   = UDim2.fromOffset(CTRL_BTN, CTRL_BTN * 3 + 2 * SP.sm),
+				BackgroundTransparency = 1,
+				ZIndex                 = 25,
+				ref                    = controlsRef,
+			}, {
+				layout = e("UIListLayout", {
+					FillDirection = Enum.FillDirection.Vertical,
+					SortOrder     = Enum.SortOrder.LayoutOrder,
+					Padding       = UDim.new(0, SP.sm),
+				}),
+				zoomIn = e(IconButton, {
+					name = "ZoomIn", icon = "plus", variant = "secondary", size = CTRL_BTN,
+					layoutOrder = 1, zIndex = 26, tooltip = "Zoom in",
+					onActivated = function()
+						zoomAbout(cellRef.current * ZOOM_STEP, canvasSizeRef.current / 2)
+					end,
+				}),
+				zoomOut = e(IconButton, {
+					name = "ZoomOut", icon = "minus", variant = "secondary", size = CTRL_BTN,
+					layoutOrder = 2, zIndex = 26, tooltip = "Zoom out",
+					onActivated = function()
+						zoomAbout(cellRef.current / ZOOM_STEP, canvasSizeRef.current / 2)
+					end,
+				}),
+				fit = e(IconButton, {
+					name = "Fit", icon = "fit", label = "Fit", variant = "secondary", size = CTRL_BTN,
+					layoutOrder = 3, zIndex = 26, tooltip = "Fit the whole tree",
+					onActivated = function() fitView() end,
+				}),
+			}),
+
+			-- §AGX/UI-P2: D12 detail panel (sheet on phone, side panel otherwise).
+			detail = selectedNode and e(NodeDetail, {
+				nodeDef   = selectedNode,
+				status    = nodeStatus(selectedNode),
+				allocated = allocated,
+				mode      = useSheet and "sheet" or "side",
+				panelRef  = panelRef,
+				onClose   = function() setSelectedId(nil) end,
+				onAction  = function(action)
+					if action == "allocate" then
+						TalentClient.AllocateNode(selectedNode.id)
+					elseif action == "refund" then
+						TalentClient.RefundNode(selectedNode.id)
+					end
+				end,
+			}) or nil,
+
+			-- §AGX/UI-P2: hidden under an open phone sheet (it would sit behind it).
+			legend = not (useSheet and selectedNode) and e(Panel, {
+				name        = "Legend",
+				elevation   = "flat",
+				padding     = "sm",
+				transparency = 0.3,
+				anchorPoint = Vector2.new(0, 1),
+				position    = UDim2.new(0, ctrlInset, 1, -SP.md),
+				size        = UDim2.fromOffset(0, 32),
+				autoSize    = "X",
+				zIndex      = 15,
+			}, {
+				lbl = e(Text, {
+					style    = "caption",
+					text     = legendText,
+					color    = "text.secondary",
+					size     = UDim2.fromScale(0, 1),
+					autoSize = "X",
+					zIndex   = 16,
+				}),
+			}) or nil,
+		}),
 	})
 end
 

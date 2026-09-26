@@ -1,6 +1,12 @@
 -- StarterPlayerScripts/UI/AchievementsUI.lua
 --[[
-    Fullscreen achievement browser + unlock toast.
+    Achievement browser + unlock toast.
+    §AGX/UI-P6: the panel is an AppWindow (windowed; sheet on phone) with
+    Tabs for the categories and Panel/Text/Bar cards, in design px inside
+    UIScaleRoot.Local. Removed: the private palette, the hand-rolled
+    backdrop/panel/header/✕ (+ hitArea), CategoryTab, the TextScaled labels
+    and the private progress bar. The Toast bridge to Notify is unchanged
+    (its colour now reads the same RGB from Theme.Roles.state.warning).
 
     Exports two React components:
       • AchievementsUI (default)  — fullscreen panel, opened manually
@@ -13,8 +19,6 @@
 ]]
 
 local Players           = game:GetService("Players")
-local TweenService      = game:GetService("TweenService")
-local UserInputService  = game:GetService("UserInputService")  -- §AGX/UI-P1
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
@@ -23,78 +27,29 @@ local SharedModules    = PlayerScripts:WaitForChild("Modules")
 local AchievementClient = require(SharedModules:WaitForChild("AchievementClient"))
 local AchievementConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("AchievementConfig"))
 
--- ── Palette ───────────────────────────────────────────────────────────────────
-local C = {
-    bg         = Color3.fromRGB( 15,  15,  22),
-    panel      = Color3.fromRGB( 24,  24,  36),
-    card_bg    = Color3.fromRGB( 30,  30,  46),
-    card_lock  = Color3.fromRGB( 22,  22,  34),
-    gold       = Color3.fromRGB(255, 200,  60),
-    gold_dim   = Color3.fromRGB(180, 140,  40),
-    blue       = Color3.fromRGB( 80, 160, 255),
-    text       = Color3.fromRGB(220, 220, 230),
-    text_dim   = Color3.fromRGB(130, 130, 150),
-    locked_txt = Color3.fromRGB( 80,  80, 100),
-    tab_active = Color3.fromRGB( 50,  80, 160),
-    tab_idle   = Color3.fromRGB( 28,  28,  42),
-    close_bg   = Color3.fromRGB(180,  50,  50),
-    toast_bg   = Color3.fromRGB( 24,  24,  36),
-    toast_gold = Color3.fromRGB(255, 200,  60),
-}
+-- §AGX/UI-P6: shared components
+local Common      = script.Parent:WaitForChild("Common")
+local AppWindow   = require(Common:WaitForChild("AppWindow"))
+local Theme       = require(Common:WaitForChild("Theme"))
+local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
+local Text        = require(Common:WaitForChild("Text"))
+local Panel       = require(Common:WaitForChild("Panel"))
+local Tabs        = require(Common:WaitForChild("Tabs"))
+local Bar         = require(Common:WaitForChild("Bar"))
 
--- §AGX/UI-P1: minimum tap target. Touch-only growth keeps desktop unchanged.
-local MIN_TAP_PX = 44
-local IS_TOUCH   = UserInputService.TouchEnabled
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
 
--- §AGX/UI-P1: transparent hit box centred on a small visual button, at least
--- MIN_TAP_PX on each axis. The visual keeps its size; only the hit area grows.
-local function hitArea(onActivated, zIndex)
-    return React.createElement("TextButton", {
-        Name                   = "HitArea",
-        AnchorPoint            = Vector2.new(0.5, 0.5),
-        Position               = UDim2.fromScale(0.5, 0.5),
-        Size                   = UDim2.fromScale(1, 1),
-        BackgroundTransparency = 1,
-        Text                   = "",
-        ZIndex                 = zIndex,
-        [React.Event.Activated] = onActivated,
-    }, {
-        minSize = React.createElement("UISizeConstraint", {
-            MinSize = Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
-        }),
-    })
-end
-
--- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
--- (Panel only; the always-mounted Toast below is out of scope for this pass.)
-local function minText()
-    return React.createElement("UITextSizeConstraint", { MinTextSize = 12 })
-end
+-- §AGX/UI-P6: design px
+local CARD_H     = 88
+local ICON_W     = 44
+local BADGE_W    = 96
+local PROGRESS_W = 120
 
 -- ═══════════════════════════════════════════════════════════
 -- SUB-COMPONENTS
 -- ═══════════════════════════════════════════════════════════
-
--- ── CategoryTab ──────────────────────────────────────────────────────────────
-local function CategoryTab(props)
-    local active = props.active
-    return React.createElement("TextButton", {
-        -- §AGX/UI-P1: 32 px tabs at a 36 px pitch can't hold a 44 px hit box
-        -- without overlapping, so tabs grow to 44 px on touch devices only.
-        Size             = UDim2.new(1, 0, 0, IS_TOUCH and MIN_TAP_PX or 32),
-        BackgroundColor3 = active and C.tab_active or C.tab_idle,
-        BorderSizePixel  = 0,
-        Text             = props.label,
-        TextColor3       = active and C.text or C.text_dim,
-        Font             = Enum.Font.GothamBold,
-        TextScaled       = true,
-        LayoutOrder      = props.order,
-        [React.Event.Activated] = props.onSelect,
-    }, {
-        corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-        minText = minText(),  -- §AGX/UI-P1: M11 text floor
-    })
-end
 
 -- ── AchievementCard ──────────────────────────────────────────────────────────
 local function AchievementCard(props)
@@ -105,125 +60,106 @@ local function AchievementCard(props)
     local isMax       = tierReached >= maxTier
     local isActive    = tierReached >= 1
 
-    local cardColor = isActive and C.card_bg  or C.card_lock
-    local nameColor = isMax    and C.gold     or (isActive and C.text    or C.locked_txt)
-    local descColor = isActive and C.text_dim or C.locked_txt
+    -- §AGX/UI-P6: roles. Max = legendary gold, active = blue body accent,
+    -- not started = disabled text.
+    local nameColor = isMax and "rarity.legendary" or (isActive and "text.primary" or "text.secondary")
+    local descColor = isActive and "text.secondary" or "text.disabled"
     local iconText  = isActive and ach.icon   or "?"
 
     -- Progress bar fill fraction
-    local fillFrac, barColor, nextLabel
+    local fillFrac, nextLabel
     if isMax then
         fillFrac  = 1
-        barColor  = C.gold
         nextLabel = "MAX"
     elseif tierReached == 0 then
         local nextReq = ach.tiers[1]
         fillFrac  = math.clamp(statVal / nextReq, 0, 1)
-        barColor  = C.text_dim
         nextLabel = AchievementConfig.FormatNumber(statVal) .. " / " .. AchievementConfig.FormatNumber(nextReq)
     else
         local prevReq = ach.tiers[tierReached]
         local nextReq = ach.tiers[tierReached + 1]
         fillFrac  = math.clamp((statVal - prevReq) / (nextReq - prevReq), 0, 1)
-        barColor  = C.blue
         nextLabel = AchievementConfig.FormatNumber(statVal) .. " / " .. AchievementConfig.FormatNumber(nextReq)
     end
 
     -- Tier badge
     local tierBadgeText  = "Lv " .. tierReached .. " / " .. maxTier
-    local tierBadgeColor = isMax and C.gold or (isActive and C.blue or C.locked_txt)
+    local tierBadgeColor = isMax and "rarity.legendary" or (isActive and "accent.secondary" or "text.disabled")
+    local textLeft = ICON_W + SP.sm
 
-    return React.createElement("Frame", {
-        Size             = UDim2.new(1, -8, 0, 88),
-        BackgroundColor3 = cardColor,
-        BorderSizePixel  = 0,
-        LayoutOrder      = props.order,
+    return e(Panel, {
+        name         = "Ach_" .. tostring(ach.id),
+        elevation    = isActive and "raised" or "sunken",
+        padding      = "md",
+        size         = UDim2.new(1, 0, 0, CARD_H),
+        -- Border: gold for max, blue for active (none when not started)
+        accent       = isMax and "rarity.legendary" or (isActive and "accent.secondary" or nil),
+        stroke       = isActive,
+        layoutOrder  = props.order,
     }, {
-        corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.05, 0) }),
-
-        -- Border: gold for max, blue for active
-        stroke = isActive and React.createElement("UIStroke", {
-            Color        = isMax and C.gold_dim or C.blue,
-            Thickness    = 1.5,
-            Transparency = 0,
-        }) or nil,
-
         -- Icon
-        iconLbl = React.createElement("TextLabel", {
-            Position               = UDim2.fromScale(0.01, 0.06),
-            Size                   = UDim2.fromScale(0.12, 0.55),
-            BackgroundTransparency = 1,
+        iconLbl = e("TextLabel", {
+            Size                   = UDim2.fromOffset(ICON_W, ICON_W),
+            AnchorPoint            = Vector2.new(0, 0.5),
+            Position               = UDim2.fromScale(0, 0.5),
+            BackgroundColor3       = R.surface.sunken,
+            BackgroundTransparency = isActive and 0 or 1,
+            BorderSizePixel        = 0,
             Text                   = iconText,
-            TextColor3             = isMax and C.gold or (isActive and C.text or C.locked_txt),
-            Font                   = Enum.Font.GothamBold,
-            TextScaled             = true,
-        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
+            TextColor3             = Theme.color(nameColor),
+            FontFace               = Theme.FontFaces.heavy,
+            TextSize               = 24,
+            TextTransparency       = isActive and 0 or 0.4,
+        }, {
+            corner = e("UICorner", { CornerRadius = Theme.Radius.md }),
+        }),
 
         -- Name (leaves room for tier badge)
-        nameLbl = React.createElement("TextLabel", {
-            Position               = UDim2.fromScale(0.14, 0.05),
-            Size                   = UDim2.fromScale(0.62, 0.32),
-            BackgroundTransparency = 1,
-            Text                   = ach.name,
-            TextColor3             = nameColor,
-            Font                   = Enum.Font.GothamBold,
-            TextScaled             = true,
-            TextXAlignment         = Enum.TextXAlignment.Left,
-        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
+        nameLbl = e(Text, {
+            style    = "heading",
+            text     = ach.name,
+            color    = nameColor,
+            position = UDim2.fromOffset(textLeft, 0),
+            size     = UDim2.new(1, -(textLeft + BADGE_W + SP.sm), 0, 22),
+        }),
 
         -- Tier badge (top-right)
-        tierBadge = React.createElement("TextLabel", {
-            Position               = UDim2.fromScale(0.78, 0.05),
-            Size                   = UDim2.fromScale(0.20, 0.32),
-            BackgroundTransparency = 1,
-            Text                   = tierBadgeText,
-            TextColor3             = tierBadgeColor,
-            Font                   = Enum.Font.GothamBold,
-            TextScaled             = true,
-            TextXAlignment         = Enum.TextXAlignment.Right,
-        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
+        tierBadge = e(Text, {
+            style       = "label",
+            text        = tierBadgeText,
+            color       = tierBadgeColor,
+            align       = "right",
+            anchorPoint = Vector2.new(1, 0),
+            position    = UDim2.fromScale(1, 0),
+            size        = UDim2.fromOffset(BADGE_W, 22),
+        }),
 
         -- Description
-        descLbl = React.createElement("TextLabel", {
-            Position               = UDim2.fromScale(0.14, 0.38),
-            Size                   = UDim2.fromScale(0.84, 0.22),
-            BackgroundTransparency = 1,
-            Text                   = ach.desc,
-            TextColor3             = descColor,
-            Font                   = Enum.Font.Gotham,
-            TextScaled             = true,
-            TextXAlignment         = Enum.TextXAlignment.Left,
-        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
+        descLbl = e(Text, {
+            style    = "caption",
+            text     = ach.desc,
+            color    = descColor,
+            position = UDim2.fromOffset(textLeft, 23),
+            size     = UDim2.new(1, -textLeft, 0, 18),
+        }),
 
-        -- Progress bar background
-        barBg = React.createElement("Frame", {
-            Position         = UDim2.fromScale(0.13, 0.65),
-            Size             = UDim2.fromScale(0.84, 0.20),
-            BackgroundColor3 = C.card_lock,
-            BorderSizePixel  = 0,
-        }, {
-            corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-
-            -- Fill bar
-            fill = React.createElement("Frame", {
-                Size             = UDim2.fromScale(fillFrac, 1),
-                BackgroundColor3 = barColor,
-                BorderSizePixel  = 0,
-            }, {
-                corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-            }),
-
-            -- Progress text
-            barLabel = React.createElement("TextLabel", {
-                Size                   = UDim2.fromScale(1, 1),
-                BackgroundTransparency = 1,
-                Text                   = nextLabel,
-                TextColor3             = C.text,
-                Font                   = Enum.Font.Gotham,
-                TextScaled             = true,
-                TextXAlignment         = Enum.TextXAlignment.Right,
-                ZIndex                 = 2,
-            }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
+        -- Progress bar (§AGX/UI-P6: Bar; amber "xp" fill once maxed)
+        bar = e(Bar, {
+            kind     = isMax and "xp" or "progress",
+            value    = fillFrac,
+            max      = 1,
+            height   = 12,
+            position = UDim2.fromOffset(textLeft, 48),
+            size     = UDim2.new(1, -(textLeft + PROGRESS_W + SP.sm), 0, 12),
+        }),
+        barLabel = e(Text, {
+            style       = "numeric",
+            text        = nextLabel,
+            color       = isActive and "text.primary" or "text.secondary",
+            align       = "right",
+            anchorPoint = Vector2.new(1, 0),
+            position    = UDim2.new(1, 0, 0, 44),
+            size        = UDim2.fromOffset(PROGRESS_W, 20),
         }),
     })
 end
@@ -279,21 +215,28 @@ local function AchievementsUIPanel(props)
     end
     local totalTiers = AchievementConfig.TotalTiers()
 
-    -- ── Build tab list ────────────────────────────────────────────────────────
-    local tabs = {}
-    for i, cat in ipairs(AchievementConfig.Categories) do
-        tabs["tab_" .. cat] = React.createElement(CategoryTab, {
-            label    = cat,
-            active   = selectedCat == cat,
-            order    = i,
-            onSelect = function() setSelectedCat(cat) end,
-        })
+    -- ── Build tab list (§AGX/UI-P6: Tabs; chip row on phones) ──────────────
+    local tabItems = {}
+    for _, cat in ipairs(AchievementConfig.Categories) do
+        table.insert(tabItems, { id = cat, label = cat })
     end
 
     -- ── Build card list ───────────────────────────────────────────────────────
-    local cards = {}
+    local cards = {
+        layout = e("UIListLayout", {
+            FillDirection     = Enum.FillDirection.Vertical,
+            SortOrder         = Enum.SortOrder.LayoutOrder,
+            Padding           = UDim.new(0, SP.sm),
+        }),
+        pad = e("UIPadding", {
+            PaddingLeft   = UDim.new(0, SP.lg),
+            PaddingRight  = UDim.new(0, SP.lg),
+            PaddingTop    = UDim.new(0, SP.md),
+            PaddingBottom = UDim.new(0, SP.lg),
+        }),
+    }
     for i, ach in ipairs(achievements) do
-        cards["card_" .. ach.id] = React.createElement(AchievementCard, {
+        cards["card_" .. ach.id] = e(AchievementCard, {
             achievement = ach,
             tierReached = unlockedMap[ach.id] or 0,
             statVal     = AchievementConfig.GetStatValue(ach, statsMap),
@@ -301,125 +244,47 @@ local function AchievementsUIPanel(props)
         })
     end
 
-    return React.createElement("Frame", {
-        Name                   = "AchievementsUI",
-        Size                   = UDim2.fromScale(1, 1),
-        BackgroundColor3       = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 0.45,
-        ZIndex                 = 8,
+    local tabsH = Theme.Metrics.tabs.height
+
+    return e(AppWindow, {
+        variant = "windowed",
+        title   = "Achievements",
+        icon    = "achievements",
+        onClose = onClose,
+        size    = UDim2.fromScale(0.72, 0.88),
+        zIndex  = 8,
+        -- earned / total tiers, right of the ribbon
+        headerContent = e(UIScaleRoot.Local, { name = "TierCount" }, {
+            count = e(Text, {
+                style       = "numeric",
+                text        = "🏆 " .. earnedTiers .. " / " .. totalTiers .. " tiers",
+                color       = "rarity.legendary",
+                align       = "right",
+                anchorPoint = Vector2.new(1, 0.5),
+                position    = UDim2.fromScale(1, 0.5),
+                size        = UDim2.new(1, 0, 0, 24),
+            }),
+        }),
     }, {
-        -- ── Centre panel ─────────────────────────────────────────────────────
-        panel = React.createElement("Frame", {
-            AnchorPoint      = Vector2.new(0.5, 0.5),
-            Position         = UDim2.fromScale(0.5, 0.5),
-            Size             = UDim2.fromScale(0.72, 0.88),
-            BackgroundColor3 = C.bg,
-            BorderSizePixel  = 0,
-            ZIndex           = 9,
-        }, {
-            corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.02, 0) }),
-            stroke = React.createElement("UIStroke", {
-                Color        = Color3.fromRGB(60, 80, 160),
-                Thickness    = 2,
-                Transparency = 0,
+        -- §AGX/UI-P6: design px from here down.
+        content = e(UIScaleRoot.Local, { name = "AchievementsBody" }, {
+            tabs = e(Tabs, {
+                items    = tabItems,
+                value    = selectedCat,
+                onChange = setSelectedCat,
             }),
-
-            -- Header bar
-            header = React.createElement("Frame", {
-                Size             = UDim2.fromScale(1, 0.09),
-                BackgroundColor3 = C.panel,
-                BorderSizePixel  = 0,
-                ZIndex           = 10,
-            }, {
-                hcorner = React.createElement("UICorner", { CornerRadius = UDim.new(0.04, 0) }),
-
-                title = React.createElement("TextLabel", {
-                    Position               = UDim2.fromScale(0.04, 0),
-                    Size                   = UDim2.fromScale(0.7, 1),
-                    BackgroundTransparency = 1,
-                    Text                   = "🏆  Achievements  —  " .. earnedTiers .. " / " .. totalTiers .. " tiers",
-                    TextColor3             = C.gold,
-                    Font                   = Enum.Font.GothamBold,
-                    TextScaled             = true,
-                    TextXAlignment         = Enum.TextXAlignment.Left,
-                    ZIndex                 = 10,
-                }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
-
-                closeBtn = React.createElement("TextButton", {
-                    AnchorPoint      = Vector2.new(1, 0.5),
-                    Position         = UDim2.fromScale(0.99, 0.5),
-                    -- §AGX/UI-P1: T13/V1: was fromScale(0.019, 0.033) of the
-                    -- header = 26x3 px at 1080p, 12x1 on a phone. 0.019 x 1920
-                    -- shows the intended 36 px square.
-                    Size             = UDim2.fromOffset(36, 36),
-                    BackgroundColor3 = C.close_bg,
-                    BorderSizePixel  = 0,
-                    Text             = "✕",
-                    TextColor3       = Color3.fromRGB(255, 255, 255),
-                    Font             = Enum.Font.GothamBold,
-                    TextScaled       = true,
-                    ZIndex           = 11,
-                    [React.Event.Activated] = onClose,
-                }, {
-                    cc = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
-                    minText = minText(),
-                    hit = hitArea(onClose, 12),  -- §AGX/UI-P1: 44x44 hit box
-                }),
-            }),
-
-            -- Left: category tabs
-            -- §AGX/UI-P1: ScrollingFrame (was Frame) so 8 tabs at the 44 px
-            -- touch height scroll instead of spilling below the panel on a
-            -- phone. On desktop the tabs fit, so no scrollbar is shown.
-            sidebar = React.createElement("ScrollingFrame", {
-                Position         = UDim2.fromScale(0, 0.1),
-                Size             = UDim2.fromScale(0.18, 0.88),
-                BackgroundColor3 = C.panel,
-                BorderSizePixel  = 0,
-                ZIndex           = 9,
-                ScrollBarThickness   = 4,
-                ScrollBarImageColor3 = C.gold_dim,
+            cardScroll = e("ScrollingFrame", {
+                Name                 = "Cards",
+                Position             = UDim2.fromOffset(0, tabsH),
+                Size                 = UDim2.new(1, 0, 1, -tabsH),
+                BackgroundTransparency = 1,
+                BorderSizePixel      = 0,
+                ScrollBarThickness   = Theme.Metrics.scrollBar,
+                ScrollBarImageColor3 = R.text.secondary,
                 AutomaticCanvasSize  = Enum.AutomaticSize.Y,
                 CanvasSize           = UDim2.fromScale(0, 0),
                 ScrollingDirection   = Enum.ScrollingDirection.Y,
-            }, {
-                layout = React.createElement("UIListLayout", {
-                    FillDirection     = Enum.FillDirection.Vertical,
-                    SortOrder         = Enum.SortOrder.LayoutOrder,
-                    Padding           = UDim.new(0, 4),
-                }),
-                pad = React.createElement("UIPadding", {
-                    PaddingLeft   = UDim.new(0.04, 0),
-                    PaddingRight  = UDim.new(0.04, 0),
-                    PaddingTop    = UDim.new(0.02, 0),
-                }),
-                React.createElement(React.Fragment, nil, tabs),
-            }),
-
-            -- Right: achievement cards (scrolling)
-            cardScroll = React.createElement("ScrollingFrame", {
-                Position             = UDim2.fromScale(0.19, 0.10),
-                Size                 = UDim2.fromScale(0.80, 0.88),
-                BackgroundTransparency = 1,
-                BorderSizePixel      = 0,
-                ScrollBarThickness   = 4,
-                ScrollBarImageColor3 = C.gold_dim,
-                AutomaticCanvasSize  = Enum.AutomaticSize.Y,
-                CanvasSize           = UDim2.fromScale(0, 0),
-                ZIndex               = 9,
-            }, {
-                layout = React.createElement("UIListLayout", {
-                    FillDirection     = Enum.FillDirection.Vertical,
-                    SortOrder         = Enum.SortOrder.LayoutOrder,
-                    Padding           = UDim.new(0, 6),
-                }),
-                pad = React.createElement("UIPadding", {
-                    PaddingLeft   = UDim.new(0.01, 0),
-                    PaddingRight  = UDim.new(0.01, 0),
-                    PaddingTop    = UDim.new(0.01, 0),
-                }),
-                React.createElement(React.Fragment, nil, cards),
-            }),
+            }, cards),
         }),
     })
 end
@@ -453,7 +318,7 @@ local function AchievementToast()
             Notify.banner("🏆  Achievement Unlocked!", {
                 subtitle   = subtitle,
                 priority   = "achievement",
-                color      = C.toast_gold,
+                color      = R.state.warning,   -- §AGX/UI-P6: = old toast_gold 255,200,60
                 duration   = TOAST_DURATION,
                 staleAfter = math.huge,
             })
