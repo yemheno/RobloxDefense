@@ -2234,6 +2234,57 @@ Value check: hunting a specific 25 E cosmetic costs about 9 E of refreshes on av
 
 Telemetry to add later: refreshes per player-day and the share of players who refresh at least once. The target is >20% participation, or the prices get revisited.
 
+## Combat balance pass (§AGX/BAL, 2026-09-26)
+
+### Caps
+| Cap | Before | After | Why |
+|---|---|---|---|
+| Multi-crit procs | 2 (max 1.80² = 3.24×) | unchanged | TODO's 5.83× was 3 procs; 2-proc cap already live |
+| Vulnerability | ×3.0 interim clamp | **×2.0** | Non-stacking (strongest wins); top source Meteorite 1.25. Worst hit 3.24×1.25×2.0 = 8.1× (was 12.2×) |
+| ArmorReduction (mob) | unbounded (≥100% zeroes armor) | **0–50%** | Max today 25% (Sundering 5×5%); shred can't zero armor, Penetration strips the rest |
+| Penetration | 60 declared, unenforced | **60 enforced** (incl. keystones) | Keystones add up to +25 |
+| Lifesteal | 25 declared, unenforced | **25 enforced** | Config intent |
+
+### Crit damage class scaling (§T1.2-BAL1) — rule: none for any class
+Base 1.50×, cap 1.80× → +0.30× headroom, filled by gear/accessories/talents (+0.28)/Hunter innate (+0.15).
+L60 reference builds; E = expected crit multiplier.
+
+| Class | Crit % | CritDmg before | E before | CritDmg after | E after | Δ DPS | (alt: identity stat ×0.002) |
+|---|---|---|---|---|---|---|---|
+| Aegis | 11.1 | 1.50 | 1.0555 | 1.50 | 1.0555 | 0.00% | +0.63% |
+| Arcanist | 12.7 | 1.54 (MAG×0.001) | 1.0686 | 1.50 | 1.0635 | −0.48% | +0.48% |
+| Hunter | 46.0 | 1.65 | 1.2990 | 1.65 | 1.2990 | 0.00% | +2.83% (0% once gear hits cap) |
+| LifeSteward | 11.6 | 1.50 | 1.0581 | 1.50 | 1.0581 | 0.00% | +0.77% |
+
+Primary-stat scaling would double-dip the stat that already drives Damage/CritChance and is erased by the cap once gear adds ~+0.15×. Crit identity = CritChance coefficients + innate (Hunter +10%, +0.15×).
+
+### Heals after the shared crit pipeline (§T1.3-BAL1)
+Old heal crit: ≤100% chance, ≤1.50×, 1 proc. New: shared pipeline (≤200%, ≤1.80×, 2 geometric procs).
+LifeSteward heal base = (10 + 2.5·MAG + HealingPower) × 1.15 (innate HealingPercent).
+
+| Build | Crit % / CritDmg | E old | E new | Lift |
+|---|---|---|---|---|
+| L30 typical (MAG 20) | 8.9 / 1.55 | 1.044 | 1.049 | +0.4% |
+| L60 typical (MAG 35) — reference | 18.6 / 1.70 | 1.093 | 1.130 | +3.4% |
+| L100 endgame (MAG 55) | 27.7 / 1.80 | 1.139 | 1.222 | +7.3% |
+| L100 crit-lean | 46.3 / 1.80 | 1.232 | 1.370 | +11.3% |
+| L100 crit-stack | 90.8 / 1.80 | 1.454 | 1.726 | +18.7% |
+
+Changes: Mending Touch 2.2 → **2.1**, Verdant Bloom burst 1.3 → **1.25** (both inside §31 bands). HoT ticks now go through the heal pipeline (+HealingPercent, +HealingPower, still no crit): +15% at L30, +27% at L60, +35% at L100 per tick.
+
+Realised throughput, one target over 24 s (8× MT + 3× VB + 18 HoT ticks), vs pre-T1.3:
+| Build | Pipeline only (no change) | After this pass |
+|---|---|---|
+| L30 typical | +0.4% | −3.0% |
+| L60 typical (reference) | +3.2% | **+0.1%** |
+| L100 endgame | +7.0% | +3.9% |
+| L100 crit-lean | +10.9% | +7.6% |
+| L100 crit-stack | +18.1% | +14.4% |
+
+MAG investment still beats crit stacking in absolute healing, so the heal identity (MAG) is intact. Genesis full-heal now shows its number and grants heal XP.
+
+Gear `critDamage` rolls are percent and are now divided by 100 before they enter the CritDamage multiplier (`PlayerBonusSystem`, §AGX/BAL); before, one roll pinned the 1.80× cap.
+
 ---
 
 *Last updated from full codebase audit, March 2026. All values verified against source files.*

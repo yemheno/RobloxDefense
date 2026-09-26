@@ -58,6 +58,16 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Talk to a lobby lore NPC, close, rejoin: `TalkedTo_<id>` is set right after load.
 - [ ] Normal weapon/armor reroll and refinement still work. (Optional: inject an `error()` mid-reroll; the next reroll is not stuck on "already in progress".)
 
+## 2e. Keystones and combat balance (`§AGX/X11`, `§AGX/BAL`)
+- [ ] All 5 places boot with KeystoneRules loaded. The Talent UI shows "(coming soon)" on exactly 6 keystones.
+- [ ] Overwhelm / Cull the Weak: damage differs on full-HP, <70% and <25% mobs; Cull's lifesteal heals.
+- [ ] Second Heart: drop under 35% → 4 heal ticks and lower outgoing damage for 4 s; not again within 45 s.
+- [ ] Perfect Form: stand still 2 s → more crits; one step removes it for 2 s.
+- [ ] Unyielding Advance / Last Bastion: less damage taken in a crowd and at high Determination; Taunt lasts longer above 70%.
+- [ ] Clarity Surge: no lifesteal; resource bumps on crit heals and crit skill hits. Shared Grace: overheal on a full-HP ally becomes a heal over time.
+- [ ] Genesis full heal shows its number. Verdant Bloom ticks are ~15% bigger. Healer feel check: does a Life Steward still feel strong?
+- [ ] Equip gear with a crit-damage roll: Stats shows crit damage like 1.5 → 1.6, not pinned at 1.8.
+
 ## 3. Teleports and matchmaking (`X4`, `X6`, `X14`, `X15`)
 Studio can't test reserved servers. Check what it can:
 - [ ] Kick, leave, join or disband during the countdown → "Party changed — queue cancelled".

@@ -403,7 +403,7 @@
 
 ## 14d. Stats / Damage / Healing follow-ups (Tier 1.3)
 
-- `[P1]` **§T1.3-BAL1 — Heal multiplier rebalance after crit-pipeline
+- ✅ *(Done 2026-09-26, §AGX/BAL: Mending Touch 2.1, Verdant Bloom 1.25, HoT ticks through the heal pipeline; L60 throughput within 0.1% of pre-T1.3. BALANCE_NUMBERS "Combat balance pass".)* **§T1.3-BAL1 — Heal multiplier rebalance after crit-pipeline
   unification** — heals now run through the same multi-crit pipeline as
   damage (geometric procs, 1.80× cap, max 2 procs). Pre-T1.3 they used
   a single-proc 1.50× cap, so realised healing-per-tick will jump under
@@ -435,7 +435,7 @@
 
 ## 14c. Class system follow-ups (Tier 1.2)
 
-- `[P1]` **§T1.2-BAL1 — Crit-damage class scaling balance audit** — only
+- ✅ *(Done, §AGX/BAL: no class scales CritDamage; headroom to the 1.80× cap comes from gear/talents/Hunter innate.)* **§T1.2-BAL1 — Crit-damage class scaling balance audit** — only
   Arcanist has a per-class scaling on CritDamage (`{ MAG = 0.001 }`).
   Aegis, Hunter, and LifeSteward all carry `CritDamage = {}` — class-base
   only (1.5×). Either every class needs a meaningful scaling formula or
@@ -851,7 +851,7 @@ New open items created by the agency-checks session (`git log
   `highestWave` achievements from Horde. Decide one meaning (probably
   "completed") and record `lastLevel - 1` on Horde, or keep separate
   per-mode stats.
-- `[P1]` **§AGX/X11-RULES — 15 talent keystones say "(coming soon)".**
+- 🟡 *(9/15 done, §AGX/X11: `StatsManager/KeystoneRules.lua`. Still coming soon: Arc Saturation and Eye of the Storm (need an AoESize reader), Calm Under Fire (CDR/StatusResist/AttackSpeed unread), Spell Rhythm (description contradicts itself), Patron Saint and Fortune Favors (need a party-aura system).)* **§AGX/X11-RULES — 15 talent keystones say "(coming soon)".**
   Their penalties were neutralised (36cd218), but no rule is implemented:
   `TalentTreeConfig.IMPLEMENTED_RULES = {}` (`TalentTreeConfig.lua:735`,
   tagging at `:741-751`). Implement the rules one at a time and add each
@@ -976,3 +976,5 @@ but has not run yet (see §20 §AGX/STUDIO).
   table). `MonetizationService.lua:54-58` `ALLOWED_GRANTS` only allows
   AppearanceChange, Cosmetics and GamePass. The revive is now 3/2/1 free
   by difficulty, then one paid in Essence (3b4d39d §AGX/X40).
+
+- `[P1]` **§AGX/BAL-UNREAD — six bonus stats have no reader** (found 2026-09-26 by the keystone pass): MovementSpeed, AttackSpeed (attack speed is weapon-only), AoESize, CooldownReduction, CastTimeReduction and StatusResistance. Hunter's innate +8% move speed, FrenzyBanner, Eagle Eye's -30% attack speed, gear/talent rolls of these stats and Swiftness Elixir all do nothing. Proposed order: MovementSpeed → WalkSpeed (X13 BaseWalkSpeed owners), AttackSpeed → `ClassManager.GetAttackSpeed`, AoESize → `BaseSkills.GetTargetsInShape`, CooldownReduction → `SkillManager.StartCooldown`.
