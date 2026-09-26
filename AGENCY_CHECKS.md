@@ -454,3 +454,7 @@ Every item is tagged `§AGX/X<n>` in code. None of it has been tested in Studio 
 | X46 PolicyService | ⏳ depends on the monetization decision (sell gameplay currency for Robux or not) | — |
 | X48 onboarding | 🅿️ parked by Pablo until all modes are final | — |
 | UI revamp + mobile layout | 🔄 audits done; P0 UI bug fixes in progress | — |
+
+**X40 monetization (decided 2026-09-26):** gameplay currency (Merits, Essence) is **not** sold for Robux, so refine, reroll and tier-up stay earn-only and are not paid random items. Robux is reserved for cosmetics, appearance changes (`GrantAppearanceChange`) and non-power convenience.
+- **X46:** PolicyService is only needed if something bought with Robux ever reaches a random outcome or player trading.
+- **The planned Essence auction:** it trades an earn-only currency, so it isn't paid item trading. Keep a PolicyService check in reserve in case that changes.

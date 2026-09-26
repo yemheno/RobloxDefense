@@ -83,6 +83,12 @@ One UI shell, the same in every Place:
 
 ## 4. Decisions for Pablo
 
+> **Decided 2026-09-26 (Pablo: "go with your recommendation"):**
+> - D1 = **Hybrid**
+> - D2 = **fixed sizes at phone scale plus one root `UIScale` per form factor** (this replaces the old pure-Scale rule, V16)
+> - D3 = **icon rail**, with a radial on gamepad
+> - D4–D15 = the recommended column below
+
 The **first three block the build**. For the rest, the recommended option applies unless you say otherwise.
 
 | # | Question | Options | Recommendation |
