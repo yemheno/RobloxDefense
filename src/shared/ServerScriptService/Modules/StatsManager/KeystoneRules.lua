@@ -10,7 +10,9 @@
       Hook (caller)                                  Rules
       ─────────────────────────────────────────────  ───────────────────────────
       OutgoingHit       (DamageSystem, per hit)      Overwhelm, CullTheWeak,
-                                                     SecondHeart (−12%), RelentlessQuarry
+                                                     SecondHeart (−12%), RelentlessQuarry,
+                                                     SpellRhythm (consume, basic hits only)
+      OnSkillCast       (SkillManager, per cast)     SpellRhythm (+1 Rhythm)
       CritBonus         (CriticalSystem, per roll)   PerfectForm (damage AND heals)
       IncomingDR        (DamageSystem, per hit taken) UnyieldingAdvance, LastBastion
       AfterIncomingDamage (DamageSystem)             SecondHeart (trigger)
@@ -21,12 +23,13 @@
       TauntDurationBonus (AegisSkills Taunt)         LastBastion (+20%)
       sampler loop (5 Hz)                            PerfectForm stillness,
                                                      LastBastion low-Determination penalty
+      PartyAura (1 Hz, sibling module, Start below)  PatronSaint, FortuneFavors
 
     Rules NOT here stay "(coming soon)" (TalentTreeConfig.IMPLEMENTED_RULES):
     ArcSaturation, EyeOfTheStorm (AoESize has no consumer), CalmUnderFire
-    (CDR / StatusResistance / AttackSpeed have no consumer), SpellRhythm
-    (description is self-contradictory), PatronSaint, FortuneFavors (need a
-    party-aura system).
+    (CDR / StatusResistance / AttackSpeed have no consumer).
+    §AGX/X11: SpellRhythm (rewritten, below) and the two party auras
+    (StatsManager/PartyAura) landed with the delegated balance pass.
 
     Hot path (Audit_4.7 §5.4): HasRule and every sibling function are
     resolved ONCE and cached as function refs; per-hit work is table reads
@@ -87,6 +90,11 @@ local CLARITY_SKILL_AETHER    = 4
 local GRACE_EXCESS_FRAC       = 0.20
 local GRACE_HOT_DURATION      = 4
 local GRACE_LIFESTEAL_MULT    = 0.5
+
+-- §AGX/X11: Spell Rhythm (rewritten description, delegated balance call)
+local RHYTHM_DURATION         = 5      -- s, per stack
+local RHYTHM_MAX              = 3
+local RHYTHM_DMG_PCT          = 8      -- per stack, on the consuming basic attack
 
 local SAMPLE_INTERVAL         = 0.2
 local MOVE_EPS_SQ             = 0.5 * 0.5   -- studs² per sample (≈2.5 studs/s)
@@ -177,6 +185,20 @@ local function getSkillEffects()
 	return _SkillEffects or nil
 end
 
+-- §AGX/X11: Notify feed line for Rhythm (UI_REVAMP Notify; never throws).
+local _NotifyService = nil  -- module | false
+local function getNotifyService()
+	if _NotifyService == nil then
+		_NotifyService = false
+		local mod = Modules:FindFirstChild("NotifyService")
+		if mod then
+			local ok, ns = pcall(require, mod)
+			if ok and ns and ns.Feed then _NotifyService = ns end
+		end
+	end
+	return _NotifyService or nil
+end
+
 local _BonusManager = nil  -- module | false
 local function getBonusManager()
 	if _BonusManager == nil then
@@ -199,6 +221,43 @@ local quarry      = setmetatable({}, { __mode = "k" })  -- [player] = { target, 
 local stillness   = setmetatable({}, { __mode = "k" })  -- [player] = { x, z, moving, lastMovedAt, moveStartedAt }
 local nearby      = setmetatable({}, { __mode = "k" })  -- [player] = { at, count }
 local bastionSlow = setmetatable({}, { __mode = "k" })  -- [player] = true while the move penalty is applied
+local rhythm      = setmetatable({}, { __mode = "k" })  -- [player] = { [1..3] = stack expiry, swing, swingPct }
+
+-- ═══════════════════════════════════════════════════════════
+-- SPELL RHYTHM  (§AGX/X11)
+-- ═══════════════════════════════════════════════════════════
+-- Each stack expires on its own 5 s timer; a 4th cast replaces the oldest.
+-- The consuming basic attack is keyed by its AttackHandler attackId
+-- (options.basicAttackId), so every target of one cleave/pierce swing gets
+-- the same bonus; late hit reports of that swing never eat new stacks.
+-- Without an attackId, the first hit consumes (degrades, never double-dips).
+
+local RHYTHM_FEED_KEY   = "spell_rhythm"
+local RHYTHM_GAIN_TEXT  = { "Rhythm 1/3", "Rhythm 2/3", "Rhythm 3/3" }
+local RHYTHM_SPEND_TEXT = {}
+for n = 1, RHYTHM_MAX do
+	RHYTHM_SPEND_TEXT[n] = string.format("Rhythm released: +%d%% damage", n * RHYTHM_DMG_PCT)
+end
+
+local function rhythmFeed(player, text, duration)
+	local ns = getNotifyService()
+	if ns then ns.Feed(player, text, { key = RHYTHM_FEED_KEY, duration = duration }) end
+end
+
+--- Extra DamagePercent for this basic hit (consumes Rhythm on a new swing).
+local function rhythmBasicHit(player, swingId, now)
+	local r = rhythm[player]
+	if not r then return 0 end
+	if swingId ~= nil and r.swing == swingId then return r.swingPct end
+	local stacks = 0
+	for i = 1, RHYTHM_MAX do
+		if r[i] > now then stacks += 1 end
+		r[i] = 0
+	end
+	r.swing, r.swingPct = swingId, stacks * RHYTHM_DMG_PCT
+	if stacks > 0 then rhythmFeed(player, RHYTHM_SPEND_TEXT[stacks], 1.5) end
+	return r.swingPct
+end
 
 -- ═══════════════════════════════════════════════════════════
 -- RELENTLESS QUARRY
@@ -257,8 +316,10 @@ end
 
 --- Called once per direct hit (basic or skill) from
 --- DamageSystem.CalculateOutgoingDamage, BEFORE the damage lands.
+--- `options` is CalculateOutgoingDamage's options table (§AGX/X11, may be
+--- nil): a hit with no actionMultiplier / sourceSkill is a basic attack.
 --- Returns: extraDamagePercent, extraPenetration, extraCritChance, extraLifesteal
-function KeystoneRules.OutgoingHit(player, targetMob)
+function KeystoneRules.OutgoingHit(player, targetMob, options)
 	local dmgPct, pen, crit, lifesteal = 0, 0, 0, 0
 	if not player then return dmgPct, pen, crit, lifesteal end
 
@@ -298,7 +359,38 @@ function KeystoneRules.OutgoingHit(player, targetMob)
 		end
 	end
 
+	-- §AGX/X11: Spell Rhythm — basic attacks only (skills always carry an
+	-- actionMultiplier via DamageHandler's damageMultiplier move).
+	if options and (options.basicAttackId ~= nil
+		or (options.actionMultiplier == nil and options.sourceSkill == nil))
+		and hasRule(player, "SpellRhythm") then
+		dmgPct = dmgPct + rhythmBasicHit(player, options.basicAttackId, now)
+	end
+
 	return dmgPct, pen, crit, lifesteal
+end
+
+--- §AGX/X11: Spell Rhythm — called by SkillManager right before a skill's
+--- effect executes (instant, or at cast completion). +1 Rhythm, 5 s each,
+--- max 3 (a 4th cast refreshes the oldest stack).
+function KeystoneRules.OnSkillCast(player)
+	if not player or not hasRule(player, "SpellRhythm") then return end
+	local now = os.clock()
+	local r = rhythm[player]
+	if not r then
+		r = { 0, 0, 0, swing = nil, swingPct = 0 }
+		rhythm[player] = r
+	end
+	local oldest = 1
+	for i = 2, RHYTHM_MAX do
+		if r[i] < r[oldest] then oldest = i end
+	end
+	r[oldest] = now + RHYTHM_DURATION
+	local stacks = 0
+	for i = 1, RHYTHM_MAX do
+		if r[i] > now then stacks += 1 end
+	end
+	rhythmFeed(player, RHYTHM_GAIN_TEXT[stacks], RHYTHM_DURATION)
 end
 
 --- Called by CriticalSystem.ApplyCrit (damage AND heals share it).
@@ -487,6 +579,18 @@ function KeystoneRules.Start()
 			end
 		end
 	end)
+	-- §AGX/X11: Patron Saint / Fortune Favors party auras (own 1 s loop).
+	local auraMod = script.Parent:FindFirstChild("PartyAura")
+	if auraMod then
+		local ok, aura = pcall(require, auraMod)
+		if ok and aura and aura.Start then
+			aura.Start()
+		else
+			warn("[KeystoneRules] PartyAura failed to load:", aura)
+		end
+	else
+		warn("[KeystoneRules] PartyAura module missing; Patron Saint / Fortune Favors inert")
+	end
 end
 
 return KeystoneRules

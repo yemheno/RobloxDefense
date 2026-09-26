@@ -1252,23 +1252,24 @@ X10 turned off every consumable without a use handler. X10b adds the handler, so
 | Greater Mana Crystal | **+50** class resource | instant | **120** Merits | 5 | 25s | 10 | ✅ live |
 | Power Scroll | **+8%** DamagePercent | 45s | **150** Merits | 5 | 60s | 10 | ✅ live |
 | Ironskin Potion | **+12%** Armor ¹ | 45s | **150** Merits | 5 | 60s | 10 | ✅ live |
-| Swiftness Elixir | +10% move speed | 30s | 100 Merits | 3 | 45s | 10 | ⛔ off ² |
+| Swiftness Elixir | **+10%** MovementSpeed ² | 30s | 100 Merits | 3 | 45s | 10 | ✅ live |
 | Fortune Incense | **+15%** MeritBonus | 120s | **10** Essence | 8 | 120s | 5 | ✅ live |
 | Crit Oil | **+8** CritChance (points) | 45s | **120** Merits | 5 | 60s | 10 | ✅ live |
 | Respec Scroll | 1 free respec (talents or stats) | — | **25** Essence | 10 | — | 99 | ✅ used from the respec panels |
 | Respec Fragment | 4 auto-combine into 1 Respec Scroll | — | not sold | — | — | 99 | passive |
 
 ¹ Ironskin is +12% **Armor**. That is not +12% mitigation: armor mitigation is `100 / (100 + armor)`, so it gains less than 12%. While `PlayerDataConfig.BonusStats` has no `ArmorPercent` key, it's applied as a flat Armor bonus of 12% of the player's Armor at use time, excluding its own previous stack. If `ArmorPercent = 0` is added there, `GetTotalStat` applies it as a true percent and no code change is needed.
-² No player move-speed modifier exists. The `MovementSpeed` bonus stat has no reader, and WalkSpeed is owned by DeathSystem, MobAI and SkillManager (the X13 `BaseWalkSpeed` contract). The item stays hidden and unbuyable until one of those has a speed hook.
+² *§AGX/STATS (2026-09-26):* a timed `MovementSpeed` bonus (was the non-existent `MovementSpeedPercent` key). DeathSystem folds MovementSpeed into the X13 `BaseWalkSpeed` (natural 16 × (1 + MovementSpeed/100)), so MobAI slows and stuns still apply on top of it. It adds up with gear, talents, the Hunter innate (+8%) and keystones, and the total is capped at **+30%** (see §STATS caps). A Hunter with the innate +8% and the elixir moves at 16 × 1.18 = 18.9 studs/s.
 
 ### Use rules (server-side, `ConsumableEffects.Use`)
 
+- **Where:** *§AGX/STATS:* only in combat places (LaneDefense, HordeMode, CentralBoss). In the Lobby and SocialPlaza, Use replies "Use this in a run." and nothing is spent. Before this, Fortune Incense boosted the lobby's daily-login Merits. The gate is `DeathSystem.IsActive()`, because only combat places load DeathSystem.
 - **Validation:** the player must own the item, be alive (not knocked down or dead), and the run must not be paused (same gate as §AGX/X7). The item's per-player cooldown must also be clear.
 - **No waste:** heals are refused at full HP, restores are refused at full resource, and Ironskin is refused with 0 Armor. A refused use doesn't spend the item.
-- **Order:** checks → `InventoryManager.ConsumeItem` → effect. If the effect errors, the item is given back.
+- **Order:** checks → reply text built → `InventoryManager.ConsumeItem` → cooldown armed → effect. *§AGX/STATS:* the item is given back only if the effect errors **before anything was applied**. If it errors after the effect landed (for example, while scheduling the "wore off" notice), the item stays spent and the use succeeds. The cooldown is armed in every case, so a failing effect can't be used over and over for free.
 - **Cooldown:** one per item id, per player. Different items, like a Health Potion and a Greater Health Potion, don't share one.
 - **Stacking:** using the same buff again **refreshes** its duration and doesn't add a second copy. The BonusManager source is `timed_consumable_<id>`. A config can opt in to `stacks = true`, and none do. Buffs from *different* items, or from a card with the same stat, do add up.
-- **Heal over time:** the heal is split into 0.25s ticks. It stops if the player is knocked down, dies, leaves, or respawns into a new character.
+- **Heal over time:** the heal is split into 0.25s ticks. It stops if the player is knocked down, dies, leaves, or respawns into a new character. *§AGX/STATS:* no ticks land during the Horde vote pause, and the remaining ticks resume when it ends.
 - **Lifetime:** buffs last only for the current server and end when the player leaves or teleports (lobby → run included). No config sets `persistAcrossTeleport`, which isn't supported yet. Per-player threads live in a Janitor that's destroyed on `PlayerRemoving`.
 - **Currency:** everything costs Merits or Essence. Consumables are never sold for Robux (§48, X40).
 
@@ -2284,6 +2285,35 @@ Realised throughput, one target over 24 s (8× MT + 3× VB + 18 HoT ticks), vs p
 MAG investment still beats crit stacking in absolute healing, so the heal identity (MAG) is intact. Genesis full-heal now shows its number and grants heal XP.
 
 Gear `critDamage` rolls are percent and are now divided by 100 before they enter the CritDamage multiplier (`PlayerBonusSystem`, §AGX/BAL); before, one roll pinned the 1.80× cap.
+
+
+### §STATS caps (§AGX/STATS, 2026-09-26)
+
+These six bonus stats had writers (gear rolls, talents, cards, accessories, innates, consumables) and no reader. Each one now has a reader. Every reader clamps with `PlayerDataConfig.CapStat(stat, value)`, which uses `PlayerDataConfig.StatCaps`. Values are percent points.
+
+| Stat | Cap (min / max) | Read by | Effect |
+|---|---|---|---|
+| MovementSpeed | **−50 / +30** *(new)* | `DeathSystem` (`computeBaseWalkSpeed`, `RefreshMoveSpeed`) | `BaseWalkSpeed = NaturalWalkSpeed × (1 + MS/100)`. MobAI slows and stuns, the cast move-lock and knockdown all work from this base. It's recomputed when the bonus changes (`BonusManager.OnChanged`). |
+| AttackSpeed | **−50 / +75** *(existing)* | `ClassManager.GetAttackSpeed` → AttackHandler cooldown check + CombatConfig | attacks/s = weapon speed × (1 + AS/100). When it changes, the client gets a resend, and the server accepts the faster of the old and new cadence for 1 s. |
+| AoESize | **−50 / +50** *(new)* | `SkillManager.ExecuteSkill` (per-cast scaled view) → `BaseSkills.GetTargetsInShape` / `GetTargetsInCircle` | Skill `shapeParams` range, width and innerRadius are multiplied by (1 + AoE/100). Angle and cast distance (`maxRange`) are unchanged. |
+| CooldownReduction | **0 / 40** *(existing)* | `SkillManager.StartCooldown` | Cooldown × (1 − CDR/100). The reduced value is sent to the client's cooldown sweep. |
+| CastTimeReduction | **0 / 40** *(existing)* | `SkillManager.ExecuteSkill` → `StartCasting` | Cast time × (1 − CTR/100). The server end time and the client cast bar both use it. |
+| StatusResistance | **0 / 60** *(existing)* | `MobAI.ApplyEffectToPlayer` | Mob-applied Stun and Slow durations × (1 − SR/100). The slow strength is unchanged. |
+
+CDR, CTR and StatusResistance are derived stats. They are read through `GetTotalStat`, so the RSV/PRE class scaling counts along with the bonus. For example, every class starts with about 2–3% CDR (RSV 5 × 0.45–0.65) and 3.5–5% StatusResistance, and these values now have an effect for the first time. AoESize is read as a whole percent (rounded) so the per-cast views can be cached.
+
+### Keystone party auras (§AGX/X11) — StatsManager/PartyAura
+- Tick 1 s · range 30 studs (3D) · share = 50% of the OWNER's talent-sourced bonus
+- Patron Saint: HealingPower, HealingPercent, XPBonus, MeritBonus (price: −10% Damage)
+- Fortune Favors: XPBonus, MeritBonus (price: −6% Damage, −6% Skill Damage)
+- Party members only (owner excluded), alive, same party; different owners don't stack per stat: strongest wins. Source: BonusManager "aura_<UserId>".
+
+### Spell Rhythm (§AGX/X11)
+- +1 Rhythm per skill cast, 5 s per stack, max 3; the next basic attack uses up all stacks for +8% DamagePercent per stack (max +24%). No price.
+
+### Bonus talent points (§AGX/BTP) — +1 each, one-time, ledger-guarded, back-paid on login
+- boss_slayer T2 (5 bosses) · wave_master T2 (wave 25, Horde only) · veteran (L50) · mastery_cap50 T1
+- Total 4 ≈ 1% of the 400-point weapon-level budget.
 
 ---
 

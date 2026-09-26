@@ -66,6 +66,9 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Unyielding Advance / Last Bastion: less damage taken in a crowd and at high Determination; Taunt lasts longer above 70%.
 - [ ] Clarity Surge: no lifesteal; resource bumps on crit heals and crit skill hits. Shared Grace: overheal on a full-HP ally becomes a heal over time.
 - [ ] Genesis full heal shows its number. Verdant Bloom ticks are ~15% bigger. Healer feel check: does a Life Steward still feel strong?
+- [ ] Spell Rhythm: cast 1–3 skills then basic attack → +8/16/24% damage and "Rhythm N/3" feed lines; nothing after 5 s; every mob in one cleave gets it; the next swing doesn't.
+- [ ] Party auras (Team Test, 2 players): owner takes Patron Saint → the member within 30 studs gains half the owner's talent XP/Merit/Healing bonuses; out of range, death, respec or owner leaving clears it within ~1 s; the owner never gets their own.
+- [ ] Bonus talent points: reach level 50 → Veteran toast shows "+1 Talent Point" and the talent total goes up; rejoin gives no second point.
 - [ ] Equip gear with a crit-damage roll: Stats shows crit damage like 1.5 → 1.6, not pinned at 1.8.
 
 ## 2f. Review fixes (`§AGX/D-FIX`)

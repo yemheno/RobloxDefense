@@ -96,7 +96,7 @@
 - `[🚀]` **300-node talent tree redesign** — see
   `docs/TALENT_TREE_PROPOSAL.md`. Replaces the live 13-node tree. Pablo's
   intent: revisit when we do the dedicated talent revision pass.
-- `[P1]` **BonusTalentPoints dead branch** — `TalentManager` reads
+- ✅ *(Done 2026-09-26, §AGX/BTP: +1 point from boss_slayer T2, wave_master T2, veteran and mastery_cap50 T1; ledger-guarded, back-paid on login.)* **BonusTalentPoints dead branch** — `TalentManager` reads
   `data.Account.BonusTalentPoints` but nothing grants it. Either wire a
   real grant path (achievement rewards, daily streaks, horde victory) +
   add UI, or strip the field and add to `PlayerDataManager` deprecated-
@@ -851,7 +851,7 @@ New open items created by the agency-checks session (`git log
   `highestWave` achievements from Horde. Decide one meaning (probably
   "completed") and record `lastLevel - 1` on Horde, or keep separate
   per-mode stats.
-- 🟡 *(9/15 done, §AGX/X11: `StatsManager/KeystoneRules.lua`. Still coming soon: Arc Saturation and Eye of the Storm (need an AoESize reader), Calm Under Fire (CDR/StatusResist/AttackSpeed unread), Spell Rhythm (description contradicts itself), Patron Saint and Fortune Favors (need a party-aura system).)* **§AGX/X11-RULES — 15 talent keystones say "(coming soon)".**
+- 🟡 *(12/15 done, §AGX/X11: `StatsManager/KeystoneRules.lua` + `PartyAura.lua` (Spell Rhythm rewritten; Patron Saint / Fortune Favors as 30-stud party auras). Still coming soon: Arc Saturation, Eye of the Storm, Calm Under Fire (waiting on the §AGX/STATS readers).)* **§AGX/X11-RULES — 15 talent keystones say "(coming soon)".**
   Their penalties were neutralised (36cd218), but no rule is implemented:
   `TalentTreeConfig.IMPLEMENTED_RULES = {}` (`TalentTreeConfig.lua:735`,
   tagging at `:741-751`). Implement the rules one at a time and add each

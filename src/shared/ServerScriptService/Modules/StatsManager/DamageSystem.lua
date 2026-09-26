@@ -106,7 +106,7 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 	local ksDmgPct, ksPen, ksCrit, ksLifesteal = 0, 0, 0, 0
 	local KR = DamageSystem.KeystoneRules
 	if KR then
-		ksDmgPct, ksPen, ksCrit, ksLifesteal = KR.OutgoingHit(player, targetMob)
+		ksDmgPct, ksPen, ksCrit, ksLifesteal = KR.OutgoingHit(player, targetMob, options) -- §AGX/X11: Spell Rhythm needs options
 	end
 
 	-- Step 1: Base Attack

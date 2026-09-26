@@ -21,7 +21,12 @@
         land here without touching PlayerDataManager.
 
     Stats are merged into player save data under:
-      data.Account.Achievements = { stats = {...}, unlocked = {...} }
+      data.Account.Achievements = { stats = {...}, unlocked = {...},
+                                    talentPoints = {...} }
+      §AGX/BTP: talentPoints is the "TalentPoint" reward ledger,
+      { ["<achId>:<tier>"] = amount }. A tier's point is granted only when
+      its key is absent, so unlock + login backfill can never double-grant,
+      and tiers unlocked before the reward existed are paid on next load.
 
     Network events:
       Client → Server   "GetAchievements"     → replies with AchievementsData
@@ -62,6 +67,19 @@ local function getCharacterManager()
         _CharacterManager = (ok and type(cm) == "table") and cm or false
     end
     return _CharacterManager or nil
+end
+
+-- §AGX/BTP: lazy TalentManager ref for the "TalentPoint" reward (it stores
+-- data.Account.BonusTalentPoints and pushes TalentStateUpdate).
+local _TalentManager = nil
+local function getTalentManager()
+    if _TalentManager == nil then
+        local mod = Modules:FindFirstChild("TalentManager")
+        local ok, tm = false, nil
+        if mod then ok, tm = pcall(require, mod) end
+        _TalentManager = (ok and type(tm) == "table") and tm or false
+    end
+    return _TalentManager or nil
 end
 
 -- §AGX/X18b: per-player "Level" attribute connection (accountLevel stat).
@@ -326,8 +344,9 @@ function AchievementManager.SetupPlayer(player)
         if not account then
             warn("[AchievementManager] Could not load data for", player.Name)
             playerCache[player] = {
-                stats    = DefaultStats(),
-                unlocked = {},
+                stats        = DefaultStats(),
+                unlocked     = {},
+                talentPoints = {}, -- §AGX/BTP
             }
             return
         end
@@ -336,6 +355,8 @@ function AchievementManager.SetupPlayer(player)
         playerCache[player] = {
             stats    = saved and MergeDefaults(saved.stats    or DefaultStats()) or DefaultStats(),
             unlocked = saved and (saved.unlocked or {}) or {},
+            -- §AGX/BTP: TalentPoint reward ledger (see header).
+            talentPoints = (saved and type(saved.talentPoints) == "table") and saved.talentPoints or {},
         }
 
         -- §AGX/X18b: account level → stats.accountLevel, now and on every
@@ -363,6 +384,9 @@ function AchievementManager.SetupPlayer(player)
 
         -- §AGX/X18b: login catch-up (accountLevel is only known here).
         AchievementManager.Evaluate(player)
+        -- §AGX/BTP: pay TalentPoint rewards of tiers unlocked before the
+        -- reward existed (or whose grant failed). Ledger-guarded.
+        AchievementManager.BackfillTalentPoints(player)
         AchievementManager.PersistNow(player)
 
         print("[AchievementManager] Loaded data for", player.Name,
@@ -601,6 +625,47 @@ function AchievementManager.Evaluate(player)
     end
 end
 
+--- §AGX/BTP: grant one tier's "TalentPoint" reward unless its ledger key
+--- is already set. Returns true when points were granted now.
+local function grantTalentPoints(player, pdata, ach, tier, amount)
+    local key = ach.id .. ":" .. tostring(tier)
+    if pdata.talentPoints[key] then return false end
+    local ok = false
+    local tm = getTalentManager()
+    if tm and tm.GrantBonusPoints then
+        ok = tm.GrantBonusPoints(player, amount, "achievement:" .. key) == true
+    else
+        local data = PlayerDataManager.GetData(player)
+        if data and type(data.Account) == "table" then
+            data.Account.BonusTalentPoints = (tonumber(data.Account.BonusTalentPoints) or 0) + amount
+            ok = true
+        end
+    end
+    if ok then pdata.talentPoints[key] = amount end
+    return ok
+end
+
+--- §AGX/BTP: login backfill for TalentPoint rewards (see header).
+function AchievementManager.BackfillTalentPoints(player)
+    local pdata = playerCache[player]
+    if not pdata or not pdata.talentPoints then return end
+    for _, ach in ipairs(AchievementConfig.GetAll()) do
+        local reached = pdata.unlocked[ach.id] or 0
+        if type(reached) == "number" and reached > 0 and ach.rewards then
+            for tier = 1, math.min(reached, #ach.tiers) do
+                local list = ach.rewards[tier]
+                if list then
+                    for _, entry in ipairs(list) do
+                        if entry[1] == "TalentPoint" then
+                            grantTalentPoints(player, pdata, ach, tier, entry[2])
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
 function AchievementManager.Unlock(player, ach, tier)
     local pdata = playerCache[player]
     if not pdata then return end
@@ -651,6 +716,11 @@ function AchievementManager.Unlock(player, ach, tier)
                 if stored then
                     table.insert(rewardSummary, amount .. " Free Appearance Change" .. (amount > 1 and "s" or ""))
                 end
+            elseif rtype == "TalentPoint" then
+                -- §AGX/BTP: permanent data.Account.BonusTalentPoints, once per tier.
+                if grantTalentPoints(player, pdata, ach, tier, amount) then
+                    table.insert(rewardSummary, "+" .. amount .. " Talent Point" .. (amount > 1 and "s" or ""))
+                end
             end
         end
     end
@@ -683,8 +753,9 @@ function AchievementManager.PersistNow(player)
     local data = PlayerDataManager.GetData(player)
     if data and data.Account then
         data.Account.Achievements = {
-            stats    = pdata.stats,
-            unlocked = pdata.unlocked,
+            stats        = pdata.stats,
+            unlocked     = pdata.unlocked,
+            talentPoints = pdata.talentPoints, -- §AGX/BTP
         }
     end
 end

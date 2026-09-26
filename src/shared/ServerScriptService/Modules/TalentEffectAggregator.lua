@@ -21,6 +21,12 @@
 
     TalentEffectAggregator.HasRule(player, ruleName) → boolean
         Check if a keystone rule is active for this player.
+
+    TalentEffectAggregator.GetTalentBonus(player, stat) → number
+        §AGX/X11: this player's talent-SOURCED total for one stat (0 when
+        none). StatsManager/PartyAura shares 50% of it (Patron Saint,
+        Fortune Favors); reading the talent total, not data.Bonus, keeps
+        auras from chaining through other auras / gear / buffs.
 ]]
 
 local TalentEffectAggregator = {}
@@ -46,7 +52,7 @@ end
 
 -- ── §AGX/X11: unimplemented keystone penalties ─────────────
 -- IMPLEMENTED_RULES is the set of keystone rule names with gameplay code
--- behind them (§AGX/X11: 9 of 15 as of X11-RULES). The canonical table lives in
+-- behind them (§AGX/X11: 12 of 15 after the X11 balance pass). The canonical table lives in
 -- TalentTreeConfig (shared, so the "(coming soon)" UI tag derives from
 -- the same set); this is the same table, not a copy — add rule names
 -- there. A node whose rule is NOT implemented has its negative `value`
@@ -80,6 +86,19 @@ end
 -- ── Per-player rule set ───────────────────────────────────
 -- playerRules[player] = { [ruleName] = true, ... }
 local playerRules = {}
+
+-- §AGX/X11: per-player talent-source totals { [stat] = value }, the same
+-- numbers written to BonusManager's "talent" source (PartyAura reads them).
+local playerTotals = {}
+
+local function addTotal(player, stat, delta)
+	local t = playerTotals[player]
+	if not t then
+		t = {}
+		playerTotals[player] = t
+	end
+	t[stat] = (t[stat] or 0) + delta
+end
 
 -- ═══════════════════════════════════════════════════════════
 -- FULL REBUILD
@@ -116,6 +135,7 @@ function TalentEffectAggregator.Rebuild(player, allocatedSet)
 	end
 
 	playerRules[player] = rules
+	playerTotals[player] = bonusTable  -- §AGX/X11: BonusManager copies it, so keeping the ref is safe
 	getBonusManager().SetSourceBonuses(player, "talent", bonusTable)
 end
 
@@ -137,8 +157,10 @@ function TalentEffectAggregator.OnNodeAllocated(player, nodeDef, _allocatedSet)
 			-- §AGX/X11: penalty of a no-op keystone: never applied.
 		elseif eff.primary then
 			bm.ModifySourceBonus(player, "talent", "Bonus" .. eff.primary, eff.value)
+			addTotal(player, "Bonus" .. eff.primary, eff.value) -- §AGX/X11
 		elseif eff.value then
 			bm.ModifySourceBonus(player, "talent", eff.stat, eff.value)
+			addTotal(player, eff.stat, eff.value) -- §AGX/X11
 		end
 	end
 end
@@ -157,8 +179,10 @@ function TalentEffectAggregator.OnNodeRefunded(player, nodeDef, _allocatedSet)
 			-- §AGX/X11: was never applied, so nothing to remove.
 		elseif eff.primary then
 			bm.ModifySourceBonus(player, "talent", "Bonus" .. eff.primary, -eff.value)
+			addTotal(player, "Bonus" .. eff.primary, -eff.value) -- §AGX/X11
 		elseif eff.value then
 			bm.ModifySourceBonus(player, "talent", eff.stat, -eff.value)
+			addTotal(player, eff.stat, -eff.value) -- §AGX/X11
 		end
 	end
 end
@@ -173,6 +197,13 @@ function TalentEffectAggregator.HasRule(player, ruleName)
 	return rules ~= nil and rules[ruleName] == true
 end
 
+--- §AGX/X11: talent-sourced total for one stat (0 when none). Read by
+--- StatsManager/PartyAura once per second per keystone owner.
+function TalentEffectAggregator.GetTalentBonus(player, stat)
+	local t = playerTotals[player]
+	return (t and t[stat]) or 0
+end
+
 --- Get all active rules for a player → { [ruleName] = true }
 function TalentEffectAggregator.GetActiveRules(player)
 	return playerRules[player] or {}
@@ -184,6 +215,7 @@ end
 
 function TalentEffectAggregator.CleanupPlayer(player)
 	playerRules[player] = nil
+	playerTotals[player] = nil -- §AGX/X11
 end
 
 function TalentEffectAggregator.Init()

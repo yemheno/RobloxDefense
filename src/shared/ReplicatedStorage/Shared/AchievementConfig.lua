@@ -24,7 +24,15 @@
                 Supported types: "Merits", "Essence", "RespecToken",
                 "AppearanceChange" (§AGX/X18b: stores N free appearance
                 changes in CharacterData.freeAppearanceTokens; spent from
-                the menu, never auto-opens the creation screen)
+                the menu, never auto-opens the creation screen),
+                "TalentPoint" (§AGX/BTP: +N permanent BonusTalentPoints via
+                TalentManager.GrantBonusPoints; ledger-guarded per tier,
+                back-paid on login for tiers unlocked before it existed)
+
+    §AGX/BTP: TalentPoint milestones (one point each, 4 total, ≈1% of the
+    400-point weapon-level budget, so a gift, never a gate):
+      boss_slayer T2 (5 boss kills) · wave_master T2 (wave 25) ·
+      veteran (account level 50) · mastery_cap50 T1 (Iron Warden at ≤ L50)
 
     Exactly ONE of `stat` or `statFn` must be provided.
 
@@ -166,7 +174,7 @@ AchievementConfig.Achievements = {
 		tiers    = { 1, 5, 15, 40, 100, 250, 600, 1500, 3500, 8000 },
 		rewards  = {
 			{ {"Merits", 100} },
-			{ {"Merits", 350} },
+			{ {"Merits", 350},    {"TalentPoint", 1} },  -- §AGX/BTP
 			{ {"Merits", 1000} },
 			{ {"Merits", 3000},   {"Essence", 5} },
 			{ {"Merits", 8000},   {"Essence", 15} },
@@ -308,7 +316,7 @@ AchievementConfig.Achievements = {
 		tiers    = { 10, 25, 50, 75, 100, 125, 150, 175, 200, 250 },
 		rewards  = {
 			{ {"Merits", 50} },
-			{ {"Merits", 200} },
+			{ {"Merits", 200},    {"TalentPoint", 1} },  -- §AGX/BTP
 			{ {"Merits", 600} },
 			{ {"Merits", 1500},   {"Essence", 4} },
 			{ {"Merits", 4000},   {"Essence", 10} },
@@ -476,13 +484,13 @@ AchievementConfig.Achievements = {
 	{
 		id       = "veteran",
 		name     = "Veteran",
-		desc     = "Reach account level 50. Earns one free appearance change.",
+		desc     = "Reach account level 50. Earns one free appearance change and a talent point.", -- §AGX/BTP
 		icon     = "🎖",
 		category = "Dedication",
 		stat     = "accountLevel",
 		tiers    = { 50 },
 		rewards  = {
-			{ {"AppearanceChange", 1} },
+			{ {"AppearanceChange", 1}, {"TalentPoint", 1} },  -- §AGX/BTP
 		},
 	},
 
@@ -664,7 +672,7 @@ AchievementConfig.Achievements = {
 		statFn   = function(s) return s.capMasteryKills and (s.capMasteryKills.cap50 or 0) or 0 end,
 		tiers    = { 1, 3, 7, 15, 30, 60, 110, 185, 300, 500 },
 		rewards  = {
-			{ {"Merits", 500} },
+			{ {"Merits", 500},    {"TalentPoint", 1} },  -- §AGX/BTP
 			{ {"Merits", 2000},   {"Essence", 8} },
 			{ {"Merits", 6000},   {"Essence", 20} },
 			{ {"Merits", 15000},  {"Essence", 42} },

@@ -116,6 +116,9 @@ end
 
     BonusTalentPoints (data.Account) can be granted by events/quests
     and stack on top of the weapon-level budget.
+    §AGX/BTP: the live grant path is TalentManager.GrantBonusPoints, called
+    by AchievementManager for "TalentPoint" tier rewards (AchievementConfig).
+    AdminTesting.AddTalentPts still writes the field directly (debug only).
 ]]
 
 local TalentPointProvider = {}
@@ -398,6 +401,27 @@ function TalentManager.RespecAll(player)
 	getEffectAggregator().Rebuild(player, allocated)
 
 	return true, "OK"
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- BONUS POINTS  (§AGX/BTP)
+-- ═══════════════════════════════════════════════════════════
+
+--- §AGX/BTP: add `amount` permanent bonus talent points and push the new
+--- state (pointsTotal already includes BonusTalentPoints). NOT idempotent
+--- on its own: the caller guarantees one call per grant (AchievementManager
+--- keeps a per-tier ledger). Returns true when the points were stored.
+function TalentManager.GrantBonusPoints(player, amount, reason)
+	amount = math.floor(tonumber(amount) or 0)
+	if amount <= 0 then return false end
+	local data = getDataManager().GetData(player)
+	if not data or type(data.Account) ~= "table" then return false end
+	local cur = tonumber(data.Account.BonusTalentPoints) or 0
+	data.Account.BonusTalentPoints = cur + amount
+	print(string.format("[TalentManager] +%d bonus talent point(s) for %s (%s) → %d",
+		amount, player.Name, tostring(reason or "?"), cur + amount))
+	TalentManager.SendState(player)
+	return true
 end
 
 -- ═══════════════════════════════════════════════════════════

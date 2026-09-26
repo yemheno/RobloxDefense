@@ -374,7 +374,10 @@ N("sb_5_2","Quickened Circuit","notable",-1,34,1,{"spellblade"},{{primary="RSV",
 N("sb_5_3","Arc Engine",       "notable", 1,34,1,{"spellblade"},{{primary="RSV",value=2},{primary="MAG",value=2},{stat="SkillDamage",value=3},{stat="CooldownReduction",value=2}},"+2 RSV, +2 MAG, +3% Skill Damage, +2% CDR"),
 N("sb_5_4","Spell Rhythm",     "keystone", 3,34,1,{"spellblade"},
   {{stat="SpellRhythm",rule=true}},
-  "Casting a skill grants 1 Rhythm (5s). Basic attacks consume Rhythm for +8% Attack Speed and +8% Skill Damage on the next hit. Max 3 stacks."),
+  -- §AGX/X11: rewritten (delegated balance call). The old text gave "+8% Attack
+  -- Speed ... on the next hit", which can't apply to a hit already swinging.
+  -- No price: the node never had one (see KeystoneRules SPELL RHYTHM).
+  "Each skill cast grants 1 Rhythm (lasts 5 s, max 3 stacks). Your next basic attack consumes all Rhythm for +8% damage per stack."),
 
 -- ════════════════════════════════════════════════════════════
 -- 10. SANCTUARY  (VIT/RSV)
@@ -406,7 +409,7 @@ N("sc_5_2","Wellspring",   "notable",-34,-1,1,{"sanctuary"},{{stat="HealingPerce
 N("sc_5_3","Fellowship",   "notable",-34, 1,1,{"sanctuary"},{{stat="MovementSpeed",value=4},{stat="XPBonus",value=3},{stat="MeritBonus",value=4}},"+4% Movement Speed, +3% XP Bonus, +4% Merit Bonus"),
 N("sc_5_4","Patron Saint", "keystone",-34, 3,1,{"sanctuary"},
   {{stat="PatronSaint",rule=true},{stat="DamagePercent",value=-10}},
-  "Nearby party members gain 50% of your HealingPower, HealingPercent, XP Bonus, and Merit Bonus from talents. Your Damage -10%."),
+  "Party members within 30 studs gain 50% of your Healing Power, Healing %, XP Bonus and Merit Bonus from talents. Your Damage -10%."), -- §AGX/X11: range stated
 
 -- ════════════════════════════════════════════════════════════
 -- 11. BULWARK  (off Juggernaut)
@@ -568,7 +571,9 @@ N("fo_5_2","Veteran Trader", "notable",-50,-1,1,{"fortune"},{{stat="MeritBonus",
 N("fo_5_3","Untaxed Breath", "notable",-50, 1,1,{"fortune"},{{stat="MovementSpeed",value=2},{stat="DamageReduction",value=1},{stat="FlatHpRegen",value=1}},"+2% Movement Speed, +1% DR, +1 HP Regen/s"),
 N("fo_5_4","Fortune Favors", "keystone",-50, 3,1,{"fortune"},
   {{stat="FortuneFavors",rule=true},{stat="DamagePercent",value=-6},{stat="SkillDamage",value=-6}},
-  "You and nearby party members gain 50% of your XP Bonus and Merit Bonus from talents. Your Damage and Skill Damage each -6%."),
+  -- §AGX/X11: "You and" dropped: the aura (StatsManager/PartyAura) shares with
+  -- party members only; the owner already has 100% of their own bonus.
+  "Party members within 30 studs gain 50% of your XP Bonus and Merit Bonus from talents. Your Damage and Skill Damage each -6%."),
 
 } -- end TalentTreeConfig.Nodes
 
@@ -736,11 +741,11 @@ TalentTreeConfig.StartNodeId = "start"
 --   IMPLEMENTED_RULES = { Overwhelm = true }
 -- and its penalties + normal description come back automatically.
 -- Shared (client + server) so the UI tag and the server skip can't drift.
--- §AGX/X11: (X11-RULES) 9 of 15 implemented. Still "(coming soon)":
+-- §AGX/X11: (X11-RULES) 12 of 15 implemented. Still "(coming soon)":
 --   ArcSaturation, EyeOfTheStorm — need an AoESize consumer (none exists)
 --   CalmUnderFire — CDR / StatusResistance / AttackSpeed have no consumer
---   SpellRhythm   — description contradicts itself (attack speed "on the next hit")
---   PatronSaint, FortuneFavors — need a party-aura (stat sharing) system
+-- SpellRhythm (KeystoneRules), PatronSaint + FortuneFavors
+-- (StatsManager/PartyAura) landed with the X11 balance pass.
 -- Penalty stats restored with their rule: Overwhelm AttackSpeed −6 and
 -- Unyielding Advance MovementSpeed −8. NOTE both stats have no consumer yet
 -- (same for Last Bastion's low-Determination slow), so those prices are
@@ -755,6 +760,9 @@ TalentTreeConfig.IMPLEMENTED_RULES = {
 	LastBastion       = true,
 	RelentlessQuarry  = true,
 	SharedGrace       = true,
+	SpellRhythm       = true, -- §AGX/X11: KeystoneRules.OnSkillCast / OutgoingHit
+	PatronSaint       = true, -- §AGX/X11: StatsManager/PartyAura
+	FortuneFavors     = true, -- §AGX/X11: StatsManager/PartyAura
 }
 
 --- §AGX/X11: true when the node carries a keystone rule with no code yet.
