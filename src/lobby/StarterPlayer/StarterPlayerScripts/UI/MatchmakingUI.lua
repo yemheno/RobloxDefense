@@ -33,6 +33,10 @@ local C = {
 	white   = Color3.fromRGB(255, 255, 255),
 }
 
+-- §AGX/X14: if the server never teleports us (TeleportInitFailed without
+-- a follow-up, lost Error packet, …) "Launching" used to stick forever.
+local LAUNCH_TIMEOUT = 20
+
 local STATUS_COLORS = {
 	Queued     = C.accent,
 	Countdown  = C.yellow,
@@ -66,6 +70,24 @@ local function MatchmakingUI()
 		end
 	end, {})
 
+	-- §AGX/X14: client-side Launching timeout. Re-armed on every new
+	-- server update (each is a fresh table); cleared when state changes.
+	React.useEffect(function()
+		if not mmState or mmState.status ~= "Launching" then return end
+		local alive = true
+		local launched = mmState
+		task.delay(LAUNCH_TIMEOUT, function()
+			if not alive then return end
+			setMmState({
+				status     = "Error",
+				message    = "Teleport timed out.",
+				mode       = launched.mode,
+				difficulty = launched.difficulty,
+			})
+		end)
+		return function() alive = false end
+	end, { mmState })
+
 	if not mmState then
 		return nil
 	end
@@ -77,16 +99,28 @@ local function MatchmakingUI()
 	if status == "Queued" then
 		message = "Queued for " .. tostring(mmState.mode or "match") .. "…"
 	elseif status == "Countdown" then
-		message = tostring(mmState.mode or "Match") .. " starts in " .. tostring(mmState.seconds or "?") .. "…"
+		message = tostring(mmState.mode or "Match") .. " starts in " .. tostring(mmState.seconds or mmState.countdown or "?")  --[[ §AGX/X14: server sends `countdown` ]] .. "…"
 	elseif status == "Launching" then
 		message = "Launching " .. tostring(mmState.mode or "match") .. "!"
 	elseif status == "Cancelled" then
-		message = "Matchmaking cancelled."
+		-- §AGX/X15: show the server's reason (e.g. "Party changed — queue cancelled.")
+		message = mmState.message or "Matchmaking cancelled."
 	elseif status == "Error" then
 		message = mmState.message or "An error occurred."
 	end
 
 	local showCancel = (status == "Queued" or status == "Countdown")
+	-- §AGX/X14: errors that carry a mode came from a failed/timed-out
+	-- launch → offer Retry (re-queue same mode + tier). Every error gets a
+	-- Close button; before this an Error banner could never be dismissed.
+	local isError  = (status == "Error")
+	local showRetry = isError and mmState.mode ~= nil
+	local labelWidth = 0.92
+	if showRetry then
+		labelWidth = 0.44
+	elseif showCancel or isError then
+		labelWidth = 0.62
+	end
 
 	return React.createElement("Frame", {
 		Name                   = "MatchmakingUI",
@@ -103,7 +137,7 @@ local function MatchmakingUI()
 		-- Status text
 		statusLabel = React.createElement("TextLabel", {
 			Position               = UDim2.fromScale(0.04, 0),
-			Size                   = UDim2.fromScale(showCancel and 0.62 or 0.92, 1),
+			Size                   = UDim2.fromScale(labelWidth, 1),  -- §AGX/X14
 			BackgroundTransparency = 1,
 			Text                   = message,
 			TextColor3             = color,
@@ -125,6 +159,49 @@ local function MatchmakingUI()
 			TextScaled       = true,
 			[React.Event.Activated] = function()
 				NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
+			end,
+		}, {
+			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
+		}) or nil,
+
+		-- §AGX/X14: Retry after a failed / timed-out launch. The server
+		-- re-validates everything (leader, level, IsQueued/launching).
+		retryBtn = showRetry and React.createElement("TextButton", {
+			AnchorPoint      = Vector2.new(1, 0.5),
+			Position         = UDim2.fromScale(0.70, 0.5),
+			Size             = UDim2.fromScale(0.22, 0.65),
+			BackgroundColor3 = C.green,
+			BorderSizePixel  = 0,
+			Text             = "Retry",
+			TextColor3       = C.white,
+			Font             = Enum.Font.GothamBold,
+			TextScaled       = true,
+			[React.Event.Activated] = function()
+				NetworkManager.FireServer("MatchmakingRequest", {
+					action     = "Queue",
+					mode       = mmState.mode,
+					difficulty = mmState.difficulty,
+				})
+			end,
+		}, {
+			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
+		}) or nil,
+
+		-- §AGX/X14: Close dismisses the error banner (and clears any stale
+		-- queue entry server-side; Cancel is a no-op if there is none).
+		closeBtn = isError and React.createElement("TextButton", {
+			AnchorPoint      = Vector2.new(1, 0.5),
+			Position         = UDim2.fromScale(0.96, 0.5),
+			Size             = UDim2.fromScale(0.24, 0.65),
+			BackgroundColor3 = C.red,
+			BorderSizePixel  = 0,
+			Text             = "Close",
+			TextColor3       = C.white,
+			Font             = Enum.Font.GothamBold,
+			TextScaled       = true,
+			[React.Event.Activated] = function()
+				NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
+				setMmState(nil)
 			end,
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),

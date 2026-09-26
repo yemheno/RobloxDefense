@@ -58,6 +58,40 @@ local function getPlayerLevel(player)
 	return account and account.Level or 1
 end
 
+-- §AGX/X15: lazy getter (§5.3 pattern) — MatchmakingManager requires
+-- PartyManager in its Init, so an eager require here would be circular.
+local LobbyModules = script.Parent
+local _MatchmakingManager
+local function getMatchmaking()
+	if _MatchmakingManager ~= nil then
+		return _MatchmakingManager or nil
+	end
+	local mod = LobbyModules:FindFirstChild("MatchmakingManager")
+	if not mod then
+		_MatchmakingManager = false
+		warn("[PartyManager] MatchmakingManager not loaded.")
+		return nil
+	end
+	local ok, result = pcall(require, mod)
+	_MatchmakingManager = ok and result or false
+	return _MatchmakingManager or nil
+end
+
+local PARTY_CHANGED_REASON = "Party changed — queue cancelled."
+
+-- §AGX/X15: membership changed → cancel any queue entry / countdown the
+-- party is in. MatchmakingManager snapshots the member list at queue time
+-- (§L8), so without this a kicked player still teleports and a new joiner
+-- is left behind. CancelQueue is a no-op for players who aren't queued
+-- (and for launches already in flight), so calling it per member is safe.
+local function cancelQueueForPartyChange(players)
+	local mm = getMatchmaking()
+	if not mm or not mm.CancelQueue then return end
+	for _, p in ipairs(players) do
+		mm.CancelQueue(p, PARTY_CHANGED_REASON)
+	end
+end
+
 -- Expose constants for UI modules that want to mirror server timings.
 PartyManager.INVITE_TIMEOUT = INVITE_TIMEOUT
 
@@ -415,6 +449,10 @@ function PartyManager.AcceptInvite(player)
 		return false
 	end
 
+	-- §AGX/X15: cancel the queue BEFORE the insert so the notice goes to
+	-- the members the queue snapshot actually holds.
+	cancelQueueForPartyChange(party.members)
+
 	-- Join
 	pendingInvites[player] = nil
 	table.insert(party.members, player)
@@ -496,6 +534,9 @@ function PartyManager.DisbandParty(player)
 		return
 	end
 
+	-- §AGX/X15: disbanding a queued party cancels its queue.
+	cancelQueueForPartyChange(party.members)
+
 	-- Notify all members and clear their bonuses
 	for _, member in ipairs(party.members) do
 		playerParty[member] = nil
@@ -538,6 +579,10 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 function PartyManager.RemoveMember(party, player)
+	-- §AGX/X15: covers leave, kick and PlayerRemoving (all route here).
+	-- Runs before the removal so the removed player is notified too.
+	cancelQueueForPartyChange(party.members)
+
 	-- Remove from list
 	for i, member in ipairs(party.members) do
 		if member == player then

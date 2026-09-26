@@ -46,6 +46,16 @@ local nextMatchId = 1
 
 local COUNTDOWN_SECONDS = 5
 
+-- §AGX/X14: players whose match has launched but whose teleport hasn't
+-- resolved yet. A party is in here from LaunchMatch until it leaves the
+-- server (success), TeleportManager reports a failure, or the TTL lapses
+-- (TeleportInitFailed is not guaranteed to fire). IsQueued treats these
+-- players as busy so the leader can't double-queue during retry backoff.
+-- [player] = expiresAt (os.clock)
+local launching = {}
+local LAUNCH_CALL_TTL   = 60  -- covers TeleportManager's synchronous G4 retries
+local LAUNCH_SETTLE_TTL = 15  -- after TeleportAsync returns; < MatchmakingUI's 20 s client timeout
+
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
 -- ═══════════════════════════════════════════════════════════
@@ -236,13 +246,15 @@ function MatchmakingManager.QueueForMode(player, modeId, difficulty)
 	return true
 end
 
-function MatchmakingManager.CancelQueue(player)
+-- §AGX/X15: optional `reason` (e.g. "Party changed — queue cancelled.")
+-- so PartyManager can reuse this path when membership changes.
+function MatchmakingManager.CancelQueue(player, reason)
 	for queueId, entry in pairs(queue) do
 		for _, member in ipairs(entry.players) do
 			if member == player then
 				-- Remove the whole party entry from queue
 				for _, m in ipairs(entry.players) do
-					MatchmakingManager.SendUpdate(m, { status = "Cancelled" })
+					MatchmakingManager.SendUpdate(m, { status = "Cancelled", message = reason })
 				end
 				queue[queueId] = nil
 				return
@@ -256,7 +268,10 @@ function MatchmakingManager.CancelQueue(player)
 			if member == player then
 				match.cancelled = true
 				for _, m in ipairs(match.players) do
-					MatchmakingManager.SendUpdate(m, { status = "Cancelled", message = player.Name .. " cancelled." })
+					MatchmakingManager.SendUpdate(m, {
+						status  = "Cancelled",
+						message = reason or (player.Name .. " cancelled."),  -- §AGX/X15
+					})
 				end
 				activeCountdowns[matchId] = nil
 				return
@@ -399,23 +414,41 @@ function MatchmakingManager.LaunchMatch(players, modeId, difficulty)
 		return
 	end
 
+	-- §AGX/X14: mark the party busy for the whole launch window.
+	MatchmakingManager.MarkLaunching(validPlayers, LAUNCH_CALL_TTL)
+
 	-- Notify
 	for _, player in ipairs(validPlayers) do
 		MatchmakingManager.SendUpdate(player, {
-			status = "Launching",
-			mode   = modeId,
+			status     = "Launching",
+			mode       = modeId,
+			difficulty = difficulty,  -- §AGX/X14: lets the client re-queue the same tier after a timeout
 		})
 	end
 
 	-- Teleport party to target place via TeleportManager
 	if not TeleportManager then
 		warn("[MatchmakingManager] TeleportManager not available")
+		-- §AGX/X14: don't leave the party stuck in "Launching".
+		MatchmakingManager.ClearLaunching(validPlayers)
+		for _, player in ipairs(validPlayers) do
+			MatchmakingManager.SendUpdate(player, { status = "Error", message = "Teleport unavailable." })
+		end
 		return
 	end
-	TeleportManager.TeleportToGameMode(validPlayers, {
+	local launched = TeleportManager.TeleportToGameMode(validPlayers, {
 		modeId     = modeId,
 		difficulty = difficulty or 1,
 	})
+	-- §AGX/X14: synchronous failure → TeleportManager already sent the
+	-- Error; free the players. Accepted → keep them busy only for the
+	-- settle window (TeleportInitFailed / PlayerRemoving usually end it sooner).
+	if launched then
+		MatchmakingManager.MarkLaunching(validPlayers, LAUNCH_SETTLE_TTL)
+	else
+		MatchmakingManager.ClearLaunching(validPlayers)
+		return
+	end
 
 	print("[MatchmakingManager] Match launched —", modeId, "with", #validPlayers, "players")
 end
@@ -424,7 +457,34 @@ end
 -- HELPERS
 -- ═══════════════════════════════════════════════════════════
 
+-- §AGX/X14: launching-set helpers (TeleportManager calls these via its
+-- lazy getter; see the `launching` comment at the top of the file).
+function MatchmakingManager.MarkLaunching(players, ttl)
+	local expiresAt = os.clock() + (ttl or LAUNCH_SETTLE_TTL)
+	for _, player in ipairs(players) do
+		launching[player] = expiresAt
+	end
+end
+
+function MatchmakingManager.ClearLaunching(players)
+	for _, player in ipairs(players) do
+		launching[player] = nil
+	end
+end
+
+function MatchmakingManager.IsLaunching(player)
+	local expiresAt = launching[player]
+	if not expiresAt then return false end
+	if os.clock() >= expiresAt then
+		launching[player] = nil
+		return false
+	end
+	return true
+end
+
 function MatchmakingManager.IsQueued(player)
+	-- §AGX/X14: a launch in flight counts as busy.
+	if MatchmakingManager.IsLaunching(player) then return true end
 	for _, entry in pairs(queue) do
 		for _, member in ipairs(entry.players) do
 			if member == player then return true end
@@ -441,6 +501,8 @@ end
 function MatchmakingManager.HandlePlayerLeaving(player)
 	-- Auto-cancel any queue / countdown they are in
 	MatchmakingManager.CancelQueue(player)
+	-- §AGX/X14: leaving mid-launch is the normal teleport-success path.
+	launching[player] = nil
 end
 
 function MatchmakingManager.SendUpdate(player, payload)

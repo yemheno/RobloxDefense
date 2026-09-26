@@ -64,11 +64,87 @@ local PartyRequirements = require(SharedModules:WaitForChild("PartyRequirements"
 -- ── Dependencies (set in Init) ────────────────────────────
 local NetworkManager = nil
 
+-- §AGX/X14: per-player context for teleports that were ACCEPTED by
+-- TeleportAsync but can still fail later (TeleportInitFailed fires after
+-- the call returns). Holds what a one-shot retry needs to land the player
+-- in the SAME reserved server as the rest of the party.
+-- [player] = { placeId, teleportData, accessCode, modeId, difficulty, retried }
+local pendingLaunches = {}
+local INIT_FAIL_RETRY_DELAY = 2
+local TRANSIENT_TELEPORT_RESULTS = {
+	[Enum.TeleportResult.Failure] = true,
+	[Enum.TeleportResult.Flooded] = true,
+}
+
+-- §AGX/X14: final failure for one player — drop the launch context, clear
+-- MatchmakingManager's `launching` flag and tell the client so the UI
+-- leaves "Launching".
+local function failLaunch(player, reason)
+	local pending = pendingLaunches[player]
+	pendingLaunches[player] = nil
+	warn("[TeleportManager] Launch failed for", player.Name, ":", tostring(reason))
+	local mm = getMatchmaking()
+	if mm and mm.ClearLaunching then
+		mm.ClearLaunching({ player })
+	end
+	if player.Parent and NetworkManager then
+		NetworkManager.FireClient(player, "MatchmakingUpdate", {
+			status     = "Error",
+			message    = "Teleport failed. Please try again.",
+			mode       = pending and pending.modeId or nil,
+			difficulty = pending and pending.difficulty or nil,
+		})
+	end
+end
+
+local function onTeleportInitFailed(player, teleportResult, errorMessage, _placeId, _options)
+	local pending = pendingLaunches[player]
+	if not pending then return end  -- not a matchmaking launch
+	-- A duplicate request while the first is still in flight — not a failure.
+	if teleportResult == Enum.TeleportResult.IsTeleporting then return end
+
+	warn(string.format("[TeleportManager] TeleportInitFailed for %s: %s (%s)",
+		player.Name, tostring(teleportResult), tostring(errorMessage)))
+
+	-- §AGX/X14: retry ONCE for transient results, into the same reserved
+	-- server via its access code. Without an access code a retry would
+	-- reserve a fresh server and split the party, so we fail instead.
+	if TRANSIENT_TELEPORT_RESULTS[teleportResult] and not pending.retried and pending.accessCode then
+		pending.retried = true
+		local mm = getMatchmaking()
+		if mm and mm.MarkLaunching then
+			-- keep the player "busy" through the backoff + second attempt
+			mm.MarkLaunching({ player })
+		end
+		task.delay(INIT_FAIL_RETRY_DELAY, function()
+			if not player.Parent or pendingLaunches[player] ~= pending then return end
+			local retryOptions = Instance.new("TeleportOptions")
+			retryOptions.ReservedServerAccessCode = pending.accessCode
+			retryOptions:SetTeleportData(pending.teleportData)
+			local ok, err = pcall(function()
+				TeleportService:TeleportAsync(pending.placeId, { player }, retryOptions)
+			end)
+			if not ok then
+				failLaunch(player, err)
+			end
+		end)
+		return
+	end
+
+	failLaunch(player, errorMessage)
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
 -- ═══════════════════════════════════════════════════════════
 function TeleportManager.Init()
 	NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
+
+	-- §AGX/X14: failures AFTER TeleportAsync returns only surface here.
+	TeleportService.TeleportInitFailed:Connect(onTeleportInitFailed)
+	Players.PlayerRemoving:Connect(function(player)
+		pendingLaunches[player] = nil
+	end)
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -137,6 +213,9 @@ function TeleportManager.TeleportToGameMode(players, options)
 
 	-- Create teleport options
 	local teleportOptions = Instance.new("TeleportOptions")
+	-- §AGX/X4: one reserved server per match. Public servers let a second
+	-- party land in a run already in progress (or a finished one).
+	teleportOptions.ShouldReserveServer = true
 	teleportOptions:SetTeleportData(teleportData)
 
 	-- Attempt teleport.
@@ -144,10 +223,13 @@ function TeleportManager.TeleportToGameMode(players, options)
 	-- transient TeleportService hiccup used to permanently strand the
 	-- matched party in "Launching" after a single failed pcall.
 	local success, errorMsg = false, nil
+	local teleportResult = nil
 	local RETRIES, delaySec = 3, 1
 	for attempt = 1, RETRIES do
+		-- §AGX/X14: keep the TeleportAsyncResult — its access code lets a
+		-- TeleportInitFailed retry rejoin the same reserved server.
 		success, errorMsg = pcall(function()
-			TeleportService:TeleportAsync(placeId, players, teleportOptions)
+			teleportResult = TeleportService:TeleportAsync(placeId, players, teleportOptions)
 		end)
 		if success then break end
 		warn(string.format("[TeleportManager] Teleport attempt %d/%d failed: %s",
@@ -170,21 +252,38 @@ function TeleportManager.TeleportToGameMode(players, options)
 
 	if success then
 		print("[TeleportManager] Teleported", #players, "to", modeId, "(difficulty:", teleportData.difficulty, ")")
+		-- §AGX/X14: remember the launch so a later TeleportInitFailed can
+		-- retry / report it. Cleared on PlayerRemoving (= success) or failure.
+		local accessCode = teleportResult and teleportResult.ReservedServerAccessCode or nil
+		for _, player in ipairs(players) do
+			pendingLaunches[player] = {
+				placeId      = placeId,
+				teleportData = teleportData,
+				accessCode   = accessCode,
+				modeId       = modeId,
+				difficulty   = teleportData.difficulty,
+				retried      = false,
+			}
+		end
 	else
 		warn("[TeleportManager] Teleport failed after retries:", errorMsg)
-		-- §L9 fix: notify clients of the error AND cancel their queue
-		-- state. Without the cancel, MatchmakingManager still believes
-		-- they're "Launching" and they have no path back to the queue UI.
+		-- §L9 fix: notify clients of the error AND clear their matchmaking
+		-- state so they have a path back to the queue UI.
+		-- §AGX/X14: the old CancelQueue call was a no-op (the queue entry
+		-- and countdown are already gone by launch time); clear the
+		-- `launching` flag instead.
 		local mm = getMatchmaking()
+		if mm and mm.ClearLaunching then
+			mm.ClearLaunching(players)
+		end
 		for _, player in ipairs(players) do
 			if player and player.Parent then
 				NetworkManager.FireClient(player, "MatchmakingUpdate", {
-					status  = "Error",
-					message = "Teleport failed. Please try again.",
+					status     = "Error",
+					message    = "Teleport failed. Please try again.",
+					mode       = modeId,
+					difficulty = teleportData.difficulty,
 				})
-				if mm and mm.CancelQueue then
-					mm.CancelQueue(player)
-				end
 			end
 		end
 	end

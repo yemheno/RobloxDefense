@@ -167,6 +167,8 @@ local function HUD(props)
 	-- because hideStartButton suppresses the button there.
 	local gameState, setGameState = React.useState("Idle")
 	local countdown, setCountdown = React.useState(nil)
+	-- §AGX/X14: true after Defeat/Victory until a new run starts.
+	local runEnded, setRunEnded = React.useState(false)
 
 	-- Combo counter from HitTracker (nil = hidden)
 	local combo, setCombo = React.useState(nil)
@@ -257,6 +259,13 @@ local function HUD(props)
 		-- GameStateChanged: track lobby / defending etc. so we can show the Start button
 		local stateConn = NetworkManager.OnServerEvent("GameStateChanged", function(data)
 			setGameState(data.newState or "Lobby")
+			-- §AGX/X14: remember that a run ended so Return stays reachable
+			-- in the post-run Idle state if the return teleport fails.
+			if data.newState == "Defeat" or data.newState == "Victory" then
+				setRunEnded(true)
+			elseif data.newState == "Preparing" or data.newState == "Defending" then
+				setRunEnded(false)
+			end
 			if data.newState ~= "Preparing" then
 				setCountdown(nil)
 			end
@@ -820,11 +829,14 @@ local function HUD(props)
 		}) or nil,
 
 		-- ── Top-centre: "Return to Lobby" button (game over or victory) ────────
+		-- §AGX/X14: also shown in post-run Idle (runEnded) — if the return
+		-- teleport fails, players otherwise sit in Idle with no way out.
+		-- Nudged below the Idle Start button so the two don't overlap.
 		returnBtn = (not hideStartButton)
-			and (gameState == "Defeat" or gameState == "Victory")
+			and (gameState == "Defeat" or gameState == "Victory" or (gameState == "Idle" and runEnded))
 			and React.createElement("TextButton", {
 				AnchorPoint      = Vector2.new(0.5, 0),
-				Position         = UDim2.fromScale(0.5, 0.14),
+				Position         = UDim2.fromScale(0.5, gameState == "Idle" and 0.22 or 0.14),
 				Size             = UDim2.fromScale(0.16, 0.065),
 				BackgroundColor3 = Color3.fromRGB(160, 60, 60),
 				BorderSizePixel  = 0,
