@@ -48,6 +48,11 @@ local ActionBar     = require(SharedCommon:WaitForChild("ActionBar"))
 -- §AGX/UI-P4: Notify host (toasts / banner / feed) for every combat place;
 -- CentralBossApp wraps this component, so it is mounted here only.
 local Notify        = require(SharedCommon:WaitForChild("Notify"))
+-- §AGX/UI-P1v2: D2 scale layer + the one TooltipHost for every combat place
+-- (CentralBossApp wraps this component, so it is mounted here only).
+local Theme         = require(SharedCommon:WaitForChild("Theme"))
+local UIScaleRoot   = require(SharedCommon:WaitForChild("UIScaleRoot"))
+local Tooltip       = require(SharedCommon:WaitForChild("Tooltip"))
 
 local function CombatApp()
 	local showCharCreate, setShowCharCreate = React.useState(false)
@@ -206,6 +211,15 @@ local function CombatApp()
 
 		-- §AGX/UI-P4: Notify host (own ScreenGui above AppGui, below modals)
 		notifyHost = React.createElement(Notify.Host),
+
+		-- §AGX/UI-P1v2: UIScale layer at the tooltip band (above every
+		-- window); new-model UI renders inside a UIScaleRoot.Root.
+		tooltipLayer = React.createElement(UIScaleRoot.Root, {
+			name   = "TooltipLayer",
+			zIndex = Theme.Z.tooltip,
+		}, {
+			host = React.createElement(Tooltip.Host),
+		}),
 	})
 end
 

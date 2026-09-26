@@ -28,6 +28,10 @@ local EmoteWheel        = require(SocialPlazaUI:WaitForChild("EmoteWheel"))
 local AppearanceBar     = require(SocialPlazaUI:WaitForChild("AppearanceBar"))
 -- §AGX/UI-P4: Notify host (toasts / banner / feed)
 local Notify            = require(SharedUI:WaitForChild("Common"):WaitForChild("Notify"))
+-- §AGX/UI-P1v2: D2 scale layer + TooltipHost
+local Theme             = require(SharedUI:WaitForChild("Common"):WaitForChild("Theme"))
+local UIScaleRoot       = require(SharedUI:WaitForChild("Common"):WaitForChild("UIScaleRoot"))
+local Tooltip           = require(SharedUI:WaitForChild("Common"):WaitForChild("Tooltip"))
 
 local function SocialPlazaApp()
 	local showCharCreate, setShowCharCreate = React.useState(false)
@@ -69,6 +73,14 @@ local function SocialPlazaApp()
 
 		-- §AGX/UI-P4: Notify host (own ScreenGui above AppGui, below modals)
 		NotifyHost = React.createElement(Notify.Host),
+
+		-- §AGX/UI-P1v2: UIScale layer at the tooltip band (above every window)
+		TooltipLayer = React.createElement(UIScaleRoot.Root, {
+			name   = "TooltipLayer",
+			zIndex = Theme.Z.tooltip,
+		}, {
+			host = React.createElement(Tooltip.Host),
+		}),
 	})
 end
 

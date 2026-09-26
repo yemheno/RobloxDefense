@@ -12,9 +12,18 @@
         viewport = Vector2,
         short    = number,           -- min(viewport.X, viewport.Y)
         topbar   = number,           -- GuiService.TopbarInset.Height, else GetGuiInset().Y
-        tokens   = Theme.Layout[kind],
-        uiScale  = number,           -- tokens.uiScale (recorded, not applied: D2)
+        uiScale  = number,           -- §AGX/UI-P1v2: live D2 scale (Theme.Layout.UIScale)
+        design   = Theme.Layout[kind],            -- DESIGN px (phone scale)
+        tokens   = design x uiScale (screen px),  -- pre-scaled copy
     }
+    §AGX/UI-P1v2: WHICH TABLE TO READ (D2, never both):
+      • inside a UIScaleRoot (UI/Common/UIScaleRoot: the UIScale does the
+        multiply)                                     -> ff.design
+      • in your own ScreenGui with NO UIScale (SkillPad, ActionBar, Notify)
+                                                      -> ff.tokens
+    `tokens` keeps its old shape, so those three got the scale with no edit.
+    Numbers are rounded (>= 4 to integers, strokes to 0.5); arcAngles and
+    uiScale are never scaled. FormFactor.px(n) scales one design number.
     The snapshot is a fresh, read-only-by-convention table per change, so
     React can compare it by reference.
 
@@ -151,11 +160,56 @@ local current = nil
 local listeners = {}
 local nextListenerId = 1
 
+-- §AGX/UI-P1v2: D2 uiScale for a kind + viewport (Theme.Layout.UIScale).
+local function computeUIScale(kind, viewport)
+	local rule = Theme.Layout.UIScale and Theme.Layout.UIScale[kind]
+	if type(rule) == "number" then return rule end
+	if type(rule) == "table" then
+		local short = math.min(viewport.X, viewport.Y)
+		local s = math.clamp(short / rule.refShort, rule.min, rule.max)
+		return math.floor(s * 100 + 0.5) / 100
+	end
+	local tokens = Theme.Layout[kind]
+	return (tokens and tokens.uiScale) or 1
+end
+
+-- §AGX/UI-P1v2: keys that are not lengths and must never be multiplied.
+local NO_SCALE = { uiScale = true, arcAngles = true }
+
+local function scaleNumber(n, s)
+	local v = n * s
+	if math.abs(n) >= 4 then
+		return math.floor(v + 0.5)
+	end
+	return math.floor(v * 2 + 0.5) / 2   -- strokes: nearest 0.5
+end
+
+-- Deep copy of a DESIGN token table with every length multiplied by s.
+local function scaleTokens(t, s)
+	if s == 1 then return t end
+	local out = {}
+	for k, v in pairs(t) do
+		if NO_SCALE[k] then
+			out[k] = v
+		elseif type(v) == "number" then
+			out[k] = scaleNumber(v, s)
+		elseif typeof(v) == "Vector2" then
+			out[k] = Vector2.new(scaleNumber(v.X, s), scaleNumber(v.Y, s))
+		elseif type(v) == "table" then
+			out[k] = scaleTokens(v, s)
+		else
+			out[k] = v
+		end
+	end
+	return out
+end
+
 local function build()
 	local viewport = readViewport()
 	local input    = readInput()
 	local kind     = classify(viewport, input)
-	local tokens   = Theme.Layout[kind]
+	local design   = Theme.Layout[kind]
+	local uiScale  = computeUIScale(kind, viewport)
 	return {
 		kind     = kind,
 		input    = input,
@@ -163,14 +217,16 @@ local function build()
 		viewport = viewport,
 		short    = math.min(viewport.X, viewport.Y),
 		topbar   = readTopbar(),
-		tokens   = tokens,
-		uiScale  = tokens.uiScale or 1,
+		uiScale  = uiScale,
+		design   = design,                       -- §AGX/UI-P1v2: phone-scale px
+		tokens   = scaleTokens(design, uiScale), -- §AGX/UI-P1v2: screen px
 	}
 end
 
 local function differs(a, b)
 	return a.kind ~= b.kind or a.input ~= b.input
 		or a.viewport ~= b.viewport or a.topbar ~= b.topbar
+		or a.uiScale ~= b.uiScale
 end
 
 local function recompute()
@@ -228,6 +284,12 @@ end)
 
 function FormFactor.Get()
 	return current
+end
+
+--- §AGX/UI-P1v2: one DESIGN px number -> screen px at the current uiScale,
+--- for code outside a UIScaleRoot (same rounding as ff.tokens).
+function FormFactor.px(n)
+	return scaleNumber(n, current.uiScale)
 end
 
 --- Subscribe to changes. Returns a disconnect function.
