@@ -5,9 +5,16 @@
 > - `structure-and-flow.md` (ux-architect)
 > - `mobile.md` (ux-researcher + roblox-experience-designer)
 >
-> Status:
+> Status (updated 2026-09-26):
 > - **P0 bug fixes have landed** (commit 0c93026, tag `§AGX/UX-0n`).
-> - Everything else is a plan waiting on the decisions in §4.
+> - **Mobile blockers have landed**, using the recommended defaults for D4/D5/D6/D10/D11/D12. None of this needed D1–D3:
+>   - char creation, NPC ProximityPrompts, emote wheel (ff49c04)
+>   - SkillPad + PC ActionBar + FormFactor (610f9ac, cda89db)
+>   - talent tree touch (84e210d)
+>   - safe area/notch/landscape/44 px HUD (cfba00b)
+>   - legacy screens at 44 px (b38a8a3)
+> - **P4 Notify has landed** (dfefb37). The HUD/boss/vote migration is in progress.
+> - **Waiting on D1 (visual direction), D2 (sizing model) and D3 (menu surface):** the P1 token re-skin, the P3 shell and the P6 re-skin.
 > - Nothing has been tested in Studio yet.
 
 ---
