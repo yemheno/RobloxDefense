@@ -16,8 +16,8 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
--- §T0P2/G3: bounded waits + loud error. The old no-timeout WaitForChild
--- hung the server forever, silently, if the place structure was broken.
+-- §T0P2/G3: bounded waits + loud error, so a broken place structure fails
+-- loudly instead of hanging the server silently.
 local SharedModules = SSS:WaitForChild("Modules", 10)
     or error("[LobbyMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
 local LobbyFolder   = SSS:WaitForChild("Lobby", 10)
@@ -30,8 +30,7 @@ local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
 local ctx       = Boot.MakeContext("Lobby")
 local IsAdmin   = ctx.IsAdmin
 
--- §T0P2/X19: _G.LobbyMainRequireLoaded removed — write-only global,
--- zero consumers anywhere in src/.
+-- §T0P2/X19: no _G.LobbyMainRequireLoaded (it had zero consumers).
 
 -- ───────────────────────────────────────────────────────────
 -- CONFIG (pure data, no Init)
@@ -226,9 +225,8 @@ end
 -- PLAYER LIFECYCLE
 -- ───────────────────────────────────────────────────────────
 -- §T0-FOLLOWUP/L4: PlayerDataManager.Init already binds RemovePlayer to
--- PlayerRemoving. A second binding here used to fire after the first
--- cleared playerDataStore[player], which surfaced as a noisy
--- "in-memory data is nil" warn on every disconnect.
+-- PlayerRemoving. Don't bind a second one here: it would run after the
+-- first cleared playerDataStore[player] and warn on every disconnect.
 Lifecycle.WireOnPlayerReady(ctx)
 
 print(string.format("[Lobby] Place ready — %d modules loaded", (function()

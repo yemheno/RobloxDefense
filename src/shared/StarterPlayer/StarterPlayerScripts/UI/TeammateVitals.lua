@@ -9,10 +9,9 @@
     Server broadcasts "VitalsUpdate" every ~1 s with a table keyed by
     userId → { name, hp, maxHp, class, level }.
 
-    §AGX/UI-P6: Theme v2 re-skin. Rows = a sunken Panel with a Text name
-    line and the Common Bar (kind "hp"; turns vital.hpLow under 25 %,
-    was 30 %). The private palette and TextScaled labels are gone. Row
-    geometry still follows `rect` (§AGX/UI-P5) in design px.
+    §AGX/UI-P6: Rows = a sunken Panel with a Text name line and the Common
+    Bar (kind "hp"; turns vital.hpLow under 25 %). Row geometry follows
+    `rect` (§AGX/UI-P5) in design px.
 ]]
 
 local Players           = game:GetService("Players")
@@ -20,9 +19,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
 -- §AGX/UI-P1: M9 layout. Rows are fixed pixels, so the container height is
--- computed from the row count (it was a share of a 1080 px screen). The
--- HUD publishes where its regions end as client-local ReplicatedStorage
--- attributes (see HUD/Layout.lua, §AGX/UI-P1):
+-- computed from the row count. The HUD publishes where its regions end as
+-- client-local ReplicatedStorage attributes (see HUD/Layout):
 --   UI_TopLeftBottomPx / UI_TopLeftXPx: touch vitals stack (top-left) -> we
 --       stack under it (off the right-side skill arc and the ⋮ toggle).
 --   UI_TopRightBottomPx: bottom of the ☰/currency/killfeed block (desktop).
@@ -34,11 +32,11 @@ local React             = require(ReplicatedStorage.Packages.React)
 --   rect = { anchorPoint, position (UDim2), width, maxHeight, rowH, rowGap }
 -- in the units of the parent (design px inside the HUD's UIScaleRoot). The
 -- list grows away from the anchor and scrolls past maxHeight. Without
--- `rect` (standalone mount, Wave 1) nothing changes.
+-- `rect` (standalone mount) the attributes place it.
 local ROW_H         = 38
 local ROW_GAP       = 4
 local EDGE_GAP_PX   = 8
-local FALLBACK_TOP  = 120   -- the old fixed top, used before the HUD publishes
+local FALLBACK_TOP  = 120   -- fixed top, used before the HUD publishes
 local ATTRS = { "UI_TopLeftBottomPx", "UI_TopLeftXPx", "UI_TopRightBottomPx", "UI_NavToggleTopPx" }
 
 local function readLayout()
@@ -176,7 +174,7 @@ local function TeammateVitals(props)
 	-- Nothing to show when solo
 	if #teammates == 0 then
 		if game:GetService("RunService"):IsStudio() then
-			-- §AGX/UI-P6: Text (caption floor) instead of a TextScaled label.
+			-- §AGX/UI-P6: Text (caption floor), not TextScaled.
 			return e(Text, {
 				style       = "caption",
 				text        = "[TeammateVitals — waiting]",
@@ -237,7 +235,7 @@ local function TeammateVitals(props)
 	end
 
 	-- ScrollingFrame so a clipped list (tiny window, big party) still reaches
-	-- every teammate; with room to spare it looks like the old Frame.
+	-- every teammate.
 	return e("ScrollingFrame", {
 		AnchorPoint      = anchor,
 		Position         = pos,

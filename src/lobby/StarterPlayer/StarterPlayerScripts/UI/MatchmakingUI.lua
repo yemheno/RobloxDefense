@@ -20,8 +20,7 @@
     Notify's banner slot.
 
     §AGX/UI-P6: controls are Common/Button (Retry = the primary CTA) in
-    design px; Theme roles for the banner colours. Notify integration and
-    the state machine are unchanged.
+    design px; Theme roles for the banner colours.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -33,7 +32,7 @@ local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 local Notify         = require(Players.LocalPlayer:WaitForChild("PlayerScripts")
 	:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("Notify"))  -- §AGX/UI-P4
 
--- §AGX/UI-P6: Theme roles + Button (the private palette is gone).
+-- §AGX/UI-P6: Theme roles + Button.
 local Common      = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("Common")
 local Theme       = require(Common:WaitForChild("Theme"))
 local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
@@ -50,7 +49,7 @@ local e = React.createElement
 local R = Theme.Roles
 
 -- §AGX/X14: if the server never teleports us (TeleportInitFailed without
--- a follow-up, lost Error packet, …) "Launching" used to stick forever.
+-- a follow-up, lost Error packet, …) "Launching" must not stick forever.
 local LAUNCH_TIMEOUT = 20
 
 -- Banner colour per status (Notify.banner opts.color).
@@ -134,7 +133,7 @@ local function MatchmakingUI()
 	-- §AGX/UI-P4: the status line is a Notify banner. Sticky while this
 	-- state lasts (Launched/Cancelled still hide after 2 s, the Launching
 	-- timeout still turns into an Error); an empty message (e.g. the
-	-- "Launched" status, which used to show an empty bar) clears it.
+	-- "Launched" status) clears it.
 	React.useEffect(function()
 		if message ~= "" then
 			Notify.banner(message, {
@@ -151,7 +150,7 @@ local function MatchmakingUI()
 	local showCancel = mmState ~= nil and (status == "Queued" or status == "Countdown")
 	-- §AGX/X14: errors that carry a mode came from a failed/timed-out
 	-- launch → offer Retry (re-queue same mode + tier). Every error gets a
-	-- Close button; before this an Error banner could never be dismissed.
+	-- Close button, so an Error banner can always be dismissed.
 	local isError  = mmState ~= nil and (status == "Error")
 	local showRetry = isError and mmState.mode ~= nil
 
@@ -175,12 +174,12 @@ local function MatchmakingUI()
 		return nil  -- §AGX/UI-P4: nothing to press; the banner says it all
 	end
 
-	-- §AGX/UI-P4: one row of controls centred under the banner slot.
-	-- §AGX/UI-P6: the row is placed from Notify's SCREEN px (converted to
-	-- this tree's units); the Buttons inside are design px (44 tall) under
+	-- §AGX/UI-P4, §AGX/UI-P6, §AGX/UI-FIX: 8 — one row of controls centred
+	-- under the banner slot, placed from Notify's SCREEN px (converted to this
+	-- tree's units). The Buttons inside are design px (44 tall) under
 	-- UIScaleRoot.Local, so the row is 44 x uiScale tall like Notify's taps.
-	-- §AGX/UI-FIX: 8 — portalled into an unscaled ScreenGui: this tree's
-	-- units are screen px there (applied 1), and Local adds the full target.
+	-- Portalled into an unscaled ScreenGui: this tree's units are screen px
+	-- there (applied 1), and Local adds the full target.
 	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
 	local applied = playerGui and 1 or scale.applied
 	local rowH = Theme.Metrics.button.sm * (playerGui and scale.target or scale.remaining)

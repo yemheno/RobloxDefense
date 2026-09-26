@@ -1,6 +1,6 @@
 -- UI/Common/ActionBar.lua
 --[[
-    §AGX/UI-P2: desktop / console skill bar (UI_REVAMP §3 HUD regions,
+    §AGX/UI-P2: desktop / console skill bar (ARCHITECTURE.md#hud-regions,
     structure-and-flow.md §3.5 "action bar"). Mounted by CombatApp when
     FormFactor is NOT touch; the touch equivalent is SkillPad.
 
@@ -9,7 +9,7 @@
         (InputSystem.GetBindingDisplayName, re-read on rebind and on
         keyboard <-> gamepad switches).
       • Radial cooldown wipe + seconds per slot (SkillPad.CooldownWipe over
-        SkillInput.GetCooldown), so PC shows cooldowns for the first time.
+        SkillInput.GetCooldown).
       • Slots dim when unaffordable (D10).
       • Clicking a slot casts it through InputSystem.FireAction.
       • Hidden while a fullscreen menu is open, outside "Combat", and while

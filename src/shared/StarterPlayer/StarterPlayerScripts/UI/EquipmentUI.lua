@@ -60,7 +60,7 @@ local STAT_LABELS = {
 	bonusHealth      = "Bonus HP",
 	thorns           = "Thorns",
 	statusResistance = "Status Res.",
-	-- §AGX/D-FIX2: rolls that now map to real stats (were shown as raw keys)
+	-- §AGX/D-FIX2: rolls that map to real stats (labels, never raw keys)
 	healingPower     = "Healing Power",
 	healingPercent   = "Healing %",
 	lifeEnergy       = "Life Energy",

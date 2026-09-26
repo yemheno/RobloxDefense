@@ -36,7 +36,7 @@
         .resolvePlace(prop, entryCtx) / .useEntry()
         .useStack()                PanelStack.useState() or an empty default
         .topOf(state)              -> topId, topProps
-        .PanelStack() / .Registry()   nil-safe lazy requires (Agent A)
+            .PanelStack() / .Registry()   nil-safe lazy requires
 ]]
 
 local Players           = game:GetService("Players")
@@ -122,7 +122,7 @@ end
 local Model = {}
 MenuIcon.Model = Model
 
--- Lazy, nil-safe requires of Agent A's modules. The result (including "not
+-- Lazy, nil-safe requires of the Shell modules. The result (including "not
 -- there") is cached on first use so hook usage stays stable per session.
 local depCache = {}
 local function dep(name)

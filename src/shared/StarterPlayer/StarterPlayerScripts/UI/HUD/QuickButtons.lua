@@ -1,11 +1,10 @@
 -- UI/HUD/QuickButtons.lua
 --[[
-    §AGX/UI-P5: touch-only quick buttons (shell-spec §4.2), replacing the
-    Plaza AppearanceBar once W3 deletes it:
+    §AGX/UI-P5: touch-only quick buttons (shell-spec §4.2):
       Lobby  Emote            (1,-194,1,-24) phone / (1,-338,1,-24) tablet, 56
       Plaza  Emote 64 + Wardrobe 56 (mobile.md §2.5 AppearanceBar spots)
-    Each renders only when its callback is given (onEmote / onWardrobe), so
-    Wave 1 (no callbacks) shows nothing. Desktop / console use Q / DPadUp
+    Each renders only when its callback is given (onEmote / onWardrobe; the
+    Shell passes them outside combat). Desktop / console use Q / DPadUp
     and the rail instead.
     props: layout (L), onEmote, onWardrobe, visible
 ]]
@@ -18,7 +17,7 @@ local IconButton = require(Common:WaitForChild("IconButton"))
 
 local e = React.createElement
 
--- Theme.Icons.emote is Agent B's (B1); the glyph covers it until then.
+-- Theme.Icons.emote has no art yet (BACKLOG §T10/ICONS); the glyph covers it.
 local EMOTE_GLYPH    = "☺"
 local WARDROBE_GLYPH = "👕"
 

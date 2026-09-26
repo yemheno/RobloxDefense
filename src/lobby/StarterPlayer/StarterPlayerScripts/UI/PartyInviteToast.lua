@@ -11,10 +11,9 @@
 --   PartyRequest  { action = "AcceptInvite"  }
 --   PartyRequest  { action = "DeclineInvite" }
 --
--- §AGX/UI-P6: Theme v2 re-skin. Panel surface, Text, a Bar countdown,
--- Button Accept (the one primary CTA) / Decline, IconButton ✕; design px
--- under UIScaleRoot.Local (T19: every target >= 44). The private palette
--- and the hand-rolled buttons are gone. Same events, same timer.
+-- §AGX/UI-P6: Panel surface, Text, a Bar countdown, Button Accept (the
+-- one primary CTA) / Decline, IconButton ✕; design px under
+-- UIScaleRoot.Local (T19: every target >= 44).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)

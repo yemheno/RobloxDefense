@@ -329,7 +329,7 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 function PartyManager.InvitePlayer(leader, target)
-	-- §L3 fix: reject self-invite. Without this, a leader inviting
+	-- §L3: reject self-invite. Without this, a leader inviting
 	-- themselves overwrites their own pendingInvites slot and produces
 	-- inconsistent UI state.
 	if target == leader then
@@ -430,14 +430,12 @@ function PartyManager.AcceptInvite(player)
 		end
 	end
 
-	-- §L4 fix: re-check size and party-membership IMMEDIATELY before
-	-- insert. The earlier checks (line 369, line 364) happened before the
-	-- level-gap loop — a second concurrent AcceptInvite could pass those
-	-- earlier checks, run its own level-gap loop, and arrive here
-	-- interleaved. Without this guard both inserts succeed and the party
-	-- ends up at maxSize+1 (or more under heavy concurrency). We also
-	-- re-check playerParty[player] in case a duplicate client packet
-	-- already inserted them.
+	-- §L4: re-check size and party-membership IMMEDIATELY before insert.
+	-- The earlier checks ran before the level-gap loop, so a second
+	-- concurrent AcceptInvite could pass them too and arrive here
+	-- interleaved, leaving the party at maxSize+1 (or more). Also re-check
+	-- playerParty[player] in case a duplicate client packet already
+	-- inserted them.
 	if #party.members >= party.maxSize then
 		pendingInvites[player] = nil
 		PartyManager.SendError(player, "Party is full.")
@@ -550,7 +548,7 @@ function PartyManager.DisbandParty(player)
 end
 
 function PartyManager.PromoteLeader(leader, target)
-	-- §L5 fix: reject self-promote with a clear error.
+	-- §L5: reject self-promote with a clear error.
 	if target == leader then
 		PartyManager.SendError(leader, "You are already the leader.")
 		return

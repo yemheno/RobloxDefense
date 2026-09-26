@@ -10,15 +10,13 @@
         expanded  -> MenuRail (Desktop everywhere, Tablet Lobby/Plaza)
         collapsed -> one ☰ button (48; Console 64 chip with a ▾ DPad hint)
                      with the OR of every badge
-    Binds InputSystem "MenuToggle" (M / DPadDown; Agent A, A2) while mounted.
+    Binds InputSystem "MenuToggle" (M / DPadDown; A2) while mounted.
 
     MenuSurface.toggle(place?)    (also what ☰ and MenuToggle do)
         anything open -> PanelStack.closeAll("toggle")
         else Gamepad input -> open("menuRadial", { place })
              otherwise     -> open("menuSheet",  { place })
         (the rail itself stays visible when not collapsed)
-
-    Wave 1: nothing mounts this yet; Wave 2 (W1) passes it as railSlot.
 ]]
 
 local Players           = game:GetService("Players")

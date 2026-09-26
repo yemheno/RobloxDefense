@@ -61,7 +61,7 @@ local Registry = {}
 -- ═══════════════════════════════════════════════════════════
 
 -- PlayerScripts child that holds a place's own UI folder (Rojo:
--- PlayerScripts.<Folder>.UI, lobby.project.json:46-54 and the other four).
+-- PlayerScripts.<Folder>.UI, the StarterPlayerScripts block of each *.project.json).
 Registry.PlaceFolders = {
 	Lobby  = { "Lobby" },
 	Plaza  = { "SocialPlaza" },
@@ -84,9 +84,9 @@ Registry.Groups = {
 
 local ALL   = { Lobby = true, Plaza = true, Combat = true }
 local LOBBY = { Lobby = true }
--- §AGX/UI-P3 (W4): InventoryUI / LeaderboardUI / DailyLoginUI moved to the
--- shared UI folder (their managers load in every place), so the
--- NOT_LOBBY_YET lock is gone and those entries are available everywhere.
+-- §AGX/UI-P3: InventoryUI / LeaderboardUI / DailyLoginUI live in the shared
+-- UI folder (their managers load in every place), so those entries are
+-- available everywhere.
 
 -- ═══════════════════════════════════════════════════════════
 -- ENTRIES (§2.2)
@@ -109,7 +109,7 @@ E.leave = {
 	label = "nav_leave", icon = "leave", glyph = "EXIT",
 	places = { Plaza = true, Combat = true },
 	-- ❓ mid-run leave is allowed behind the confirm (server has no state gate).
-	-- Shell/ConfirmDialog (Agent B) owns the "leave" preset: its texts and
+	-- Shell/ConfirmDialog owns the "leave" preset: its texts and
 	-- the FireServer("RequestReturnToLobby") on confirm.
 	run = function(ctx)
 		ctx.PanelStack.open("leaveConfirm", { preset = "leave", place = ctx.place })
@@ -129,15 +129,15 @@ E.class = {
 				position = UDim2.fromScale(0.5, 0.5), anchorPoint = Vector2.new(0.5, 0.5),
 				zIndex = 7,
 			},
-			-- §AGX/UI-P6: no `dim` — the reference is an AppWindow now and
-			-- draws its own (non-dismissing, F6) backdrop; a second dim stacked.
+			-- §AGX/UI-P6: no `dim` — the reference is an AppWindow and draws its own
+			-- (non-dismissing, F6) backdrop; a second dim would stack.
 		},
 		default = { module = { folder = "UI", name = "ClassMenu" } },
 	},
 	places = ALL,
 	class = "panel", presentation = "windowed", phone = "sheet",
-	-- F6: D8 limits click-outside to small dialogs; CombatApp's reference
-	-- used to close on a backdrop click (CombatApp.lua:122-131). Deliberate.
+	-- F6: D8 limits click-outside to small dialogs, so the class reference
+	-- does not close on a backdrop click. Deliberate.
 	dismissOnBackdrop = false,
 }
 
@@ -174,7 +174,7 @@ E.wardrobe = {
 E.inventory = {
 	id = "inventory", kind = "panel", group = "character", order = 6,
 	label = "nav_inventory", icon = "inventory", glyph = "INV",
-	module = { folder = "UI", name = "InventoryUI" },   -- §AGX/UI-P3 (W4)
+	module = { folder = "UI", name = "InventoryUI" },   -- §AGX/UI-P3
 	places = ALL,
 	class = "panel", presentation = "windowed", phone = "sheet",
 }
@@ -225,7 +225,7 @@ E.achievements = {
 E.dailyLogin = {
 	id = "dailyLogin", kind = "panel", group = "progress", order = 2,
 	label = "nav_daily", icon = "dailyLogin", glyph = "DAILY",
-	module = { folder = "UI", name = "DailyLoginUI" },  -- §AGX/UI-P3 (W4)
+	module = { folder = "UI", name = "DailyLoginUI" },  -- §AGX/UI-P3
 	places = ALL,
 	class = "panel", presentation = "dialog", phone = "dialog",
 	dismissOnBackdrop = true,   -- D8: small dialog (DailyLoginUI, AppWindow variant "dialog")
@@ -235,7 +235,7 @@ E.dailyLogin = {
 E.leaderboard = {
 	id = "leaderboard", kind = "panel", group = "progress", order = 3,
 	label = "nav_leaderboard", icon = "leaderboard", glyph = "RANK",
-	module = { folder = "UI", name = "LeaderboardUI" },  -- §AGX/UI-P3 (W4)
+	module = { folder = "UI", name = "LeaderboardUI" },  -- §AGX/UI-P3
 	places = ALL,
 	class = "panel", presentation = "windowed", phone = "sheet", combatSide = true,
 }
@@ -329,7 +329,7 @@ E.characterCreation = {
 
 E.leaveConfirm = {
 	id = "leaveConfirm", kind = "modal", rail = false,
-	module = { folder = "Shell", name = "ConfirmDialog" },   -- Agent B (B7)
+	module = { folder = "Shell", name = "ConfirmDialog" },   -- B7
 	places = { Plaza = true, Combat = true }, class = "modal",
 	presentation = "dialog", phone = "dialog", dismissOnBackdrop = true,
 	closeProps = { "onClose", "onCancel" },

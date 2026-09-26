@@ -6,7 +6,7 @@
     should read colors/fonts from here instead of a per-file `C` table
     (the per-file tables are why menus drifted apart).
 
-    §AGX/UI-P1v2: D1 = HYBRID (docs/UI_REVAMP.md §4, visual-system.md §4.6).
+    §AGX/UI-P1v2: D1 = HYBRID (DESIGN_DECISIONS.md#ui-decisions UI-D1, visual-system.md §4.6).
       • Bodies and lists: "Clean Tactical" — dark navy surfaces, ONE body
         accent = electric blue (Roles.accent.secondary), flat fills.
       • Identity: "Speed Anime" orange (Roles.accent.primary) ONLY on
@@ -29,7 +29,7 @@
 
     ICONS: swap the rbxassetid placeholders below and every menu
     updates at once. Recommended workflow: generate icon sheets
-    (Claude Design or any image tool — see docs/TODO.md §T10/ICONS
+    (Claude Design or any image tool — see BACKLOG §T10/ICONS
     for the art brief), upload to Roblox as Decals, paste ids here.
     Source PNGs for every entry are in assets/ui/.
 ]]
@@ -66,7 +66,7 @@ Theme.Palette = {
 	purple400 = rgb(185, 120, 255),
 
 	grey100 = rgb(235, 235, 245),    -- text.primary   14.4:1 on navy700
-	grey300 = rgb(170, 172, 192),    -- text.secondary  7.8:1 on navy700 (was 140: 5.2)
+	grey300 = rgb(170, 172, 192),    -- text.secondary  7.8:1 on navy700
 	grey500 = rgb(128, 130, 150),    -- text.disabled   4.6:1 on navy700
 	white   = rgb(255, 255, 255),
 	ink     = rgb( 20,  14,   6),    -- text on bright fills (orange/blue/green/yellow)
@@ -82,7 +82,7 @@ local P = Theme.Palette
 --   state.dangerFill takes text.onDanger (white)                  5.5:1
 --   state.locked fill takes text.secondary                        5.2:1
 --   NEVER white/text.primary on orange, blue, green or yellow fills
---   (1.5–2.1:1: the old "white on the active button" failure).
+--   (1.5–2.1:1).
 Theme.Roles = {
 	surface = {
 		base   = P.navy900,   -- fullscreen base / sheets
@@ -155,8 +155,7 @@ end
 
 -- ── Legacy flat palette (aliases onto Roles) ─────────────────────────────────
 -- §AGX/UI-P1v2: every key that current files read is kept and aliased to its
--- v2 role. Visible changes: textDim 140 -> 170 (contrast), bad 225,70,70 ->
--- 235,90,90 (4.3 -> 5.1:1 as text). Everything else keeps its exact value.
+-- v2 role.
 Theme.Colors = {
 	-- Surfaces
 	bg          = R.surface.base,       -- fullscreen base
@@ -442,8 +441,8 @@ Theme.Currency = {
 	essence = { icon = "essence", glyph = Theme.Glyphs.essence, color = R.currency.essence, label = "Essence" },
 }
 
--- ── Layout tokens (§AGX/UI-P2, D2 model §AGX/UI-P1v2) ────────────────────────
--- §AGX/UI-P1v2: D2 = "fixed sizes at PHONE scale + one root UIScale per form
+-- ── Layout tokens (§AGX/UI-P2, §AGX/UI-P1v2) ─────────────────────────────────
+-- D2 = "fixed sizes at PHONE scale + one root UIScale per form
 -- factor". Every number below is a DESIGN px at phone scale. The final
 -- on-screen px = design x uiScale, applied ONCE, either by
 --   (a) a UIScale ancestor (UI/Common/UIScaleRoot)  -> read ff.design, or
@@ -451,11 +450,9 @@ Theme.Currency = {
 --       ScreenGui with no UIScale (SkillPad, ActionBar, Notify) -> ff.tokens.
 -- Never both (that is the double-scale bug).
 -- uiScale: Phone 1, Tablet 1.15, Desktop/Console computed from the viewport
--- by Theme.Layout.UIScale (1080p desktop = 1.333, which reproduces today's
--- desktop window header of 75 px from the 56 px design token).
--- The Tablet/Console tables used to hold already-scaled px (attack 112,
--- header 80, ...); they are now phone-scale, so after the UIScale they land
--- on the same mobile.md §2.2 sizes (98 x 1.15 = 113, 54 x 1.5 = 81).
+-- by Theme.Layout.UIScale (1080p desktop = 1.333: the 56 px design header
+-- renders at 75 px). After the UIScale, Tablet / Console land on the
+-- mobile.md §2.2 sizes (98 x 1.15 = 113, 54 x 1.5 = 81).
 Theme.Layout = {
 	-- Classification thresholds (mobile.md §2.1 / §2.7)
 	Breakpoints = {

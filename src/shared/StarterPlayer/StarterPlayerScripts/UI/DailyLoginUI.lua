@@ -1,4 +1,4 @@
--- shared/StarterPlayerScripts/UI/DailyLoginUI.lua  (§AGX/UI-P3 W4: moved from lobby/UI; its manager loads in every place)
+-- shared/StarterPlayerScripts/UI/DailyLoginUI.lua  (§AGX/UI-P3: shared, its manager loads in every place)
 --[[
     Minimal Daily Login panel.
     On mount: requests current status from server.
@@ -7,16 +7,15 @@
     Props:
       onClose  function
 
-    §AGX/UI-P6: Theme v2 re-skin. AppWindow variant "dialog" (the Registry
+    §AGX/UI-P6, §AGX/UI-FIX: R9: AppWindow variant "dialog" (the Registry
     presents it as a dialog: phone = bottom sheet). Body = design px inside
     UIScaleRoot.Local, one vertical list in a ScrollingFrame (the phone
-    sheet body is ~120 design px, so it scrolls instead of clipping).
-    §AGX/UI-FIX: R9: the Claim button is pinned below that list (outside
-    the ScrollingFrame), so it can never sit below the fold on a phone.
-    Rewards "100 Merits" / "2 Essence" render as CurrencyPills; the claim
-    is the ONE primary (orange) Button ("Already Claimed" = locked,
-    "…" while pending). Kept: useRequest, the §AGX/X47 calendar + spree
-    line, the 360x260 windowed floor (T7). Private palette gone.
+    sheet body is ~120 design px, so it scrolls instead of clipping). The
+    Claim button is pinned below that list (outside the ScrollingFrame), so
+    it can never sit below the fold on a phone. Currency rewards render as
+    CurrencyPills; the claim is the ONE primary (orange) Button ("Already
+    Claimed" = locked, "…" while pending). Also: useRequest, the §AGX/X47
+    calendar + spree line, the 360x260 windowed floor (T7).
 ]]
 
 local Players           = game:GetService("Players")
@@ -61,11 +60,10 @@ local function DailyLoginUI(props)
 
 	local status, setStatus       = React.useState(nil)
 
-	-- §AGX/UI-P4: the claim result is useRequest's inline state (was a
-	-- resultMsg + DailyLoginResult listener + 3 s clear timer). Same texts,
-	-- same 3 s hold, status re-fetched after every result. New: "Claiming…"
-	-- while pending, a timeout error after 4 s, and the button is inert
-	-- while a claim is in flight.
+	-- §AGX/UI-P4: the claim result is useRequest's inline state: 3 s hold,
+	-- status re-fetched after every result, "Claiming…" while pending, a
+	-- timeout error after 4 s, and the button is inert while a claim is in
+	-- flight.
 	local claimReq = useRequest("ClaimDailyLogin", {
 		reply       = "DailyLoginResult",
 		pendingText = "Claiming…",
@@ -144,7 +142,7 @@ local function DailyLoginUI(props)
 		})
 	end
 
-	-- §AGX/UI-P4: colour follows the request state (was always green).
+	-- §AGX/UI-P4: colour follows the request state.
 	local feedbackColor = (claimReq.state == "err") and "state.danger"
 		or (claimReq.state == "pending") and "text.secondary"
 		or "state.success"

@@ -1,7 +1,6 @@
 -- UI/SocialPanel.lua
 --
 -- Social window (Party + Guild tabs).
--- Replaces the old compact PartyPanel.
 --
 -- Layout (Party tab):
 --   Left  40% ─ Player Browser: all lobby players, friends sorted first,
@@ -13,7 +12,7 @@
 --   mount          → FireServer("PlayerListRequest"), FireServer("GetPlayerInfo")
 --   PlayerListUpdate → rebuild playerList state
 --   PartyUpdate      → rebuild party state
---   PartyError       → error toast (§AGX/UI-P6: via Notify, was an inline label)
+--   PartyError       → Notify error toast (§AGX/UI-P6)
 --
 -- Party actions fired to server via PartyRequest event:
 --   InviteById   { userId }
@@ -23,17 +22,14 @@
 --   KickMember   { userId }
 --   PromoteMember { userId }
 --
--- §AGX/UI-P6 (UI-FREE): §T10/U3 Theme v2 re-skin, the one screen the revamp
--- missed. Mounted by Shell/Registry entry "party" (module Lobby/SocialPanel,
--- windowed / phone sheet); props unchanged ({ onClose }). Chrome = AppWindow
--- variant "auto" (sheet on phone), body = design px inside UIScaleRoot.Local:
--- Common Tabs, two flat Panel columns of raised Panel rows, Common Buttons
--- (44 px, sm). "+ Create Party" is the screen's one primary (orange) CTA;
--- everything else is blue-accent secondary / danger. Removed: the private
--- `C` palette, the hand-rolled fullscreen backdrop, title, ✕ close button,
--- TabButton, every Scale-sized TextScaled label and the inline error toast
--- (PartyError now raises a Notify error toast, the one rejection channel).
--- Events, payloads, friend pre-fetch and sorting are unchanged.
+-- §AGX/UI-P6 (UI-FREE), §T10/U3: Theme v2. Mounted by Shell/Registry entry
+-- "party" (module Lobby/SocialPanel, windowed / phone sheet); props
+-- { onClose }. Chrome = AppWindow variant "auto" (sheet on phone), body =
+-- design px inside UIScaleRoot.Local: Common Tabs, two flat Panel columns
+-- of raised Panel rows, Common Buttons (44 px, sm). "+ Create Party" is the
+-- screen's one primary (orange) CTA; everything else is blue-accent
+-- secondary / danger. PartyError raises a Notify error toast (the one
+-- rejection channel).
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -74,7 +70,7 @@ local LEFT_FRAC  = 0.40
 local COL_GAP    = SP.md
 local BONUS_H    = 2 * Theme.Type.caption.lineHeight + 2 * SP.sm + SP.xxs
 
--- Roles for the social colours (were friend green / leader gold literals).
+-- Roles for the social colours.
 local FRIEND_COLOR = "state.success"     -- + the ♥ glyph, so colour is never the only cue
 local LEADER_COLOR = "rarity.legendary"  -- gold, + the ★ Leader tag
 
@@ -112,7 +108,7 @@ local function prefetchFriend(userId, onDone)
 	end)
 end
 
--- §AGX/UI-P6: shared scroll list (was two copies with Scale padding).
+-- §AGX/UI-P6: shared scroll list.
 local function ScrollList(props, rows)
 	rows.layout = e("UIListLayout", {
 		FillDirection = Enum.FillDirection.Vertical,
@@ -450,7 +446,7 @@ local function RightPanel(props)
 			Size                   = UDim2.new(1, 0, 1, rosterH),
 			BackgroundTransparency = 1,
 		}, {
-			-- Header row: "Party n / 5" + Leave / Disband (was a bottom bar)
+			-- Header row: "Party n / 5" + Leave / Disband
 			sizeLabel = e(Text, {
 				style = "heading",
 				text  = string.format("Party  %d / %d", memberCount, MAX_PARTY),
@@ -550,7 +546,7 @@ local function SocialPanel(props)
 		end)
 
 		-- §AGX/UI-P6: rejections go to the one feedback system (Notify
-		-- toast, 3.5 s, same key coalesces) instead of an inline label.
+		-- toast, 3.5 s, same key coalesces).
 		local connErr = NetworkManager.OnServerEvent("PartyError", function(data)
 			local msg = (type(data) == "table" and data.message) or tostring(data) or "Something went wrong."
 			Notify.toast("error", msg, { key = "party_error" })

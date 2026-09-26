@@ -10,13 +10,11 @@
     Every time the total increases the label "pulses" (scales up then
     back) to give tactile feedback.
 
-    §AGX/UI-P4: rendering moved onto Notify's feed (UI/Common/Notify.lua).
-    This module used to own a ScreenGui (DisplayOrder 5, IgnoreGuiInset,
-    bottom-right at 0.82 scale, i.e. under the phone SkillPad) plus its own
-    tween/timer bookkeeping. It now only keeps the running totals; one
-    feed line per currency (key "loot:<type>") is updated in place, and
-    the feed does the pulse, the 4 s lifetime and the fade. Public API
-    (Init / OnLootDrop) is unchanged for the place client loaders.
+    §AGX/UI-P4: rendering lives on Notify's feed (UI/Common/Notify.lua).
+    This module only keeps the running totals; one feed line per currency
+    (key "loot:<type>") is updated in place, and the feed does the pulse,
+    the 4 s lifetime and the fade. Public API: Init / OnLootDrop (place
+    client loaders).
 ]]
 
 local LootNotification = {}
@@ -50,7 +48,7 @@ local TYPE_CONFIG = {
 local DEFAULT_CFG = { icon = "[+]", color = Color3.fromRGB(255, 255, 255) }
 
 -- ── Per-type running totals ───────────────────────────────
--- §AGX/UI-P4: [typeName] = { total, lastAt } (was label/frame/tween state)
+-- §AGX/UI-P4: [typeName] = { total, lastAt }
 local trackers = {}
 
 -- ═══════════════════════════════════════════════════════════
@@ -58,7 +56,7 @@ local trackers = {}
 -- ═══════════════════════════════════════════════════════════
 
 function LootNotification.Init()
-	-- §AGX/UI-P4: no ScreenGui any more; Notify.Host renders the feed.
+	-- §AGX/UI-P4: no ScreenGui here; Notify.Host renders the feed.
 	NetworkManager.OnServerEvent("LootDrop", function(data)
 		LootNotification.OnLootDrop(data)
 	end)
@@ -71,8 +69,8 @@ end
 local function AddToTracker(typeName, amount)
 	local now = os.clock()
 	local tracker = trackers[typeName]
-	-- §AGX/UI-P4: same reset rule as before: a counter that has been
-	-- silent for DISPLAY_TIMEOUT has faded out, so it starts from 0.
+	-- §AGX/UI-P4: a counter that has been silent for DISPLAY_TIMEOUT has
+	-- faded out, so it starts from 0.
 	if not tracker or (now - tracker.lastAt) >= DISPLAY_TIMEOUT then
 		tracker = { total = 0, lastAt = now }
 		trackers[typeName] = tracker

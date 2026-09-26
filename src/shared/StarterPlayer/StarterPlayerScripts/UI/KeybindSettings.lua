@@ -1,7 +1,7 @@
 -- shared/StarterPlayerScripts/UI/KeybindSettings.lua
 --[[
     §AGX/UI-P6: UX-13. Thin wrapper: the ONE keybind editor is SettingsUI's
-    Controls tab. This module keeps its old contract so BattleClassUI's
+    Controls tab. This module keeps the contract so BattleClassUI's
     "Controls / Rebind Keys" (and the Registry "keybinds" entry) keep working:
 
         e(KeybindSettings, { onClose = fn })
@@ -60,7 +60,7 @@ local function KeybindSettings(props)
 
 	local panel = e(SettingsUI, {
 		initialTab = "Controls",
-		-- Above the BattleClassUI panel it is mounted beside (was ZIndex 100).
+		-- Above the BattleClassUI panel it is mounted beside.
 		zIndex     = Theme.Z.windowOver,
 		onClose    = function()
 			if onClose then onClose() end

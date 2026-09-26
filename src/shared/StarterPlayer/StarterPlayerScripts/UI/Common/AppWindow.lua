@@ -3,12 +3,12 @@
     AppWindow = the Window component  (§T10/U3; v2 §AGX/UI-P1v2)
     =============================================================
     THE window of the game. Every menu renders inside one of these; no menu
-    draws its own backdrop/title/close chrome anymore.
+    draws its own backdrop/title/close chrome.
 
       variant = "auto"        §AGX/UI-P1v2 (default): "sheet" on Phone,
                               "windowed" on Tablet / Desktop / Console.
       variant = "windowed"    dim backdrop + centered panel (default
-                              0.88 × 0.82). Unchanged behaviour.
+                              0.88 × 0.82).
       variant = "fullscreen"  fills the viewport. Big experiences
                               (Talent Tree, Character Creation).
       variant = "sheet"       §AGX/UI-P1v2: full-bleed dim, panel fills the
@@ -23,7 +23,7 @@
       Inside a PanelHost entry, PanelStack.usePresentation() ("windowed" |
       "side" | "sheet" | "fullscreen" | "dialog") OVERRIDES props.variant, so
       the registry, not each panel, decides how a panel is presented. Outside
-      PanelHost props.variant applies exactly as before.
+      PanelHost props.variant applies.
       • The backdrop and the Panel are Active (UX-06 / UX-14 click-through).
       • When the entry is dismissable (D8, registry dismissOnBackdrop) the
         backdrop is a TextButton calling props.onBackdrop or the stack's
@@ -36,7 +36,7 @@
       • `headerContent` slot on the right (counters, action buttons)
       • close = IconButton "danger", Layout[kind].close design px (>= 44)
       • body = your children, in a frame below the header (NOT scaled:
-        legacy Scale-based bodies render exactly as before)
+        legacy Scale-based bodies keep their layout)
 
     Sizing (§AGX/UI-P1v2, D2): the header height and everything inside it
     are fixed DESIGN px (Theme.Layout[kind].header / .close) and scaled by
@@ -53,9 +53,9 @@
       PanelStack.pushBackHandler (newest window wins; it holds the "UI"
       context while mounted, so B means Back, not Dash). onClose is then
       called with "back" (the ✕ passes "close"). Esc is NOT bound: the Roblox
-      system menu owns it (shell-spec §3.3; 2e3fdf5 bound Escape here).
+      system menu owns it (shell-spec §3.3).
 
-    Usage (unchanged contract):
+    Usage:
         local AppWindow = require(script.Parent:WaitForChild("Common"):WaitForChild("AppWindow"))
         return React.createElement(AppWindow, {
             variant = "windowed",
@@ -101,8 +101,7 @@ local R = Theme.Roles
 local S = Theme.Speed
 local MW = Theme.Metrics.window
 
--- §AGX/UI-P1v2: Theme.Layout[kind].header / .close replace the old
--- MIN_HEADER_PX / MIN_CLOSE_PX floors (48 / 44).
+-- §AGX/UI-P1v2: header / close sizes come from Theme.Layout[kind].header / .close.
 local TOPBAR_GAP_PX = MW.topGap   -- breathing room below Roblox's topbar
 local SIDE_WIDTH_SCALE = 0.46     -- §AGX/UI-P3: D7 side sheet
 local SIDE_MAX_W       = 640      -- design px
@@ -173,7 +172,7 @@ local function Chrome(props)
 			ZIndex           = zBase + 2,
 		}, {
 			grad = e("UIGradient", {
-				-- §AGX/UI-P1v2: orange -> deep orange (was orange -> blue, the
+				-- §AGX/UI-P1v2: orange -> deep orange; never orange -> blue (the
 				-- "orange header over blue body" clash of the audit).
 				Color = ColorSequence.new(R.accent.primary, R.accent.primaryDeep),
 			}),
@@ -206,7 +205,7 @@ local function Chrome(props)
 			BackgroundTransparency = 1,
 			ZIndex                 = zBase + 3,
 		}, motionLines),
-		-- Right-side content slot (counters, action buttons): 45 % wide as before
+		-- Right-side content slot (counters, action buttons): 45 % wide
 		slot = props.headerContent and e("Frame", {
 			AnchorPoint            = Vector2.new(1, 0.5),
 			Position               = UDim2.new(1, -(closeSize + CHROME_PAD), 0.5, 0),
@@ -266,8 +265,8 @@ local function AppWindow(props)
 		onBackdrop = props.onBackdrop
 	end
 
-	-- §AGX/UI-P1: measure the window root (fills its parent, normally the
-	-- whole AppGui). Hook is unconditional. §AGX/UI-P1v2: AbsoluteSize is
+	-- §AGX/UI-P1, §AGX/UI-P1v2: measure the window root (fills its parent,
+	-- normally the whole AppGui). Hook is unconditional. AbsoluteSize is
 	-- SCREEN px; divide by the applied scale to get this tree's Offset units.
 	local rootAbs, setRootAbs = React.useState(viewportSize)
 	local onRootSize = React.useCallback(function(rbx)
@@ -397,7 +396,7 @@ local function AppWindow(props)
 			BackgroundColor3       = R.surface.scrim,
 			BackgroundTransparency = Theme.Elevation.overlay.scrim,
 			BorderSizePixel        = 0,
-			Active                 = true,   -- §AGX/UI-P1v2: clicks no longer fall through to the HUD/world
+			Active                 = true,   -- §AGX/UI-P1v2: clicks never fall through to the HUD/world
 			ZIndex                 = zBase,
 			[React.Change.AbsoluteSize] = onRootSize,
 		}

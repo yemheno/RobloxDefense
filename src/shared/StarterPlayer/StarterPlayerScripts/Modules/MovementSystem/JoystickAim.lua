@@ -21,8 +21,8 @@
         size           : number    — joystick base diameter in pixels (default: 120)
 
     §AGX/UI-P2 (mobile.md §2.4 D11, M10):
-      • The aim follows the ONE touch that started it (was: any finger
-        lift, e.g. the movement thumb, cancelled the aim).
+      • The aim follows the ONE touch that started it (another finger
+        lifting, e.g. the movement thumb, never cancels it).
       • Twin-stick: when the touch SkillPad is mounted it calls
         SetExternalControl(true); this module's own stick is then hidden and
         the SkillPad's Attack button drives facing via AimDelta()/EndAim()
@@ -65,7 +65,7 @@ local active          = false  -- Start() ran on a touch device
 local externalCount   = 0      -- SkillPads currently driving the aim
 local activeListeners = {}
 local activeNextId    = 1
-local MIN_DRAG        = 10     -- px, same jitter floor as before
+local MIN_DRAG        = 10     -- px, jitter floor
 
 -- Config defaults
 local DEFAULT_SIZE     = 120
@@ -306,7 +306,7 @@ function JoystickAim.Start(config)
 end
 
 function JoystickAim.Stop()
-	-- §AGX/UI-P2: new connections from the M10 / twin-stick work.
+	-- §AGX/UI-P2: M10 / twin-stick connections.
 	if beganConnection then
 		beganConnection:Disconnect()
 		beganConnection = nil

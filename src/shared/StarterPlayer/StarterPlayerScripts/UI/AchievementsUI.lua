@@ -3,10 +3,8 @@
     Achievement browser + unlock toast.
     §AGX/UI-P6: the panel is an AppWindow (windowed; sheet on phone) with
     Tabs for the categories and Panel/Text/Bar cards, in design px inside
-    UIScaleRoot.Local. Removed: the private palette, the hand-rolled
-    backdrop/panel/header/✕ (+ hitArea), CategoryTab, the TextScaled labels
-    and the private progress bar. The Toast bridge to Notify is unchanged
-    (its colour now reads the same RGB from Theme.Roles.state.warning).
+    UIScaleRoot.Local. The Toast is a bridge to Notify (colour =
+    Theme.Roles.state.warning).
 
     Exports two React components:
       • AchievementsUI (default)  — fullscreen panel, opened manually
@@ -292,16 +290,14 @@ end
 -- ═══════════════════════════════════════════════════════════
 -- TOAST COMPONENT (always mounted, self-manages)
 -- ═══════════════════════════════════════════════════════════
--- §AGX/UI-P4: the unlock toast is now a Notify BANNER (top-centre, priority
--- "achievement", the lowest). It used to be its own CanvasGroup at
--- (0.5, 0.07) scale with a private queue, a 4 s timer and a fade tween,
--- i.e. under the topbar on phones and on top of the HUD wave banner.
--- This component only bridges AchievementClient.OnUnlocked → Notify and
--- renders nothing; the export name stays so the App roots are untouched.
--- Notify's banner queue replaces the private queue; staleAfter = inf so a
--- burst of unlocks is never dropped while a wave/boss banner is showing.
+-- §AGX/UI-P4: the unlock toast is a Notify BANNER (top-centre, priority
+-- "achievement", the lowest), so it never sits under the topbar on phones
+-- or on top of the HUD wave banner. This component only bridges
+-- AchievementClient.OnUnlocked → Notify and renders nothing; the export
+-- name stays so the App roots are untouched. staleAfter = inf so a burst
+-- of unlocks is never dropped while a wave/boss banner is showing.
 
-local TOAST_DURATION = 4.0   -- seconds visible (unchanged)
+local TOAST_DURATION = 4.0   -- seconds visible
 
 local Notify = require(script.Parent:WaitForChild("Common"):WaitForChild("Notify"))  -- §AGX/UI-P4
 
@@ -318,7 +314,7 @@ local function AchievementToast()
             Notify.banner("🏆  Achievement Unlocked!", {
                 subtitle   = subtitle,
                 priority   = "achievement",
-                color      = R.state.warning,   -- §AGX/UI-P6: = old toast_gold 255,200,60
+                color      = R.state.warning,   -- §AGX/UI-P6
                 duration   = TOAST_DURATION,
                 staleAfter = math.huge,
             })

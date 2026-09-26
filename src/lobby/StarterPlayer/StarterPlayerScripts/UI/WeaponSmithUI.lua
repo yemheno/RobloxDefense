@@ -9,11 +9,8 @@
     server-side WeaponSmithHandler can act.
     After each successful action, requests a Refresh to update displayed data.
 
-    §AGX/UI-P6: Theme v2 re-skin: AppWindow chrome, Panel columns, Button
-    actions, CurrencyPill costs, Text lines, design px under
-    UIScaleRoot.Local. The palette table and the hand-rolled backdrop /
-    panel / ✕ / ActionButton are gone. useExternal, useNpcDistanceClose,
-    closeSmith and every NPCResponse payload unchanged.
+    §AGX/UI-P6: AppWindow chrome, Panel columns, Button actions,
+    CurrencyPill costs, Text lines, design px under UIScaleRoot.Local.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -38,7 +35,7 @@ do
 	end
 end
 
--- §AGX/UI-P6: shared components (the private palette is gone).
+-- §AGX/UI-P6: shared components.
 local Common       = PlayerScripts_UI:WaitForChild("Common")
 local Theme        = require(Common:WaitForChild("Theme"))
 local AppWindow    = require(Common:WaitForChild("AppWindow"))
@@ -115,7 +112,7 @@ local function CostLine(props)
 	})
 end
 
--- §AGX/UI-P6: Button (was a hand-rolled 36 px ActionButton).
+-- §AGX/UI-P6: Button.
 local function ActionButton(props)
 	return e(Button, {
 		variant     = "secondary",
@@ -363,7 +360,7 @@ local SMITH_TITLES = {
 }
 
 local function WeaponSmithUI(props)
-	-- §AGX/UI-P3: onClose (PanelHost: close(id, "self")); was unused.
+	-- §AGX/UI-P3: onClose (PanelHost: close(id, "self")).
 	local onClose = (props and props.onClose) or function() end
 	local smithData, setSmithData = React.useState(nil)
 	local statusMsg, setStatusMsg = React.useState(nil)
@@ -465,7 +462,7 @@ local function WeaponSmithUI(props)
 	end)
 
 	-- §AGX/UI-P3: one close helper before the early return, so the stack
-	-- (useExternal) can call it; fires NPCResponse Close as the ✕ did.
+	-- (useExternal) can call it; fires NPCResponse Close.
 	local function closeSmith()
 		local current = smithDataRef.current
 		if current then
@@ -491,7 +488,7 @@ local function WeaponSmithUI(props)
 	local title     = (smithData.npcName or "Smith") .. " — " .. (SMITH_TITLES[smithType] or smithType)
 	local npcId     = smithData.npcId
 
-	-- §AGX/UI-P6: status colour by outcome (was always green).
+	-- §AGX/UI-P6: status colour by outcome.
 	local statusColor = "state.success"
 	if statusMsg then
 		if string.sub(statusMsg, 1, #"✘") == "✘" then

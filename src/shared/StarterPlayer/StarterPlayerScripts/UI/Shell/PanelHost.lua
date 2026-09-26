@@ -22,7 +22,7 @@
       presentation, dismissable, onBackdrop, top) read by AppWindow.
     • mount="always" externals (NPCDialog, ShopUI, WeaponSmithUI) are mounted
       here permanently when `externals ~= false`; they register themselves
-      through PanelStack.useExternal. Wave 2 removes them from LobbyApp.
+      through PanelStack.useExternal.
     • Attaches to PanelStack on mount (enables the UI context token, the B
       sink and UI_HudMode) and preloads every entry module of the place, so
       render never yields on a require.
@@ -192,8 +192,8 @@ local function PanelHost(props)
 		end
 	end, { place })
 
-	-- Late loads (a module that was missing at preload, e.g. another agent's
-	-- Shell file): load it off-render and re-render.
+	-- Late loads (a module that was missing at preload): load it off-render
+	-- and re-render.
 	-- §AGX/UI-FIX: 6 — a stacked record whose module still fails to load
 	-- (missing after Registry.load's wait, or require error) is force-removed:
 	-- an empty wrapper would keep the "UI" context and hudMode "none", with

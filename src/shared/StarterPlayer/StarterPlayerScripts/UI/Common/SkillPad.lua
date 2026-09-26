@@ -25,7 +25,7 @@
 
     Rendered through a portal into its own ScreenGui with
     ScreenInsets = DeviceSafeInsets, so the notch / home indicator are
-    respected before the P1 safe-area roots exist.
+    respected.
 
     §AGX/UI-P5 (C5): publishes its footprint as client-local
     ReplicatedStorage attributes (screen px, from the safe area's bottom /

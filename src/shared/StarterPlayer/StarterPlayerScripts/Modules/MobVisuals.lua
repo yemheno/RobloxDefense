@@ -58,9 +58,9 @@ function MobVisuals.Init()
 		MobVisuals.OnMobDeath(data)
 	end)
 
-	-- §AGX/X35: defense-line breach visual (was a server-side per-part
-	-- tween). The server freezes the mob, sets BreachStyle/BreachDuration
-	-- and tags it; we play the style on our local copy of the parts.
+	-- §AGX/X35: defense-line breach visual, client-side. The server freezes
+	-- the mob, sets BreachStyle/BreachDuration and tags it; we play the style
+	-- on our local copy of the parts.
 	CollectionService:GetInstanceAddedSignal(BREACH_TAG):Connect(function(mob)
 		MobVisuals.PlayBreachVisual(mob)
 	end)
@@ -432,10 +432,10 @@ end
 -- ═══════════════════════════════════════════════════════════
 -- §AGX/X35: DEFENSE-LINE BREACH (client-side dissolve)
 -- ═══════════════════════════════════════════════════════════
--- Ported from the old server DefenseAnimation styles. Local-only writes:
--- the server Destroys the mob after BreachDuration, which also ends the
--- tweens. "Explode" can't fling server-owned parts from the client, so it
--- breaks the joints locally and tweens each part outward instead.
+-- Local-only writes: the server Destroys the mob after BreachDuration,
+-- which also ends the tweens. "Explode" can't fling server-owned parts
+-- from the client, so it breaks the joints locally and tweens each part
+-- outward instead.
 
 function MobVisuals.PlayBreachVisual(mob)
 	if not mob or not mob.Parent or breachPlayed[mob] then return end

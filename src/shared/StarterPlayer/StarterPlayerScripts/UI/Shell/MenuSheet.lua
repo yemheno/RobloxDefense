@@ -274,7 +274,7 @@ local function MenuSheet(props)
 	local scrollRef = React.useRef(nil)
 	local firstRef = React.useRef(nil)
 
-	-- P7 hook: first focus for gamepad (no-op until PanelStack lands).
+	-- P7 hook: first focus for gamepad (no-op without PanelStack).
 	local PS = Model.PanelStack()
 	if PS and type(PS.useFirstFocus) == "function" then PS.useFirstFocus(firstRef) end
 

@@ -100,7 +100,7 @@ local function CosmeticCard(props)
 	local onSelect   = props.onSelect
 
 	-- §AGX/UI-P6: Card (rarity stroke, blue selected ring, EQUIPPED badge,
-	-- locked look) replaces the hand-rolled TextButton + overlays.
+	-- locked look).
 	local rarity = string.lower(cosmetic.rarity or "Common")
 	return e(Card, {
 		title       = cosmetic.name or cosmetic.id,

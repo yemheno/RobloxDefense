@@ -21,7 +21,6 @@
         multiply)                                     -> ff.design
       • in your own ScreenGui with NO UIScale (SkillPad, ActionBar, Notify)
                                                       -> ff.tokens
-    `tokens` keeps its old shape, so those three got the scale with no edit.
     Numbers are rounded (>= 4 to integers, strokes to 0.5); arcAngles and
     uiScale are never scaled. FormFactor.px(n) scales one design number.
     The snapshot is a fresh, read-only-by-convention table per change, so

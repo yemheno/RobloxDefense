@@ -1,7 +1,6 @@
 -- UI/HUD/RunState.lua
 --[[
-    §AGX/UI-P5: run state as a MODULE-LEVEL store (shell-spec §4.1), moved
-    out of HUD.lua (:253-273, 449-485, 488-497, 526-572, 596). The server
+    §AGX/UI-P5: run state as a MODULE-LEVEL store (shell-spec §4.1). The server
     events are subscribed ONCE, at first require, like Notify; a HUD that
     remounts (or is hidden) keeps gameState / runEnded / betweenWaves, which
     makes UX-02 structural instead of "never unmount the HUD".
@@ -19,7 +18,7 @@
                       while the server is Idle behind a closed start gate
                       (hides Start until the gate opens — §AGX/WC)
 
-    Also owns the Notify output that used to live in the HUD effect:
+    Also owns the HUD's Notify output:
     wave / run-state banners, the killfeed line and the combo summary
     toast (§AGX/UI-P4), and drains MobDeath (queue exhaustion).
 

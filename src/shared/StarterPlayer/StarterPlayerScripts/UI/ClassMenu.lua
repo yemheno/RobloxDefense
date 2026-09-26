@@ -19,15 +19,13 @@ local Modules        = script.Parent.Parent:WaitForChild("Modules")
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local Locale         = require(Modules:WaitForChild("Locale"))
 local ClassCatalog   = require(Modules:WaitForChild("ClassCatalog"))
--- §AGX/UI-P6: shared components (Theme v2 re-skin, D1 Hybrid / D2).
+-- §AGX/UI-P6: shared components (Theme v2, D1 Hybrid / D2).
 --   • Body = design px inside UIScaleRoot.Local, one vertical ScrollingFrame;
 --     1-4 category columns per row depending on the body width (phone sheet
---     wraps to 2+2 or 1 column instead of squeezing four 0.244-scale columns).
+--     wraps to 2+2 or 1 column instead of squeezing four).
 --   • Class slot = Card (selected = active class, locked = level-locked) with
---     a full-width Button footer: success = active (ink on green, fixes the
---     2.8:1 white-on-green V10), secondary = switch, locked = level / match.
---   • Removed: the private palette C (incl. the dead close_* keys), the
---     SLOT_* scale constants, TextScaled labels, the fromRGB toast.
+--     a full-width Button footer: success = active (ink on green; never
+--     white on green, 2.8:1, V10), secondary = switch, locked = level / match.
 local Common        = script.Parent:WaitForChild("Common")
 local AppWindow     = require(Common:WaitForChild("AppWindow"))  -- §T10/U3
 local Theme         = require(Common:WaitForChild("Theme"))
@@ -80,7 +78,7 @@ local function ClassSlot(props)
 		or (isPending          and "…")
 		or Locale.Get("class_switch")
 
-	-- §AGX/UI-P6: one Button per state (was one TextButton with 3 fills).
+	-- §AGX/UI-P6: one Button per state.
 	local variant = (state == "active" and "success")
 		or ((state == "locked" or (readOnly and state == "available")) and "locked")
 		or "secondary"
@@ -278,9 +276,8 @@ local function ClassMenu(props)
 		})
 	end
 
-	-- §T10/U3: chrome (backdrop, panel, title, close) is owned by
-	-- AppWindow now — this table is only the window BODY.
-	-- §AGX/UI-P6: design px from here down.
+	-- §T10/U3, §AGX/UI-P6: chrome (backdrop, panel, title, close) is owned
+	-- by AppWindow; this table is only the window BODY, in design px.
 	local panelChildren = {
 		scroll = e("ScrollingFrame", {
 			Name                   = "Scroll",

@@ -6,13 +6,12 @@
     On confirm it fires "CharacterCreationComplete" to the server.
     Dismisses itself when it receives "CharacterCreationSaved".
 
-    §AGX/UI-P6: Theme v2 re-skin. Not closable (Registry closable=false), so
-    it keeps its own non-dismissible surface instead of AppWindow (which
-    always draws a ✕). The §AGX/UI-P2 phone layout and defaults are kept:
-    two columns inside the safe area, capped at 620x440 design px, 48 px
-    gender tiles, 64 px swatches, Confirm pinned to the bottom. Now in design
-    px under UIScaleRoot.Local. Selected state = navy650 fill + blue focus
-    ring + primary text (+ ✓ on gender) (was blue fill + white text, 1.7:1).
+    §AGX/UI-P2, §AGX/UI-P6: not closable (Registry closable=false), so it
+    keeps its own non-dismissible surface instead of AppWindow (which always
+    draws a ✕). Phone layout: two columns inside the safe area, capped at
+    620x440 design px (UIScaleRoot.Local), 48 px gender tiles, 64 px swatches,
+    Confirm pinned to the bottom. Selected state = navy650 fill + blue focus
+    ring + primary text (+ ✓ on gender); never white on blue (1.7:1).
 
     Props:
         onDismiss  function()  -- called after the server confirms the save
@@ -23,7 +22,7 @@ local GuiService        = game:GetService("GuiService")
 local React        = require(ReplicatedStorage.Packages.React)
 local NetworkManager = require(script.Parent.Parent:WaitForChild("Modules"):WaitForChild("NetworkManager"))
 
--- §AGX/UI-P6: Theme roles + shared components (the palette table is gone).
+-- §AGX/UI-P6: Theme roles + shared components.
 local Common      = script.Parent:WaitForChild("Common")
 local Theme       = require(Common:WaitForChild("Theme"))
 local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
@@ -35,7 +34,7 @@ local Panel       = require(Common:WaitForChild("Panel"))
 local e  = React.createElement
 local R  = Theme.Roles
 
--- §AGX/UI-P2: M12 — touch-size tokens, now DESIGN px (§AGX/UI-P6).
+-- §AGX/UI-P2, §AGX/UI-P6: M12 — touch-size tokens, in DESIGN px.
 local TOUCH_H    = Theme.Metrics.button.md   -- 48
 local SWATCH     = 64   -- grid cell (>= 48 px, room for a 12 px name)
 local GAP        = Theme.Space.sm            -- 8
@@ -68,9 +67,9 @@ local function SkinColorSwatch(props)
 	local entry      = props.entry
 	local isSelected = entry.id == props.selected
 
-	-- §AGX/UI-P2: M12 — size comes from the parent UIGridLayout CellSize.
-	-- §AGX/UI-P6: selected = Card-style selection (navy650 + focus ring),
-	-- label text.primary on navy650 (>= 12:1); unselected text.secondary.
+	-- §AGX/UI-P2, §AGX/UI-P6: M12 — size comes from the parent UIGridLayout
+	-- CellSize. Selected = Card-style selection (navy650 + focus ring), label
+	-- text.primary on navy650 (>= 12:1); unselected text.secondary.
 	return e("TextButton", {
 		Name             = entry.id,
 		LayoutOrder      = props.order,
@@ -112,8 +111,8 @@ end
 local function GenderButton(props)
 	local label = props.gender == "Male" and "\226\153\130  Male" or "\226\153\128  Female"
 	local isSelected = props.gender == props.selected
-	-- §AGX/UI-P2: M12 — half the column wide and >= 48 px tall.
-	-- §AGX/UI-P6: a tappable Card (selected = focus ring), fixed 48 px row.
+	-- §AGX/UI-P2, §AGX/UI-P6: M12 — a tappable Card (selected = focus ring),
+	-- half the column wide, fixed 48 px row.
 	return e("Frame", {
 		Name                   = props.gender,
 		Size                   = UDim2.new(0.5, -GAP / 2, 0, TOUCH_H),
@@ -137,7 +136,7 @@ local function CharacterCreation(props)
 	local scale = UIScaleRoot.useUIScale()
 
 	-- §AGX/UI-P2: M12 — defaults so Confirm works on the first tap (the
-	-- "choose first" validation below is kept for safety).
+	-- "choose first" validation below stays for safety).
 	local selectedGender,    setGender    = React.useState("Male")
 	local selectedSkinColor, setSkinColor = React.useState(SKIN_COLORS[1].id)
 	local errorMsg,          setError     = React.useState(nil)
@@ -164,7 +163,7 @@ local function CharacterCreation(props)
 			return
 		end
 		setError(nil)
-		-- Payload unchanged (server validates in CharacterManager).
+		-- Server validates the payload in CharacterManager.
 		NetworkManager.FireServer("CharacterCreationComplete", {
 			gender    = selectedGender,
 			preset    = 1,
@@ -201,9 +200,9 @@ local function CharacterCreation(props)
 		})
 	end
 
-	-- §AGX/UI-P2: M12 — keep the panel inside the safe area: the ScreenGuis
-	-- use IgnoreGuiInset=true, so pad the top by the CoreGui topbar inset.
-	-- §AGX/UI-P6: the inset is SCREEN px; convert to this layer's design px.
+	-- §AGX/UI-P2, §AGX/UI-P6: M12 — keep the panel inside the safe area: the
+	-- ScreenGuis use IgnoreGuiInset=true, so pad the top by the CoreGui topbar
+	-- inset (SCREEN px, converted to this layer's design px).
 	local insetTop = 0
 	local okInset, topLeft = pcall(function()
 		return GuiService:GetGuiInset()
@@ -337,8 +336,8 @@ local function CharacterCreation(props)
 					size        = UDim2.new(1, 0, 0, ERROR_H),
 				}) or nil,
 
-				-- Confirm — §AGX/UI-P2: 48 px tall, anchored to the bottom.
-				-- §AGX/UI-P6: the screen's one primary (orange) CTA.
+				-- Confirm — §AGX/UI-P2, §AGX/UI-P6: 48 px tall, anchored to the bottom;
+				-- the screen's one primary (orange) CTA.
 				confirm = e(Button, {
 					name        = "Confirm",
 					variant     = "primary",

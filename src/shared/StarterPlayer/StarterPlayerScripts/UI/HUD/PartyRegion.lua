@@ -1,11 +1,10 @@
 -- UI/HUD/PartyRegion.lua
 --[[
-    §AGX/UI-P5: mounts TeammateVitals in the HUD's party region (Layout
-    L.party, design px) when the HUD has `partyInHud`. The standalone mount
-    in CombatApp stays until W2 removes it.
+    §AGX/UI-P5, §AGX/UI-FIX: 7 — mounts TeammateVitals in the HUD's party
+    region (Layout L.party, design px) when the HUD has `partyInHud`.
     props: layout (L), mounted, visible
-    §AGX/UI-FIX: 7 — `mounted` (default: visible) keeps TeammateVitals
-    mounted; `visible` only toggles the wrapper's Visible, so a panel opening
+    `mounted` (default: visible) keeps TeammateVitals mounted; `visible`
+    only toggles the wrapper's Visible, so a panel opening never unmounts it.
     no longer unmounts it.
 ]]
 

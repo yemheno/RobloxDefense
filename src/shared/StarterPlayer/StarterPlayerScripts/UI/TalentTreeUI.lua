@@ -1,13 +1,10 @@
 -- UI/TalentTreeUI.lua
 --[[
-    React component: full-window talent tree viewer.  (§T10/U2 rework)
+    React component: full-window talent tree viewer.  (§T10/U2)
 
-    WHY THE REWORK: the tree config lays branches out as rectangular
-    grid blocks (rows × columns per branch), and the old renderer drew
-    them verbatim — straight rows, uniform spacing, straight lines.
-    "Blocks of talents, no tree feeling" (Pablo). This version keeps
-    the CONFIG untouched and applies a deterministic ORGANIC TRANSFORM
-    at render time:
+    The tree config lays branches out as rectangular grid blocks (rows ×
+    columns per branch). The CONFIG stays untouched; the renderer applies a
+    deterministic ORGANIC TRANSFORM at render time so it reads as a tree:
 
       • polar re-projection around the Origin with per-node jitter
         (seeded from the node id — stable across sessions/clients)
@@ -17,32 +14,29 @@
       • two-layer edges (shadow + core) with allocated / next-step
         highlighting, so paths read like limbs instead of wires
       • mouse-wheel zoom + background-drag pan
+      • node states, points counter, Respec All, hover tooltip, close button
 
-    Features kept from v1: node states, points counter, Respec All,
-    hover tooltip, close button.
-
-    §AGX/UI-P2 (mobile.md M17 / §2.6, UI_REVAMP D12): touch rework.
+    §AGX/UI-P2, §AGX/UI-P6: touch model + Theme v2 (mobile.md M17 / §2.6;
+    DESIGN_DECISIONS.md#ui-decisions UI-D1 / UI-D2 / UI-D12).
       • tap / click SELECTS a node → detail panel (bottom sheet on
         phone, side panel on desktop) with a 48 px Allocate / Refund
-        button + disabled reason. A single click no longer spends
+        button + disabled reason. A single click never spends
         (respec costs Essence). PC keeps hover tooltips and gets
         double-click = allocate for speed.
       • one-finger drag pans; a drag > TAP_SLOP px never counts as a tap
       • two-finger pinch zoom (clamped), + / − / Fit buttons (48 px)
       • opens fitted; on touch the zoom floor keeps nodes ≥ 44 px
-
-    §AGX/UI-P6: Theme v2 re-skin (D1 Hybrid / D2), touch model kept.
       • The whole body lives in UIScaleRoot.Local, so every constant below
         is a DESIGN px (phone scale). Screen px from input / AbsoluteSize /
         AbsolutePosition are converted with UIScaleRoot.toLocal before they
         reach the view math (pan delta, pinch mid, wheel anchor, canvas
         size). Pinch ratios and TAP_SLOP stay in screen px.
-      • Colours = Theme roles (private palette removed); detail panel,
-        hover card, legend, zoom and header controls = Panel / Text /
-        Button / IconButton / CurrencyPill. Allocate = the one primary CTA.
-      • Touch detection = useFormFactor().isTouch (the TODO(FormFactor)).
+      • Colours = Theme roles; detail panel, hover card, legend, zoom and
+        header controls = Panel / Text / Button / IconButton / CurrencyPill.
+        Allocate = the one primary CTA.
+      • Touch detection = useFormFactor().isTouch.
 
-    Architecture unchanged:
+    Architecture:
       Topology  ← TalentTreeConfig (ReplicatedStorage.Shared)
       State     ← TalentClient (subscribe pattern)
       Actions   → TalentClient (fire-and-forget → server responds)
@@ -114,7 +108,7 @@ local TAP_GRACE_S     = 0.3    -- s: Activated arriving this soon after a drag r
 local MIN_TAP_PX      = 44     -- px: smallest node diameter allowed on touch
 local DOUBLE_CLICK_S  = 0.35   -- s: PC double-click = allocate (single click only selects)
 local ZOOM_STEP       = 1.25   -- multiplier per +/− button press
-local WHEEL_STEP      = 4      -- cell px per wheel notch (unchanged from v2)
+local WHEEL_STEP      = 4      -- cell px per wheel notch
 local FIT_PAD         = 24     -- px margin around the layout when fitting
 local EDGE_INSET      = 44     -- px: phone sheet / controls keep clear of notch + home bar
 local CTRL_BTN        = 48     -- px: + / − / Fit buttons
@@ -146,7 +140,7 @@ local PAD_ZOOM_RATE = 4      -- ZOOM_STEP steps / s while a zoom button is held
 local RESPEC_ESSENCE = 25
 local TOOLTIP_W      = 360   -- design px: desktop hover card
 
--- §AGX/UI-P6: the private palette C is gone; every colour is a Theme role.
+-- §AGX/UI-P6: every colour is a Theme role.
 -- Node states: allocated = state.success, allocatable = accent.secondary
 -- (blue body accent), origin / keystone = rarity.legendary (gold).
 
@@ -164,8 +158,7 @@ local function hash01(s)
 	return h / 1000003
 end
 
--- §T10/U4: TRUE radial construction (Pablo: "reposition from scratch,
--- polar coordinates"). The stored config x/y are IGNORED except to
+-- §T10/U4: TRUE radial construction. The stored config x/y are IGNORED except to
 -- anchor each branch's sector direction. Layout is computed from the
 -- GRAPH: BFS depth from the Origin = ring radius; each branch (node
 -- tag) owns an angular sector; siblings on a ring spread across the
@@ -177,7 +170,7 @@ local displayPos = {}  -- [id] = { x, y } in grid units
 do
 	-- Adjacency
 	local adj = {}
-	for _, ed in ipairs(TreeConfig.Edges) do   -- §AGX/UI-P6: was `e` (now createElement)
+	for _, ed in ipairs(TreeConfig.Edges) do   -- §AGX/UI-P6: not `e` (createElement)
 		adj[ed[1]] = adj[ed[1]] or {}; table.insert(adj[ed[1]], ed[2])
 		adj[ed[2]] = adj[ed[2]] or {}; table.insert(adj[ed[2]], ed[1])
 	end
@@ -318,8 +311,8 @@ end
 local adjacency = TreeConfig.GetAdjacencyList()
 local START_ID  = TreeConfig.StartNodeId or "start"
 
--- §AGX/UI-P6: isTouchDevice() / minText() removed: touch = useFormFactor().isTouch,
--- text floors come from Text / Theme.typeFor.
+-- §AGX/UI-P6: touch = useFormFactor().isTouch; text floors come from
+-- Text / Theme.typeFor.
 
 -- ═══════════════════════════════════════════════════════════
 -- BRANCH TINTS  (from node tags — deterministic hue per branch)
@@ -393,8 +386,8 @@ local function TalentNode(props)
 		AutoButtonColor  = isAllocatable or canRefund,
 		ZIndex           = 5,
 		-- §AGX/UI-P2: D12 — Activated only SELECTS (parent decides; it also
-		-- swallows taps that were really drags). It used to allocate/refund
-		-- immediately, spending a point before the player could read the node.
+		-- swallows taps that were really drags), so a tap never spends a point
+		-- before the player can read the node.
 		[React.Event.Activated] = function()
 			props.onActivate(node)
 		end,
@@ -421,8 +414,8 @@ local function TalentNode(props)
 			Thickness    = 1,
 			Transparency = 0.35,
 		}) or nil,
-		-- §AGX/UI-P2: selection halo so the player sees which node the
-		-- detail panel describes. §AGX/UI-P6: focus role (blue), not white.
+		-- §AGX/UI-P2, §AGX/UI-P6: selection halo (focus role, blue) so the player
+		-- sees which node the detail panel describes.
 		selRing = props.isSelected and e("Frame", {
 			AnchorPoint            = Vector2.new(0.5, 0.5),
 			Position               = UDim2.fromScale(0.5, 0.5),
@@ -540,8 +533,8 @@ local function prereqText(nodeId, allocated)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- NodeTooltip  (desktop hover only — §AGX/UI-P2: touch uses NodeDetail)
--- §AGX/UI-P6: renamed from Tooltip (Common/Tooltip is the text bubble);
+-- NodeTooltip  (desktop hover only; touch uses NodeDetail)
+-- §AGX/UI-P2, §AGX/UI-P6: not Common/Tooltip (that is the text bubble);
 -- Panel + Text, design px, auto height, bottom-centre of the canvas.
 -- ═══════════════════════════════════════════════════════════
 
@@ -578,19 +571,19 @@ local function NodeTooltip(props)
 		}) or nil,
 		costLbl = e(Text, {
 			style = "caption", color = "text.secondary", wrap = true, layoutOrder = 4, zIndex = 21,
-			-- §AGX/UI-P2: D12 — a click no longer spends; say how to allocate.
+			-- §AGX/UI-P2: D12 — a click never spends; say how to allocate.
 			text = costText(node) .. "   ·   Click: details   Double-click: allocate",
 		}),
 	})
 end
 
 -- ═══════════════════════════════════════════════════════════
--- NodeDetail  (§AGX/UI-P2: D12 selection panel)
+-- NodeDetail  (§AGX/UI-P2, §AGX/UI-P6: D12 selection panel)
 --   mode "sheet": phone bottom sheet (~35% of the canvas, EDGE_INSET
 --                 clear of the edges), info left, actions right.
 --   mode "side":  desktop / tablet side panel on the right.
 --   Always a 48 px action button; disabled buttons carry the reason.
---   §AGX/UI-P6: Panel + scrolling Text column + Button (Allocate = primary
+--   Panel + scrolling Text column + Button (Allocate = primary
 --   CTA, Refund = danger, disabled = locked) + IconButton close.
 -- ═══════════════════════════════════════════════════════════
 
@@ -724,8 +717,8 @@ end
 local function TalentTreeUI(props)
 	local onClose = props.onClose
 
-	-- §AGX/UI-P2: per-render touch check. §AGX/UI-P6: FormFactor landed, so
-	-- this is useFormFactor().isTouch (Phone / Tablet); hooks unconditional.
+	-- §AGX/UI-P2, §AGX/UI-P6: per-render touch check = useFormFactor().isTouch
+	-- (Phone / Tablet); hooks unconditional.
 	local ff = useFormFactor()
 	local uiScale = UIScaleRoot.useUIScale()
 	local isTouch = ff.isTouch == true
@@ -742,7 +735,7 @@ local function TalentTreeUI(props)
 	local dragOffset, setDragOffset   = React.useState(Vector2.new(0, 0))
 	local latestDragOffset  = React.useRef(Vector2.new(0, 0))
 
-	-- Zoom (§T10/U2). §AGX/UI-P2: start at the touch floor so the first
+	-- Zoom. §T10/U2, §AGX/UI-P2: start at the touch floor so the first
 	-- frame never draws sub-44 px nodes on touch; fitView() runs on mount.
 	local cell, setCell = React.useState(isTouch and MIN_CELL_TOUCH or DEFAULT_CELL)
 	local cellRef       = React.useRef(isTouch and MIN_CELL_TOUCH or DEFAULT_CELL)
@@ -935,7 +928,7 @@ local function TalentTreeUI(props)
 					trackPan(Vector2.new(input.Position.X, input.Position.Y))
 				end
 			elseif t == Enum.UserInputType.Touch then
-				-- §AGX/UI-P2: M17 — touch moves used to be ignored entirely.
+				-- §AGX/UI-P2: M17 — touch drag pans.
 				local i = touchIndex(input)
 				if not i then return end
 				local pos = Vector2.new(input.Position.X, input.Position.Y)
@@ -1109,7 +1102,7 @@ local function TalentTreeUI(props)
 	-- frame before fitView and a touch/desktop flip).
 	local renderCell = math.clamp(cell, minCell, MAX_CELL)
 	-- §AGX/UI-P6: SHEET_MAX_BODY stays a SCREEN px threshold (canvasSize is
-	-- design px now), so tablets keep the side panel as before.
+	-- design px), so tablets keep the side panel.
 	local useSheet   = isTouch and canvasSize.Y * uiScale.target < SHEET_MAX_BODY
 
 	-- Pixel projection of the ORGANIC coordinates
@@ -1241,9 +1234,9 @@ local function TalentTreeUI(props)
 
 	children.tooltip = e(NodeTooltip, { nodeDef = (not isTouch) and hoveredNode or nil })
 
-	-- §T10/U3: points counter + respec live in the standard header slot.
-	-- §AGX/UI-P6: the slot is inside AppWindow's scaled chrome (design px):
-	-- numeric Text + danger Respec Button (44) + essence CurrencyPill.
+	-- §T10/U3, §AGX/UI-P6: points counter + respec live in the standard header
+	-- slot, inside AppWindow's scaled chrome (design px): numeric Text +
+	-- danger Respec Button (44) + essence CurrencyPill.
 	local avail = talentState.pointsAvailable or 0
 	local headerContent = e("Frame", {
 		Name                   = "TalentHeader",
@@ -1289,7 +1282,7 @@ local function TalentTreeUI(props)
 	local selectedNode = selectedId and nodeMap[selectedId] or nil
 	local ctrlInset    = isTouch and EDGE_INSET or 12
 
-	-- §AGX/UI-P2: platform wording (M17: legend was PC-only).
+	-- §AGX/UI-P2: platform wording (M17).
 	local legendText = isTouch
 		and "Tap = Select  |  Drag = Pan  |  Pinch = Zoom"
 		or  "Click = Select  |  Double-click = Allocate  |  Drag = Pan  |  Scroll = Zoom"
@@ -1326,8 +1319,8 @@ local function TalentTreeUI(props)
 				}),
 			}),
 
-			-- (§T10/U3: header chrome — title, points, respec, close — now
-			-- lives in AppWindow; this table is the window BODY.)
+			-- (§T10/U3: header chrome — title, points, respec, close — lives in
+			-- AppWindow; this table is the window BODY.)
 
 			canvas = e("Frame", {
 				Position               = UDim2.fromScale(0, 0),
@@ -1342,8 +1335,8 @@ local function TalentTreeUI(props)
 				end,
 			}, children),
 
-			-- §AGX/UI-P2: + / − / Fit (48 px, all platforms), top-left of the body.
-			-- §AGX/UI-P6: IconButton secondary (blue ring), 48 design px.
+			-- §AGX/UI-P2, §AGX/UI-P6: + / − / Fit (48 design px, all platforms),
+			-- top-left of the body; IconButton secondary (blue ring).
 			zoomControls = e("Frame", {
 				Position               = UDim2.fromOffset(ctrlInset, SP.md),
 				Size                   = UDim2.fromOffset(CTRL_BTN, CTRL_BTN * 3 + 2 * SP.sm),

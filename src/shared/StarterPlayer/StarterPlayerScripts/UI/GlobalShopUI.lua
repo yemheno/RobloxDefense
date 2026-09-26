@@ -5,10 +5,8 @@
     Fires "ShopPurchase" { tab, itemId, quantity } to server.
     Listens for "ShopResult" (ok, message) and "ShopState" (merits, essence, level, owned).
 
-    §AGX/UI-P6: Theme v2 re-skin. AppWindow chrome (auto: sheet on phone),
-    Tabs, Card items, CurrencyPill balances/prices, Button buys. The private
-    palette, the hand-rolled backdrop/close/tabs/cards and formatCurrency are
-    gone (CurrencyPill formats).
+    §AGX/UI-P6: AppWindow chrome (auto: sheet on phone), Tabs, Card items,
+    CurrencyPill balances/prices (CurrencyPill formats), Button buys.
 
     §AGX/D7: rotating tabs (ShopConfig.Rotation) show their staples plus the
     player's current server-drawn rotation (ShopState.rotation[tab]). A bar

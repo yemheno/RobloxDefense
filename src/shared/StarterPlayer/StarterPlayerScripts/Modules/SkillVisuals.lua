@@ -71,7 +71,7 @@ end
 
 function SkillVisuals.OnSkillActivated(data)
 	-- Only play cast animation for the LOCAL player.
-	-- §AGX/X21: the server now sends SkillActivated to the caster only
+	-- §AGX/X21: the server sends SkillActivated to the caster only
 	-- (FireClient); Roblox auto-replicates the caster's animation to all
 	-- other clients. The playerId guard stays as a cheap safety net.
 	if data.playerId and data.playerId ~= player.UserId then return end
@@ -363,9 +363,9 @@ function SkillVisuals.OnBuffRemoved(data)
 end
 
 function SkillVisuals.CreateLocalBuffAura(buffId, buffData)
-	-- §MEM/M3: re-applying the same buffId used to overwrite the
-	-- activeEffects entry, orphaning the old aura + its Heartbeat
-	-- connection forever. Tear down any existing entry first.
+	-- §MEM/M3: re-applying the same buffId must not overwrite the
+	-- activeEffects entry (that orphans the old aura + its Heartbeat
+	-- connection). Tear down any existing entry first.
 	if activeEffects[buffId] then
 		SkillVisuals.OnBuffRemoved({ buffId = buffId })
 	end
@@ -399,10 +399,8 @@ function SkillVisuals.CreateLocalBuffAura(buffId, buffData)
 	aura.Parent = workspace
 
 	-- Follow player (CLIENT-SIDE = no lag!)
-	-- §MEM/M3: on despawn this used to Destroy the aura but leave the
-	-- Heartbeat connection firing forever (the sibling CreateBuffAura
-	-- got this right). Route through OnBuffRemoved: disconnect + destroy
-	-- + clear the registry entry in one place.
+	-- §MEM/M3: despawn routes through OnBuffRemoved: disconnect the
+	-- Heartbeat + destroy + clear the registry entry in one place.
 	local connection = RunService.Heartbeat:Connect(function()
 		if not rootPart or not rootPart.Parent or not aura.Parent then
 			SkillVisuals.OnBuffRemoved({ buffId = buffId })
@@ -707,13 +705,10 @@ function SkillVisuals.OnSkillCastStarted(data)
 	}
 
 	-- Show a ground-indicator preview during the cast.
-	-- §LD-SK1 fix: the previous "MousePosition" branch used
-	-- `player:GetMouse().Hit.p` which (a) is meaningless on touch and
-	-- gamepad, and (b) didn't match the server's actual landing
-	-- position — the server lands the AoE at a fixed distance ahead
-	-- of the player via Base.GetForwardCastPosition. Mirror that
-	-- calculation here so the preview circle and the damage area
-	-- always overlap, regardless of input device.
+	-- §LD-SK1: mirror the server's landing position (a fixed distance ahead
+	-- of the player via Base.GetForwardCastPosition), not the mouse hit, so
+	-- the preview circle and the damage area always overlap, regardless of
+	-- input device (the mouse is meaningless on touch and gamepad).
 	if SkillIndicator then
 		local descs = SkillIndicator.DescribeSkill(skillData)
 		if #descs > 0 then

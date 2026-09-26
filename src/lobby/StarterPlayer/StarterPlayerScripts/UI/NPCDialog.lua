@@ -11,12 +11,8 @@
     dialogue tree. When the player closes, fires:
       "NPCResponse" → { npcId, action = "Close" }
 
-    §AGX/UI-P6: Theme v2 re-skin: AppWindow "dialog" chrome, Card choices /
-    quests / destinations, Button actions, Text, design px under
-    UIScaleRoot.Local. The palette table and the hand-rolled backdrop /
-    panel / ✕ / ChoiceButton are gone. The event listeners, the NPCDialogue
-    reply handling, questReq (useRequest), useExternal, useNpcDistanceClose
-    and closeDialog are unchanged.
+    §AGX/UI-P6: AppWindow "dialog" chrome, Card choices / quests /
+    destinations, Button actions, Text, design px under UIScaleRoot.Local.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -43,8 +39,7 @@ do
 	end
 end
 
--- §AGX/UI-P6: shared components (the private palette, ChoiceButton and
--- RewardLine are gone).
+-- §AGX/UI-P6: shared components.
 local Common      = PlayerScripts_UI:WaitForChild("Common")
 local Theme       = require(Common:WaitForChild("Theme"))
 local AppWindow   = require(Common:WaitForChild("AppWindow"))
@@ -75,12 +70,10 @@ local function NPCDialog(props)
 	local currentNode, setCurrentNode = React.useState(nil)    -- current node key in tree
 	local questData, setQuestData = React.useState(nil)        -- quest offer data
 	local teleportData, setTeleportData = React.useState(nil)  -- teleport destinations
-	-- §AGX/UI-P4: the quest action's inline result is useRequest (was a
-	-- statusMsg + showStatus 4 s timer + pendingQuestRef, fed from the
-	-- NPCDialogue listener below). Same behaviour: "Working…" while
-	-- pending, the QuestAccepted/QuestCompleted/QuestError message for
+	-- §AGX/UI-P4: the quest action's inline result is useRequest: "Working…"
+	-- while pending, the QuestAccepted/QuestCompleted/QuestError message for
 	-- 4 s, and on success the open quest list is patched for the questId
-	-- that was sent. New: no reply within 4 s shows an error.
+	-- that was sent. No reply within 4 s shows an error.
 	local questReq = useRequest("NPCResponse", {
 		reply       = "NPCDialogue",
 		pendingText = "Working…",
@@ -133,7 +126,6 @@ local function NPCDialog(props)
 			-- §AGX/UX-03: the server reuses this event for action RESULTS
 			-- (ShopHandler/QuestHandler/TeleportHandler send
 			-- { type = "ShopSuccess"|"ShopError"|"Quest*"|"TeleportComplete", message }).
-			-- Those used to be opened as an empty lore tree and closed the panel.
 			-- Only "Dialogue" (LoreHandler) or an untyped payload is a tree.
 			if type(data) ~= "table" then return end
 			local kind = data.type
@@ -151,8 +143,8 @@ local function NPCDialog(props)
 				type     = "Lore",
 			})
 			-- §AGX/UX-03: LoreHandler sends an ARRAY of nodes ({ {text, choices} },
-			-- choices use `label` and numeric `next`, 0 = end), so "start" was
-			-- always nil and every lore chat closed itself. Accept both shapes.
+			-- choices use `label` and numeric `next`, 0 = end), with no "start" key.
+			-- Accept both shapes.
 			local tree = data.dialogue
 			setCurrentNode((type(tree) == "table" and tree.start ~= nil) and "start" or 1)
 			setQuestData(nil)
@@ -215,8 +207,8 @@ local function NPCDialog(props)
 	useExternal("npcDialog", activeNpcId ~= nil, closeDialog)
 
 	-- §AGX/UX-03: a dialogue that points at a missing node (end of tree)
-	-- closes from an effect. It used to call closeDialog() during render,
-	-- which set state mid-render and fired NPCResponse from render.
+	-- closes from an effect, never during render (that would set state and
+	-- fire NPCResponse mid-render).
 	local missingNode = dialogData ~= nil
 		and (dialogData.tree == nil or dialogData.tree[currentNode] == nil)
 	React.useEffect(function()
@@ -347,9 +339,8 @@ local function NPCDialog(props)
 						position    = UDim2.fromScale(1, 0.5),
 						onActivated = function()
 							local act = quest.status == "Available" and "AcceptQuest" or "TurnInQuest"
-							-- §AGX/UX-03: stay open so the QuestAccepted/QuestError
-							-- result can show inline (it was closed before it arrived).
-							-- §AGX/UI-P4: questReq fires NPCResponse and owns the
+							-- §AGX/UX-03, §AGX/UI-P4: stay open so the QuestAccepted/QuestError
+							-- result can show inline; questReq fires NPCResponse and owns the
 							-- pending/ok/err state; onResult patches the list.
 							questReq.send({
 								npcId = questData.npcId,

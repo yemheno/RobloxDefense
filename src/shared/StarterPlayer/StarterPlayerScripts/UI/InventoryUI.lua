@@ -1,4 +1,4 @@
--- shared/StarterPlayerScripts/UI/InventoryUI.lua  (§AGX/UI-P3 W4: moved from lobby/UI; its manager loads in every place)
+-- shared/StarterPlayerScripts/UI/InventoryUI.lua  (§AGX/UI-P3: shared, its manager loads in every place)
 --[[
     Minimal Inventory panel.  Shows owned accessories with equipped slots.
     Equip/unequip buttons fire the appropriate server events.
@@ -7,16 +7,14 @@
     Props:
       onClose  function
 
-    §AGX/UI-P6: Theme v2 re-skin. AppWindow chrome (auto: sheet on phone,
-    windowed 0.50 x 0.70 elsewhere) replaces the hand-rolled panel and its
-    17x23 close button (T14). Body = design px inside UIScaleRoot.Local:
-    an "Equipped" summary Panel over a scrolling list of Panel rows with a
-    48 px Button (Equip / Unequip, "Full" = locked). The private palette,
-    hitArea/minText helpers and TextScaled labels are gone. Same events.
+    §AGX/UI-P6: AppWindow chrome (auto: sheet on phone, windowed 0.50 x
+    0.70 elsewhere; T14: a real close target). Body = design px inside
+    UIScaleRoot.Local: an "Equipped" summary Panel over a scrolling list of
+    Panel rows with a 48 px Button (Equip / Unequip, "Full" = locked).
 
     §AGX/X10b: consumable rows. ConsumableConfig items show their name +
     icon and a "Use" button (IsDirectUse items) instead of Equip, which the
-    server rejected for them anyway. Use goes through
+    server rejects for them. Use goes through
     useRequest("UseConsumable") → NotifyService.Inline answer, shown in a
     status line under the Equipped bar. Respec scrolls/fragments show a
     hint (they're used from the respec panels) and no button.
@@ -226,7 +224,7 @@ local function InventoryUI(props)
 					position    = UDim2.new(1, -(ACTION_W + SP.sm), 0.5, 0),
 					size        = UDim2.fromOffset(SLOT_W, 24),
 				}) or nil,
-				-- §AGX/UI-P1 (T14, 44 px target) re-expressed: 48 design px Button.
+				-- §AGX/UI-P1 (T14, 44 px target): 48 design px Button.
 				actionBtn = e(Button, {
 					variant     = isEquipped and "secondary" or (canEquip and "secondary" or "locked"),
 					label       = isEquipped and "Unequip" or (canEquip and "Equip" or "Full"),

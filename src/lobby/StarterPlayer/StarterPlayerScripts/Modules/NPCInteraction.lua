@@ -2,22 +2,19 @@
 --[[
     Client-side NPC interaction.
 
-    §AGX/UI-P2: M2/D5 — the custom "[E] Talk" billboard and the 0.25 s
-    proximity scan are retired. Each NPC now carries a native ProximityPrompt
+    §AGX/UI-P2: M2/D5 — each NPC carries a native ProximityPrompt
     ("NPCPrompt", created server-side by NPCManager.CreateNPCModel), which
     gives touch, gamepad and keyboard with Roblox's own UI.
 
-    • Prompts are enabled locally only while CurrentScene == "Village"
-      (same gate the old scan used).
+    • Prompts are enabled locally only while CurrentScene == "Village".
     • §AGX/UI-P3: ...and only while the input context is not "UI" (F3 /
       UX-05). The prompt has its own KeyboardKeyCode, so the InputSystem
-      context never gated it: E next to an NPC opened ShopUI over Stats.
-      Re-applied on InputSystem.OnContextChanged.
+      context doesn't gate it (E next to an NPC would open ShopUI over
+      Stats). Re-applied on InputSystem.OnContextChanged.
     • The prompt's keyboard key follows the player's "Interact" binding
       (default E), so rebinding in KeybindSettings still works.
-    • PromptTriggered fires "NPCInteract" { npcId } to the server — the exact
-      remote/payload the old E action fired, so dialogs, shops and smiths
-      open unchanged and the server INTERACT_RANGE check still applies.
+    • PromptTriggered fires "NPCInteract" { npcId } to the server, so the
+      server INTERACT_RANGE check still applies.
 ]]
 
 local NPCInteraction = {}
@@ -106,8 +103,8 @@ function NPCInteraction.Init()
 	InputSystem    = require(SharedModules:WaitForChild("InputSystem"))
 
 	-- §AGX/UI-P2: the InputSystem "Interact" callback is intentionally NOT
-	-- bound any more — the prompt's own KeyboardKeyCode handles E, and binding
-	-- both would fire NPCInteract twice per key press.
+	-- bound — the prompt's own KeyboardKeyCode handles E, and binding both
+	-- would fire NPCInteract twice per key press.
 
 	table.insert(connections, ProximityPromptService.PromptTriggered:Connect(function(prompt, triggeringPlayer)
 		if triggeringPlayer ~= player then return end
@@ -116,7 +113,6 @@ function NPCInteraction.Init()
 		if menuOpen() then return end   -- §AGX/UI-P3: F3 (a trigger already in flight)
 		local npcId = prompt.Parent:GetAttribute("NPCId")
 		if npcId then
-			-- Same remote + payload as the pre-P2 Interact action.
 			NetworkManager.FireServer("NPCInteract", { npcId = npcId })
 		end
 	end))

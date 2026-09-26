@@ -1,6 +1,6 @@
 -- UI/Common/Notify.lua
 --[[
-    §AGX/UI-P4: Notify, the ONE player-feedback system (UI_REVAMP §3 "Notify",
+    §AGX/UI-P4: Notify, the ONE player-feedback system (ARCHITECTURE.md#notify,
     docs/ui_audit/structure-and-flow.md UX-11 / §3.4). It replaces the five
     ad-hoc mechanisms (inline timers, HUD transient labels, the achievement
     toast queue, LootNotification's own ScreenGui, and server `warn`-only
@@ -61,9 +61,9 @@
              ff.tokens), so toasts scale with the device (D2).
       PLACE  Phone with a SkillPad (combat): toasts + feed live in the
              top-centre CORRIDOR under the banner slot (1 toast), capped
-             above the Dash / combo (F2: the
-             right column sat on SkillPad's Skill 4 and its ✕ took the ult's
-             taps). Other form factors: right column, offset by the rail
+             above the Dash / combo (F2: a right column would sit on
+             SkillPad's Skill 4 and its ✕ would take the ult's taps). Other
+             form factors: right column, offset by the rail
              (UI_RightRailLeftPx), capped above SkillPad (UI_SkillPadTopPx).
       MODE   UI_HudMode (PanelStack): "none" hides the feed and pauses banners
              (they queue; staleAfter drops old ones). Toasts always show.
@@ -97,7 +97,7 @@ local C = Theme.Colors
 local F = Theme.Fonts
 
 -- ═══════════════════════════════════════════════════════════
--- GEOMETRY (§AGX/UI-P4: the one table to restyle once D1 lands)
+-- GEOMETRY (§AGX/UI-P4: the one table to restyle)
 -- ═══════════════════════════════════════════════════════════
 -- DESIGN px unless noted (§AGX/UI-P5: useNotifyLayout multiplies every
 -- length by the device uiScale via FormFactor.px; minText / minDismiss are
@@ -149,10 +149,9 @@ local GEOMETRY = {
 		duration      = 3.0,
 		staleAfter    = 6,      -- a queued banner older than this is dropped
 		-- px below safeTop: a floor that also clears the phone top-left
-		-- vitals / top-right currency rows. §AGX/UI-P4: no longer the only
-		-- guard for the HUD's Start / Next / Return column; the banner also
-		-- sits below the published column (attrTopCentreButtons), exactly
-		-- the old HUD bannerY = max(safeTop + 88, columnBottom + gap).
+		-- vitals / top-right currency rows. §AGX/UI-P4: the banner also sits
+		-- below the published Start / Next / Return column
+		-- (attrTopCentreButtons): bannerY = max(safeTop + 88, columnBottom + gap).
 		minTop        = 88,
 		width         = 460,
 		maxWidthScale = 0.56,
@@ -191,7 +190,7 @@ local TOAST_KINDS = {
 -- boss phase > run state > wave > matchmaking > achievement; vote alerts
 -- sit between run state and wave). Read from BossHud (BossPhaseChanged,
 -- 3.5 s), HUD (Wave N / cleared 3 s, all-cleared + defense destroyed
--- sticky), VoteUI and the old achievement toast (4 s).
+-- sticky), VoteUI and achievements (4 s).
 Notify.Priority = {
 	connection  = 60,   -- §AGX/UI-FREE: §NM-D6 "Still connecting…" (Rejoin)
 	bossPhase   = 50,

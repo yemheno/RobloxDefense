@@ -1,6 +1,6 @@
 -- UI/HUD/CurrencyRegion.lua
 --[[
-    §AGX/UI-P5: Essence / Merits / Power row (moved from HUD.lua:698-803).
+    §AGX/UI-P5: Essence / Merits / Power row.
     Essence and Merits use CurrencyPill (Theme.Currency identity: art from
     Theme.GetIcon("essence"/"merits"), glyph fallback until the ids land).
     Power has no currency identity, so it gets a pill in the same shape.

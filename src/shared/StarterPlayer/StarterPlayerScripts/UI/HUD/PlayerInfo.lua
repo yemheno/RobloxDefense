@@ -1,8 +1,7 @@
 -- UI/HUD/PlayerInfo.lua
 --[[
     §AGX/UI-P5: player vitals + wallet as a MODULE-LEVEL store (shell-spec
-    §4.1), moved out of HUD.lua (:229-248, 398-446, 598-630). Subscribed once,
-    at first require.
+    §4.1). Subscribed once, at first require.
 
     State (PlayerInfo.use()):
         hp          { cur, max }           Humanoid (pure client)

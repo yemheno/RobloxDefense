@@ -1,7 +1,7 @@
 -- UI/Shell/Shell.lua
 --[[
-    §AGX/UI-P3 (W1): the one root every Place's App renders
-    (docs/ui_audit/shell-spec.md §5 "Wave 2"). What is open is owned by
+    §AGX/UI-P3: the one root every Place's App renders
+    (docs/ui_audit/shell-spec.md §5). What is open is owned by
     PanelStack; which screens exist is owned by Registry; this file only
     mounts the always-on pieces for a place.
 
@@ -17,12 +17,12 @@
       hud            HUD (UNSCALED: it applies its own UIScaleRoot.Local),
                      hudMode from PanelStack.useState(), railSlot = MenuSurface,
                      partyInHud + classBadge (the HUD owns TeammateVitals and
-                     the BattleClassUI badge), legacyNav = false (W3)
+                     the BattleClassUI badge), legacyNav = false
       panelHost      PanelHost{place, externals=true}: every Registry panel,
                      plus NPCDialog / ShopUI / WeaponSmithUI in the Lobby
       notifyHost     Notify.Host (exactly once per place: CentralBossApp wraps
                      CombatApp, which renders this Shell once)
-      tooltipLayer   Theme v2 TooltipHost in a UIScaleRoot.Root (2e3fdf5), in its
+      tooltipLayer   Theme v2 TooltipHost in a UIScaleRoot.Root, in its
                      own ScreenGui "TooltipGui" (DisplayOrder.tooltip = 50)
       Lobby + Combat achievementToast, testingPanel
       Lobby + Plaza  emoteWheel (closed by PanelStack.onOpen)
@@ -96,8 +96,8 @@ local function Shell(props)
 	local stackState = PanelStack.useState()
 	local ff = useFormFactor()   -- SkillPad vs ActionBar, live across input switches
 
-	-- §AGX/UI-P3: server-opened entries (replaces the Apps' three
-	-- CharacterCreationRequired effects) + badge sources.
+	-- §AGX/UI-P3: server-opened entries (the only CharacterCreationRequired
+	-- listener) + badge sources.
 	ServerOpen.useServerOpen(place)
 	React.useEffect(function()
 		BadgeStore.init(place)
@@ -136,7 +136,7 @@ local function Shell(props)
 			topCentreSlot = props.topCentreSlot,
 			partyInHud    = true,
 			classBadge    = true,
-			legacyNav     = false,   -- §AGX/UI-P3 (W3)
+			legacyNav     = false,   -- §AGX/UI-P3
 			onPlay        = (place == "Lobby") and onPlay or nil,
 			onEmote       = (not combat) and onEmote or nil,
 			onWardrobe    = (place == "Plaza") and onWardrobe or nil,
@@ -147,10 +147,10 @@ local function Shell(props)
 		-- §AGX/UI-P4: own ScreenGui above AppGui and PanelGui, below modals
 		notifyHost = e(Notify.Host),
 
-		-- §AGX/UI-P1v2: UIScale layer at the tooltip band (above every window)
-		-- §AGX/UI-FIX: 3 — in its own ScreenGui at Theme.DisplayOrder.tooltip
-		-- (50): inside AppGui (0) it drew UNDER PanelGui (20), so tooltips of
-		-- panel buttons were hidden. Same insets as PanelGui / NotifyGui.
+		-- §AGX/UI-P1v2, §AGX/UI-FIX: 3 — UIScale layer in its own ScreenGui at
+		-- Theme.DisplayOrder.tooltip (50), above every window: inside AppGui (0)
+		-- it would draw UNDER PanelGui (20) and hide panel-button tooltips.
+		-- Same insets as PanelGui / NotifyGui.
 		tooltipLayer = tooltipGuiParent and ReactRoblox.createPortal(e("ScreenGui", {
 			Name           = "TooltipGui",
 			ResetOnSpawn   = false,

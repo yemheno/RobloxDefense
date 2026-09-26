@@ -8,15 +8,14 @@
     • Uses Roblox default animation IDs — swap these for custom ones later.
     • Auto-closes if player starts moving.
     • §AGX/UI-P2: touch — EmoteWheel.open()/close()/toggle() for on-screen
-      buttons (SocialPlaza AppearanceBar Emote button); closes on outside
+      buttons (the HUD QuickButtons Emote button); closes on outside
       tap and on thumbstick movement (Humanoid.MoveDirection).
-    • §AGX/UI-P6: Theme v2 re-skin. Geometry stays in SCREEN px from
-      wheelMetrics() (exported to MenuRadial, unchanged); the wheel lives in
-      the unscaled AppRoot, so text sizes are Theme.typeFor sizes
-      pre-multiplied by ff.uiScale (Theme.Layout option (b), no
-      scale-inside-scale). Colours are Theme roles (legacy Theme.Colors /
-      the local C table are gone). The centre is now an IconButton (✕ on
-      touch, the bound key elsewhere) that also closes the wheel.
+    • §AGX/UI-P6: Geometry stays in SCREEN px from wheelMetrics() (exported
+      to MenuRadial); the wheel lives in the unscaled AppRoot, so text sizes
+      are Theme.typeFor sizes pre-multiplied by ff.uiScale (Theme.Layout
+      option (b), no scale-inside-scale). Colours are Theme roles. The centre
+      is an IconButton (✕ on touch, the bound key elsewhere) that also closes
+      the wheel.
 ]]
 
 local Players          = game:GetService("Players")
@@ -57,9 +56,8 @@ end
 local EmoteConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("EmoteConfig"))
 local EMOTES = EmoteConfig.Emotes
 
--- §AGX/UI-P2: M3 — wheel is sized in pixels from the viewport's short side
--- (was fromScale(0.121,0.215) = 102x84 px on iPhone, not square, and the
--- buttons were scale-of-wheel = ~4 px). See wheelMetrics() below.
+-- §AGX/UI-P2: M3 — wheel is sized in pixels from the viewport's short side,
+-- so it stays square and its buttons stay tappable. See wheelMetrics() below.
 local WHEEL_SHORT_FRAC = 0.62   -- wheel diameter as a share of the short side
 local WHEEL_MIN, WHEEL_MAX = 220, 320
 local BTN_MIN          = 56     -- >= 48 px touch target
@@ -67,7 +65,7 @@ local MOVE_CLOSE_EPS   = 0.1    -- Humanoid.MoveDirection magnitude that closes 
 
 -- §AGX/UI-P3: exported (EmoteWheel.wheelMetrics) for MenuRadial, B6.
 -- `opts` overrides the wheel's own numbers: { shortFrac, min, max, btnMin }
--- (screen px, like the defaults). No opts = the emote wheel, unchanged.
+-- (screen px, like the defaults). No opts = the emote wheel.
 local function wheelMetrics(viewport, opts)
 	opts = opts or {}
 	local short = math.min(viewport.X, viewport.Y)
@@ -78,8 +76,8 @@ local function wheelMetrics(viewport, opts)
 	local radius = math.floor(wheel / 2 - btn / 2 - 6)
 	return wheel, btn, radius
 end
-
--- §AGX/UI-P2: M3 — imperative open/close so touch UI (SocialPlaza
+-- §AGX/UI-P2: M3 — imperative open/close so touch UI (the HUD
+-- QuickButtons Emote button, via the Shell) can open the wheel.
 -- AppearanceBar Emote button, a later HUD button) can open the wheel.
 -- Every mounted wheel registers its setter here.
 local visibilitySetters = {}
@@ -90,7 +88,7 @@ local function setAllVisible(fnOrValue)
 	end
 end
 
--- ── Theme (§AGX/UI-P6: roles, no private palette) ─────────
+-- ── Theme (§AGX/UI-P6: roles) ─────────
 local Common        = script.Parent:WaitForChild("Common")
 local Theme         = require(Common:WaitForChild("Theme"))
 local useFormFactor = require(Common:WaitForChild("useFormFactor"))
@@ -142,7 +140,7 @@ local function EmoteButton(props)
 	local ty = scaledType("caption", ff)
 
 	return e("TextButton", {
-		-- §AGX/UI-P2: M3 — pixel size (>= 56 px) instead of a scale of the wheel.
+		-- §AGX/UI-P2: M3 — pixel size (>= 56 px), not a scale of the wheel.
 		Name              = "Emote_" .. tostring(emote.id),
 		Size              = UDim2.fromOffset(props.size, props.size),
 		AnchorPoint       = Vector2.new(0.5, 0.5),
@@ -174,7 +172,7 @@ local function EmoteButton(props)
 			Position         = UDim2.fromScale(0.5, 0.1),
 			BackgroundTransparency = 1,
 			Text             = emote.icon,
-			TextColor3       = R.accent.secondary,  -- §AGX/UI-P2: was default black on dark bg
+			TextColor3       = R.accent.secondary,  -- §AGX/UI-P2: never default black on dark bg
 			TextScaled       = true,
 			FontFace         = Theme.FontFaces.bold,
 			ZIndex           = 4,
@@ -193,7 +191,7 @@ local function EmoteButton(props)
 			TextTruncate     = Enum.TextTruncate.AtEnd,
 			ZIndex           = 4,
 		}, {
-			-- §AGX/UI-P2 readable floor, now Theme.Type caption
+			-- §AGX/UI-P2 readable floor = Theme.Type caption
 			Tsc = e("UITextSizeConstraint", { MinTextSize = ty.min, MaxTextSize = ty.max }),
 		}),
 	})
@@ -257,7 +255,7 @@ local function EmoteWheel()
 
 		local conn = RunService.RenderStepped:Connect(function()
 			-- §AGX/UI-P2: M3 — thumbstick / gamepad / click-to-move all show up
-			-- in Humanoid.MoveDirection; W/A/S/D kept as before.
+			-- in Humanoid.MoveDirection; W/A/S/D too.
 			local character = LocalPlayer.Character
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 			if humanoid and humanoid.MoveDirection.Magnitude > MOVE_CLOSE_EPS then
@@ -309,8 +307,8 @@ local function EmoteWheel()
 	local children = {
 		Corner = e("UICorner", { CornerRadius = UDim.new(1, 0) }),
 
-		-- §AGX/UI-P6: IconButton (was a TextLabel): ✕ on touch, the bound
-		-- key elsewhere; tapping it closes the wheel like an outside tap.
+		-- §AGX/UI-P6: IconButton: ✕ on touch, the bound key elsewhere; tapping
+		-- it closes the wheel like an outside tap.
 		CenterLabel = e(IconButton, {
 			name        = "Center",
 			icon        = isTouch and "close" or nil,
@@ -345,11 +343,11 @@ local function EmoteWheel()
 		Name                   = "EmoteWheel",
 		Size                   = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
-		ZIndex                 = Theme.Z.windowOver,   -- §AGX/UI-P6: was a literal 30
+		ZIndex                 = Theme.Z.windowOver,   -- §AGX/UI-P6
 		ref                    = rootRef,   -- §AGX/UI-FIX: R6
 	}, {
-		-- §AGX/UI-P2: M3 — the dim overlay is now a button: tap/click outside
-		-- the wheel closes it.
+		-- §AGX/UI-P2: M3 — the dim overlay is a button: tap/click outside the
+		-- wheel closes it.
 		Overlay = e("TextButton", {
 			Size                   = UDim2.fromScale(1, 1),
 			BackgroundColor3       = R.surface.scrim,
@@ -394,8 +392,8 @@ end
 
 -- §AGX/UI-P2: M3 — public API. Exported as a React.memo element type (a
 -- plain table React accepts wherever a component is expected, so
--- `React.createElement(EmoteWheel)` in LobbyApp/SocialPlazaApp is
--- unchanged) carrying imperative open/close/toggle for touch buttons.
+-- `React.createElement(EmoteWheel)` works) carrying imperative
+-- open/close/toggle for touch buttons.
 local EmoteWheelExport = React.memo(EmoteWheel)
 EmoteWheelExport.open   = function() setAllVisible(true) end
 EmoteWheelExport.close  = function() setAllVisible(false) end

@@ -3,7 +3,7 @@
 local SkillInput = {}
 
 local Players      = game:GetService("Players")
--- §AGX/UI-P4: StarterGui (SetCore chat message) no longer needed; M6.
+-- §AGX/UI-P4: M6: skill failures are Notify toasts (no StarterGui SetCore).
 
 -- §AGX/UI-P4: Notify (UI/Common) is required lazily on first failure so
 -- this module's load order is unaffected (SkillPad requires SkillInput).
@@ -26,10 +26,10 @@ local NetworkManager = nil
 local InputSystem    = nil
 
 -- Cooldown display (local)
--- §AGX/UI-P2: was `[skillId] = endTime` with the SERVER's os.clock(), which
--- can't be compared with the client clock and had no reader. Now keyed by
--- skillId -> { endsAt = client os.clock(), total = seconds } from the
--- event's `cooldown` duration, and exposed per slot via GetCooldown().
+-- §AGX/UI-P2: keyed by skillId -> { endsAt = client os.clock(), total =
+-- seconds } from the event's `cooldown` duration (the event's endTime is
+-- the SERVER's os.clock(), not comparable with the client clock), and
+-- exposed per slot via GetCooldown().
 local skillCooldowns = {}
 
 -- §AGX/UI-P2: slot <-> skillId. The server reports cooldowns by real skill id
@@ -203,17 +203,16 @@ function SkillInput.Init()
 	-- Use task.spawn + infinite WaitForChild to avoid the 3s timeout race.
 	local Events = game:GetService("ReplicatedStorage"):WaitForChild("Events")
 
-	-- §AGX/X21 (G21): removed the per-cast debug print on SkillActivated.
+	-- §AGX/X21 (G21): no per-cast debug print on SkillActivated.
 
 	task.spawn(function()
 		Events:WaitForChild("SkillFailed").OnClientEvent:Connect(function(data)
 			warn("[SkillInput] Skill failed:", data.skillId, "-", data.reason)
 			-- §AGX/UI-P2: a failure also answers the oldest pending request.
 			SkillInput._LearnFromFailure(data)
-			-- §AGX/UI-P4: M6: was a SetCore("ChatMakeSystemMessage") line,
-			-- invisible on phones where chat is collapsed. Now a warning
-			-- toast; one key so spamming a skill on cooldown updates a
-			-- single toast (×N) instead of stacking.
+			-- §AGX/UI-P4: M6: a warning toast, not a chat line (invisible on phones
+			-- where chat is collapsed); one key so spamming a skill on cooldown
+			-- updates a single toast (×N) instead of stacking.
 			local notify = getNotify()
 			if notify then
 				notify.toast("warning", tostring(data.reason or "Skill failed"), { key = "skillFailed" })
@@ -239,10 +238,9 @@ function SkillInput.TryUseSkill(slot)
 	if player:GetAttribute("SkillsEnabled") == false then return end
 
 	-- Block skills while knocked down or dead.
-	-- §LD-PA1 follow-up: same first-spawn race as PlayerAttack — was
-	-- `~= "Alive"` and treated nil as death. SkillManager's server-side
-	-- check is strict, so the client only needs to suppress the
-	-- explicit not-alive states.
+	-- §LD-PA1: same first-spawn race as PlayerAttack: nil is not death.
+	-- SkillManager's server-side check is strict, so the client only needs
+	-- to suppress the explicit not-alive states.
 	local deathState = player:GetAttribute("DeathState")
 	if deathState == "KnockedDown" or deathState == "Dead" then return end
 

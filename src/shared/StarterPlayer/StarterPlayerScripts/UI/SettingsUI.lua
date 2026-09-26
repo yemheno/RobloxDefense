@@ -7,10 +7,9 @@
       • Controls — rebind every keyboard action (Combat: Attack, Dash,
                    Skill1-4; Lobby: Interact, EmoteWheel)
 
-    §AGX/UI-P6: UX-13. The old "Skills" tab and the separate KeybindSettings
-    overlay are merged into the Controls tab. KeybindSettings is now a thin
-    wrapper that renders this panel on the Controls tab (BattleClassUI's
-    "Controls / Rebind Keys" keeps working).
+    §AGX/UI-P6: UX-13. There is ONE keybind editor: the Controls tab.
+    KeybindSettings is a thin wrapper that renders this panel on the Controls
+    tab (BattleClassUI's "Controls / Rebind Keys").
 
     Props:
       onClose     function  — callback to close the panel
@@ -32,7 +31,7 @@ local SoundManager   = require(SharedModules:WaitForChild("SoundManager"))
 local InputSystem    = require(SharedModules:WaitForChild("InputSystem"))
 local InputActions   = require(SharedModules:WaitForChild("InputSystem"):WaitForChild("InputActions"))
 
--- §AGX/UI-P6: Theme v2 + shared components (the private palette is gone).
+-- §AGX/UI-P6: Theme v2 + shared components.
 local Common      = script.Parent:WaitForChild("Common")
 local Theme       = require(Common:WaitForChild("Theme"))
 local AppWindow   = require(Common:WaitForChild("AppWindow"))  -- §T10/U3
@@ -44,7 +43,7 @@ local Tabs        = require(Common:WaitForChild("Tabs"))
 local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-P7
 
 -- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
--- outside a PanelHost, so Wave 1 behaves exactly as before).
+-- outside a PanelHost).
 local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
 -- §AGX/UI-FIX: R8: the entry context (nil outside a PanelHost).
 local EntryContext = nil
@@ -77,8 +76,8 @@ local BLOCKED_KEYS = {
 	[Enum.KeyCode.CapsLock] = true,
 }
 
--- §AGX/UI-P6: UX-13: two tabs; Controls lists every action the two editors
--- listed (Settings' Skills + Controls, KeybindSettings' DISPLAY_ORDER).
+-- §AGX/UI-P6: UX-13: two tabs; Controls lists every rebindable action
+-- (Combat + Lobby, incl. KeybindSettings' DISPLAY_ORDER).
 local TAB_ITEMS = {
 	{ id = "Audio",    label = "Audio" },
 	{ id = "Controls", label = "Controls" },
@@ -103,8 +102,8 @@ local function saveBindings()
 end
 
 -- ── Volume slider ─────────────────────────────────────────────────────────────
--- §AGX/UI-P6: same input handling as before (§AGX/UI-P1 grab band, touch and
--- mouse), re-expressed in design px with Theme roles.
+-- §AGX/UI-P6: §AGX/UI-P1 grab band, touch and mouse, in design px with
+-- Theme roles.
 local function VolumeSlider(props)
 	local label = props.label
 	local value = props.value or 0.5
@@ -244,7 +243,7 @@ local function BindingRow(props)
 	if not definition then
 		return nil
 	end
-	-- §AGX/UI-P6: UX-13: KeybindSettings' "custom binding" dot, kept.
+	-- §AGX/UI-P6: UX-13: "custom binding" dot.
 	local defaults = definition.defaults and definition.defaults.Keyboard
 	local isCustom = InputSystem.GetBinding(actionName, "Keyboard") ~= defaults
 
@@ -506,9 +505,10 @@ local function SettingsUI(props)
 
 	local z = props.zIndex or Theme.Z.window
 
-	-- §T10/U3: chrome owned by AppWindow (close also clears key-listen state).
-	-- §AGX/UI-P6: variant "auto" (sheet on phone); the shell's presentation
-	-- still wins inside a PanelHost. Body in design px via UIScaleRoot.Local.
+	-- §T10/U3, §AGX/UI-P6: chrome owned by AppWindow (close also clears
+	-- key-listen state); variant "auto" (sheet on phone); the shell's
+	-- presentation still wins inside a PanelHost. Body in design px via
+	-- UIScaleRoot.Local.
 	return e(AppWindow, {
 		variant = "auto",
 		title   = "Settings",

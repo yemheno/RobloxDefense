@@ -1,22 +1,19 @@
 -- StarterPlayerScripts/Modules/DamageNumbers
 --[[
-    DamageNumbers v2  (§PERF/F6 — pooled, capped, single-stepper)
+    DamageNumbers  (§PERF/F6 — pooled, capped, single-stepper)
     ==============================================================
-    v1 created a Part + BillboardGui + TextLabel + 2 Tweens + 2 task.delay
-    closures PER NUMBER and destroyed them after. In world-boss-scale
-    fights that instance churn is what makes players turn numbers off.
-
-    v2 keeps the exact same visuals + public API but bounds the cost:
+    A Part + BillboardGui + TextLabel + tweens PER NUMBER is the instance
+    churn that makes players turn numbers off in world-boss-scale fights,
+    so the cost is bounded:
       • POOL      — attachment/billboard/label trios are reused forever
       • STEPPER   — ONE RenderStepped drives every active number
-                    (easeOutQuad float + linear tail fade, identical to
-                    the old Quad/Out + Linear tweens); connected only
+                    (easeOutQuad float + linear tail fade); connected only
                     while numbers are on screen
       • HARD CAP  — at MAX_ACTIVE the oldest number is recycled, so a
                     world boss with 8 players spamming AoE costs the
                     same frame budget as a training dummy
       • CULL      — numbers beyond MAX_DISTANCE from the camera are
-                    skipped entirely (previously still paid creation)
+                    skipped entirely (no creation cost)
 
     Server-side §PERF/F5 already merges same-mob hits into 0.1 s windows,
     so the two layers together give: bounded events AND bounded rendering.
@@ -286,9 +283,9 @@ function DamageNumbers.Init()
 			DamageNumbers.ShowDamageNumber(data)
 		end
 	end)
-	-- §AGX/SEC (§T0P2-ORPHANS): the single "HealNumber" event was never
-	-- fired server-side (heals go through HealNumberBatch); listener removed.
-	-- §SCALE/S5: batched DoT/HoT/heal windows from SkillEffects.
+	-- §AGX/SEC (§T0P2-ORPHANS), §SCALE/S5: no single "HealNumber" listener
+	-- (the server never fires it); heals arrive as batched DoT/HoT/heal
+	-- windows from SkillEffects.
 	NetworkManager.OnServerEvent("HealNumberBatch", function(batch)
 		for _, data in ipairs(batch) do
 			DamageNumbers.ShowHealNumber(data)

@@ -40,9 +40,9 @@ local React             = require(ReplicatedStorage.Packages.React)
 local Modules        = script.Parent.Parent:WaitForChild("Modules")
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 
--- §AGX/SEC: X16 — the old client check duplicated the admin allowlist
--- and trusted game.CreatorId. The panel is cosmetic and Studio-only now;
--- the server's PlaceBootstrap.IsAdmin is the only gate that matters.
+-- §AGX/SEC: X16 — the panel is cosmetic and Studio-only; the server's
+-- PlaceBootstrap.IsAdmin is the only gate that matters (no client
+-- allowlist, no trust in game.CreatorId).
 
 -- ── Palette ─────────────────────────────────────────────────────────
 local C = {
@@ -65,8 +65,8 @@ local C = {
 }
 
 -- ── Helper: create a section header ─────────────────────────────────
--- §UI-T4: hardcoded heights (20-66 px) replaced with scale Y so the
--- whole panel breathes proportionally to viewport.
+-- §UI-T4: scale Y (no hardcoded heights) so the whole panel breathes
+-- proportionally to viewport.
 local function SectionHeader(lo, label)
 	return React.createElement("TextLabel", {
 		LayoutOrder      = lo,
@@ -83,7 +83,7 @@ end
 
 -- ── Helper: a row with a label, text input, and action button ────────
 -- Pure function -- state is managed by the parent (TestingUI).
--- §UI-T3 fix: InputRow used hardcoded pixel positions (122 px box offset,
+-- §UI-T3: InputRow used hardcoded pixel positions (122 px box offset,
 -- 218 px button offset, 32 px row height) which collapsed at higher
 -- resolutions. Switched to a scale-based 3-column flex layout so the
 -- label / textbox / button stay legible on every viewport.
@@ -135,12 +135,11 @@ local function InputRow(lo, label, val, setVal, btnLabel, btnColor, action)
 end
 
 -- ── Helper: a simple action button ──────────────────────────────────
--- §UI-T1 fix: was 0.073 × 0.026 (= ~140 × 28 px on 1080p), too small
--- to click reliably. Now scale-relative to its parent ROW so the
--- button fills the row height vertically. The legacy `w` arg is a
--- pixel hint (140, 155, 180, …) — convert it to a scale fraction of
--- the row width (the panel is ~420 px wide on 1080p, so divide by 420
--- to map "pixels at 1080p" → row-width scale).
+-- §UI-T1: scale-relative to its parent ROW so the button fills the row
+-- height and stays clickable. The legacy `w` arg is a pixel hint (140,
+-- 155, 180, …) — convert it to a scale fraction of the row width (the
+-- panel is ~420 px wide on 1080p, so divide by 420 to map "pixels at
+-- 1080p" → row-width scale).
 local function ActionButton(label, color, onActivated, w)
 	local scaleWidth = math.clamp((w or 140) / 420, 0.15, 1)
 	return React.createElement("TextButton", {
@@ -198,8 +197,7 @@ local function TestingUI()
 		ZIndex                 = 100,
 	}, {
 		-- Toggle button — offset right of Roblox's default top-left system buttons.
-		-- §UI-T2 fix: was 4.6% × 2.4% (≈ 88 × 26 px on 1080p), unclickable
-		-- at higher resolutions. Bumped to 8% × 4.5% pure-scale.
+		-- §UI-T2: 8% × 4.5% pure-scale, clickable at any resolution.
 		toggleBtn = React.createElement("TextButton", {
 			Size             = UDim2.fromScale(0.08, 0.045),
 			Position         = UDim2.fromScale(0.12, 0.005),

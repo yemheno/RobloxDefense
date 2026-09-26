@@ -11,18 +11,10 @@ local eventsFolder = nil
 local remoteEvents = {}
 
 -- §NM-CLIENT-RACE: under memory pressure the server can take longer than
--- 3 s to finish pre-registering its ~100 RemoteEvents in NetworkManager.Init.
--- The OLD client GetEvent used WaitForChild(name, 3) and silently returned
--- nil on timeout, which meant any client `OnServerEvent` registered before
--- the matching server event existed had its listener PERMANENTLY DROPPED.
--- The most painful case: PlayerAttack.Init's "CombatConfig" listener loses
--- the race → combatConfig stays nil forever → DoAttack silently returns at
--- the `if not combatConfig then return end` guard → player can't basic
--- attack for the entire session. Matches Pablo's "transversal battle-mode
--- bug only when memory is high" report.
---
--- New behavior: GetEvent waits indefinitely by default (the events ARE
--- coming, the server registers them all in its boot loop), and
+-- 3 s to pre-register its ~100 RemoteEvents in NetworkManager.Init, and a
+-- listener whose GetEvent timed out would be dropped for the session
+-- (e.g. PlayerAttack's "CombatConfig" -> no basic attack at all). So
+-- GetEvent waits indefinitely by default (the events ARE coming), and
 -- OnServerEvent defers the connection in a worker thread so Init never
 -- blocks. Callers see a connection-stub immediately whose :Disconnect
 -- tears down the real connection once it lands.
@@ -32,9 +24,8 @@ local DEFAULT_FIRE_TIMEOUT = 5  -- short wait for FireServer; if event truly mis
 -- §AGX/UI-FREE: §NM-D6 / G25 HANG RECOVERY (connection watchdog)
 -- ═══════════════════════════════════════════════════════════
 -- The waits below are deliberately infinite, so a genuinely broken server
--- (crash, bad deploy, lost handshake) used to leave the client sitting
--- there with no way out. The watchdog does NOT change any wait; it only
--- watches the boot handshake:
+-- (crash, bad deploy, lost handshake) needs a way out. The watchdog does
+-- NOT change any wait; it only watches the boot handshake:
 --   • Init() starts the clock BEFORE its own WaitForChild("Events").
 --   • ServerReady (ReadyGate-routed, fired by PlaceLifecycle in every
 --     place, AFTER this client's ClientReady) is the "connected" signal.
@@ -44,10 +35,10 @@ local DEFAULT_FIRE_TIMEOUT = 5  -- short wait for FireServer; if event truly mis
 --     LOG_REPEAT_SECONDS; the banner is keyed, so it can never stack.
 --   • ServerReady arrives -> the banner is cleared (one "Connected" toast,
 --     only if the banner was ever raised) and the watchdog thread exits.
--- Nothing is kicked or teleported automatically (TODO §11: "don't kick
--- slow PCs/mobiles mid-load"). While the LoadingScreen overlay is up
--- (DisplayOrder 1000) the banner waits in the Notify store and shows the
--- moment the overlay goes (its own 25 s failsafe).
+-- Nothing is kicked or teleported automatically: don't kick slow PCs /
+-- mobiles mid-load (ARCHITECTURE.md#network). While the LoadingScreen
+-- overlay is up (DisplayOrder 1000) the banner waits in the Notify store
+-- and shows the moment the overlay goes (its own 25 s failsafe).
 -- After the handshake the server has registered every event, so a
 -- deferred listener still waiting is a never-registered name (a code bug,
 -- not a connection issue): it is logged once, never prompted.
@@ -264,7 +255,7 @@ function NetworkManager.GetEvent(eventName, timeout)
 
 	if not eventsFolder then
 		-- §AGX/UI-FREE: §NM-D6: a bounded call made before Init (e.g. the UI
-		-- mount's ClientReady) used to be dropped here, which loses the
+		-- mount's ClientReady) must not be dropped here: that loses the
 		-- handshake. Pick the folder up if it exists (bounded wait only).
 		eventsFolder = ReplicatedStorage:FindFirstChild("Events")
 			or (timeout and ReplicatedStorage:WaitForChild("Events", timeout))

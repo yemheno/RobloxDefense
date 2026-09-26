@@ -8,12 +8,9 @@
       • "Play" → fires MatchmakingRequest { action = "Queue", mode, difficulty }
       • Close (AppWindow ✕)
 
-    §AGX/UI-P6: Theme v2 re-skin. AppWindow chrome (auto: sheet on phone),
-    Card per mode, one difficulty row and ONE primary Play CTA for the
-    selected mode (was a green Play on every card). The private palette, the
-    letter "X" close, the viewport measuring and the AbsoluteSize → Offset
-    row floors are gone: everything is design px under UIScaleRoot.Local.
-    Same event and payload as before; onPlay(modeId, difficulty) as before.
+    §AGX/UI-P6: AppWindow chrome (auto: sheet on phone), Card per mode, one
+    difficulty row and ONE primary Play CTA for the selected mode. Everything
+    is design px under UIScaleRoot.Local.
 
     Props:
       onClose  function
@@ -51,10 +48,9 @@ local DIFFICULTY_TIERS = {
 -- ── Mode card definitions ─────────────────────────────────
 local MODES = {
 	{ id = "Defense",     name = "Defense",     desc = "Defend the line against waves.",              available = true,  order = 1 },
-	-- §AGX/X19: hidden until the boss arena has content (TODO §17 / §CB1) —
-	-- players could queue into an empty arena with no way back.
-	-- §AGX/X28: core fight now exists. FLIP HERE (and GameModeConfig.lua
-	-- CentralBoss.available) to `true` after Studio testing.
+	-- §AGX/X19, §AGX/X28: hidden until the boss arena is Studio-tested
+	-- (BACKLOG §AGX/X28-NEXT); an empty arena has no way back. FLIP HERE
+	-- (and GameModeConfig CentralBoss.available) to `true` after testing.
 	{ id = "CentralBoss", name = "Central Boss", desc = "Collaborate to take down a central boss.",   available = false, order = 2 },
 	{ id = "HordeMode",   name = "Horde Mode",   desc = "Survive endless waves of enemies.",          available = true,  order = 3 },
 	{ id = "Arena",       name = "Arena",        desc = "PvP Arena — Coming soon.",                   available = false, order = 4 },

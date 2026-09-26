@@ -1,6 +1,6 @@
 -- UI/Common/GamepadFocus.lua
 --[[
-    §AGX/UI-P7: gamepad focus primitives (docs/UI_REVAMP.md §5 P7,
+    §AGX/UI-P7: gamepad focus primitives (ARCHITECTURE.md#gamepad,
     shell-spec §3.5, structure-and-flow UX-15). Everything here only changes
     behaviour while GuiService.SelectedObject is in use (gamepad selection),
     so mouse and touch never see it.
@@ -147,7 +147,7 @@ end
 -- clipping (ClipsDescendants) ancestor, e.g. a talent node panned out of
 -- the tree canvas. The walk stops at the first ScrollingFrame: the engine
 -- scrolls a selected child of a ScrollingFrame into view, so list rows
--- outside the window stay selectable exactly as before.
+-- outside the window stay selectable.
 local function isClippedOut(obj)
 	local p, s = obj.AbsolutePosition, obj.AbsoluteSize
 	local cur = obj.Parent

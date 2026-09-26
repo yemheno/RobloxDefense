@@ -10,15 +10,14 @@
 --   Player [+]  → FireServer("AllocateStat", statName, 1)
 --   Server      → "StatsUpdate" (fresh snapshot after every allocation)
 --
--- §AGX/UI-P6: Theme v2 re-skin (docs/UI_REVAMP.md D1 Hybrid / D2).
+-- §AGX/UI-P6: Theme v2 re-skin (DESIGN_DECISIONS.md#ui-decisions, UI-D1 Hybrid / UI-D2).
 --   • Chrome = AppWindow; body = design px inside UIScaleRoot.Local
 --     (PanelHost has no UIScale), in one vertical ScrollingFrame.
 --   • Two columns when the body is >= WIDE_MIN design px wide, stacked
 --     otherwise (phone sheet, combat side sheet).
 --   • "+" = IconButton (48 design px, blue secondary) with the §AGX/UI-P1
---     hold-to-repeat kept; Respec = danger Button + essence CurrencyPill.
---   • Private palette table, fromRGB literals, the hitArea helper and the
---     TextScaled labels are gone (Theme roles + Text).
+--     hold-to-repeat; Respec = danger Button + essence CurrencyPill.
+--   • Colours = Theme roles; labels = Text (no TextScaled).
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService  = game:GetService("UserInputService")  -- §AGX/UI-P1
@@ -66,9 +65,8 @@ local DERIVED_ROW = 30
 local PLUS_SIZE   = Theme.Metrics.iconButton.md   -- 48 (>= 44, §AGX/UI-P1 T11)
 local ID_W        = 52
 
--- §AGX/UI-P6: the old label read "500 ♦", but the server charges
--- PlayerDataConfig.RESPEC_COSTS.*.essence = 25 (§AGX/X42), or 1 Respec
--- Scroll first. Display only; the server decides.
+-- §AGX/UI-P6: the server charges PlayerDataConfig.RESPEC_COSTS.*.essence
+-- (§AGX/X42), or 1 Respec Scroll first. Display only; the server decides.
 local RESPEC_ESSENCE = 25
 
 -- §AGX/UI-P1: hold-to-repeat on "+": first point on press, then after

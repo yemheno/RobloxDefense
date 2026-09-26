@@ -109,7 +109,7 @@ local function showReturnReason()
 end
 
 -- Listen for server ready
--- §T10/U1: the loading-screen dismiss hook (the seam §T0P2/X25 reserved).
+-- §T10/U1, §T0P2/X25: the loading-screen dismiss hook.
 -- ServerReady is ReadyGate-routed (§T0P2/X9), so it reliably arrives
 -- after this client's ClientReady handshake — i.e. after every queued
 -- boot payload has been drained.

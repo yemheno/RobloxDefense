@@ -1,6 +1,6 @@
 -- UI/Common/useRequest.lua
 --[[
-    §AGX/UI-P4: the "inline" Notify kind (UI_REVAMP §3, structure-and-flow
+    §AGX/UI-P4: the "inline" Notify kind (ARCHITECTURE.md#notify, structure-and-flow
     §3.4). One hook for in-panel request feedback, replacing the per-panel
     "set label, task.delay(N), clear" timers (UX-11: 2 / 2.5 / 3 / 3.5 s).
 

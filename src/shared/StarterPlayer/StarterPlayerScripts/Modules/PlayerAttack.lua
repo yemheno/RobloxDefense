@@ -96,11 +96,10 @@ function PlayerAttack.DoAttack()
 	if not combatConfig then return end
 
 	-- Block attacks while knocked down or dead.
-	-- §LD-PA1 fix: "fail open" on nil — was `~= "Alive"` which treated
-	-- a not-yet-replicated attribute as a death state and silently
-	-- swallowed the very first attack on spawn. The server still
-	-- gates with the strict `== "Alive"` check, so any actual race
-	-- (player clicks during a real knockdown) is caught there.
+	-- §LD-PA1: "fail open" on nil: a not-yet-replicated attribute is not a
+	-- death state (else the very first attack on spawn is swallowed). The
+	-- server still gates with the strict `== "Alive"` check, so any actual
+	-- race (player clicks during a real knockdown) is caught there.
 	local deathState = LocalPlayer:GetAttribute("DeathState")
 	if deathState == "KnockedDown" or deathState == "Dead" then return end
 

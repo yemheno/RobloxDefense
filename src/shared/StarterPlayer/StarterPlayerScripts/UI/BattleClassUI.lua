@@ -8,19 +8,18 @@
     Read-only — no class switching during combat.
     Used by LaneDefense, CentralBoss, and HordeMode.
 
-    §AGX/UI-P6: Theme v2 re-skin (docs/UI_REVAMP.md D1 Hybrid / D2).
+    §AGX/UI-P6: Theme v2 re-skin (DESIGN_DECISIONS.md#ui-decisions, UI-D1 Hybrid / UI-D2).
       • Class reference (expanded = true, Registry "class" in Combat) is an
         AppWindow (auto: sheet on phone, windowed at panelScale x
         panelScaleY elsewhere). Its body is design px inside
-        UIScaleRoot.Local, in one vertical ScrollingFrame. The hand-rolled
-        panel, its 64x24 "Close" (V2) and the hitArea helper are gone.
+        UIScaleRoot.Local, in one vertical ScrollingFrame.
       • Skill rows = Panel + Text; "Controls / Rebind Keys" = Button.
       • Desktop badge (HUD classBadge, showBadge = true): keeps its
         fromScale(0.13, 0.07) footprint, which HUD/Layout reserves
         (BADGE_SCALE), but its content is design px (UIScaleRoot.Local)
-        with Theme type instead of TextScaled labels.
-      • Private palette + CLASS_DISPLAY fromRGB colours -> Theme roles.
-      • Kept: the A13 close-handler veto for the keybind overlay, the
+        with Theme type (no TextScaled).
+      • Class colours are Theme roles.
+      • The A13 close-handler veto for the keybind overlay, the
         PlayerInfoUpdate / GetPlayerInfo contract, live key labels.
 ]]
 
@@ -39,7 +38,7 @@ local SharedModules = LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Mo
 -- InputSystem: live key-binding display (already initialized by the bootstrap)
 local InputSystem = require(SharedModules:WaitForChild("InputSystem"))
 -- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
--- outside a PanelHost, so Wave 1 behaves exactly as before).
+-- outside a PanelHost).
 local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
 do
 	local shell = script.Parent:FindFirstChild("Shell")
@@ -71,7 +70,7 @@ local ClassDescriptions = require(
 )
 
 -- Class display data (matches ClassConfig names).
--- §AGX/UI-P6: colours are Theme role paths (were fromRGB literals).
+-- §AGX/UI-P6: colours are Theme role paths.
 local CLASS_DISPLAY = {
 	Aegis       = { icon = "🛡️", color = "accent.secondary" },
 	Arcanist    = { icon = "🔮", color = "rarity.epic" },
@@ -338,7 +337,7 @@ local function BattleClassUI(props)
 				ZIndex                 = z,
 			}, skillRows),
 
-			-- §AGX/UI-P1 T25 (44 px target) re-expressed: Button is 48 design px.
+			-- §AGX/UI-P1 T25 (44 px target): Button is 48 design px.
 			RebindBtn = e(Button, {
 				variant     = "secondary",
 				label       = "Controls / Rebind Keys",

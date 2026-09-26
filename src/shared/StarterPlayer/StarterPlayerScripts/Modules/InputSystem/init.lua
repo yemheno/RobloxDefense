@@ -89,8 +89,8 @@ local bindingChangedNextId    = 1
 -- INTERNAL
 -- ═══════════════════════════════════════════════════════════
 
--- §AGX/UI-P2: replaces the detect-once DetectPlatform(). FormFactor's
--- "KeyboardMouse" maps to this module's historical "Keyboard" platform key.
+-- §AGX/UI-P2: device detection follows FormFactor. FormFactor's
+-- "KeyboardMouse" maps to this module's "Keyboard" platform key.
 local function MapInputType(ffInput)
 	if ffInput == "Touch" or ffInput == "Gamepad" then return ffInput end
 	return "Keyboard"
@@ -159,7 +159,7 @@ function InputSystem.Init()
 	if initialized then return end
 	initialized = true
 
-	-- §AGX/UI-P2: activeInputType now follows FormFactor (see SyncInputType).
+	-- §AGX/UI-P2: activeInputType follows FormFactor (see SyncInputType).
 	SyncInputType(FormFactor.Get())
 	RebuildKeyMap()
 
@@ -167,7 +167,7 @@ function InputSystem.Init()
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 
-		-- §AGX/UI-P2: active-device tracking moved to FormFactor (debounced,
+		-- §AGX/UI-P2: active-device tracking lives in FormFactor (debounced,
 		-- and it also sees gameProcessed input, which this handler skips).
 
 		-- Resolve key (MouseButton → UserInputType enum)
@@ -212,8 +212,8 @@ function InputSystem.Init()
 		end
 	end)
 
-	-- §AGX/UI-P2: the GamepadConnected override is gone; plugging a pad in
-	-- no longer claims "Gamepad" until it is actually used (FormFactor).
+	-- §AGX/UI-P2: no GamepadConnected override: plugging a pad in doesn't
+	-- claim "Gamepad" until it is actually used (FormFactor).
 
 end
 

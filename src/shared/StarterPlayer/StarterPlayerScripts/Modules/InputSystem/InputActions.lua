@@ -11,12 +11,12 @@
 	                   Keys: "Keyboard", "Gamepad", "Touch"
 	                   Values: array of Enum.KeyCode / Enum.UserInputType
 	  • rebindable   — §AGX/UI-P3: false = fixed key (UIBack, MenuToggle);
-	                   nil = rebindable (every older action)
+	                                  nil = rebindable (the default)
 
 	Touch bindings are empty because mobile on-screen buttons call
 	InputSystem.FireAction() directly — no physical key involved.
-	-- §AGX/UI-P2: FireAction(actionName, "Began" | "Ended") now exists
-	-- (InputSystem/init.lua) and is used by UI/Common/SkillPad.lua.
+	-- §AGX/UI-P2: FireAction(actionName, "Began" | "Ended")
+	-- (InputSystem/init.lua) is used by UI/Common/SkillPad.lua.
 ]]
 
 local InputActions = {}

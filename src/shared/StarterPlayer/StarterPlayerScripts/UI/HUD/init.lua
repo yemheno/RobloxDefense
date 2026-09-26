@@ -1,9 +1,8 @@
 -- UI/HUD/init.lua
 --[[
     Always-visible heads-up display, split into regions (§AGX/UI-P5,
-    docs/ui_audit/shell-spec.md §4). This folder replaces UI/HUD.lua; Rojo
-    keeps the ModuleScript name "HUD", so `SharedUI:WaitForChild("HUD")`
-    is unchanged for every caller.
+    docs/ui_audit/shell-spec.md §4). Rojo keeps the folder's ModuleScript
+    name "HUD", so callers use `SharedUI:WaitForChild("HUD")`.
 
       Layout.lua             layout table (§4.2), rail band (§4.4), attributes (§4.3)
       RunState.lua           module-level run store (+ wave/run banners, killfeed)
@@ -16,16 +15,14 @@
       PartyRegion.lua        TeammateVitals in a rect (partyInHud)
       PlayCta.lua            Lobby PLAY
       QuickButtons.lua       touch Emote / Wardrobe (Lobby, Plaza)
-      (LegacyNav.lua, the old ☰ + ⋮ drawer, was deleted in W3: the Shell's
-      railSlot = MenuSurface is the only menu entry point.)
+      (The Shell's railSlot = MenuSurface is the only menu entry point.)
       StatusBar.lua, Store.lua
 
     SCALE LAYER (D2 / F7)
       The root Frame fills the parent (the safe-area AppGui) UNSCALED and
       measures its AbsoluteSize; that screen size is converted with
       UIScaleRoot.toLocal, and every region renders inside a
-      UIScaleRoot.Local in DESIGN px (phone points). So the old
-      AbsoluteSize -> Offset write-backs are gone: nothing measured is
+      UIScaleRoot.Local in DESIGN px (phone points). Nothing measured is
       written back as an Offset without the conversion. The BattleClassUI
       badge is legacy screen-px code and sits OUTSIDE the layer. Mount the
       HUD unscaled (not inside a UIScaleRoot.Root): it applies its own scale.
@@ -43,11 +40,11 @@
       partyInHud     bool: mount TeammateVitals in the party region
       classBadge     true: render the BattleClassUI badge where the layout has
                      one (desktop / console combat); false: none;
-                     nil (Wave 1): the App mounts it, the layout keeps clear
+                     nil: the App mounts it, the layout keeps clear
       onPlay, onEmote, onWardrobe   functions (PLAY CTA / quick buttons)
       hidden, hideStartButton   (legacy fallbacks for hudMode / place)
-      §AGX/UI-P3 (W3): legacyNav and the on*Click drawer props are gone
-      with LegacyNav.lua; menus open through PanelStack / the railSlot.
+      §AGX/UI-P3: no legacyNav / on*Click drawer props; menus open through
+      PanelStack / the railSlot.
 ]]
 
 local GuiService        = game:GetService("GuiService")  -- legacy topbar inset (class badge)
@@ -73,9 +70,9 @@ local QuickButtons      = require(script:WaitForChild("QuickButtons"))
 
 local e = React.createElement
 
--- BattleClassUI is only needed when the HUD owns the class badge (Wave 2);
+-- BattleClassUI is only needed when the HUD owns the class badge;
 -- required lazily and without yielding, so the Lobby never loads it.
--- §AGX/UI-FIX: 9 — pcall'd (a require error no longer throws out of the
+-- §AGX/UI-FIX: 9 — pcall'd (a require error never throws out of the
 -- HUD's render), and Shell.preload("Combat") warms the require so this
 -- render-time call does not yield. A missing module is not cached (it may
 -- replicate later); a failed require is cached as false.
@@ -125,7 +122,7 @@ local function HUD(props)
 	local legacyTopbar = select(1, GuiService:GetGuiInset()).Y
 	local L = Layout.useHudLayout(place, ff, hudMode, {
 		W = design.X, H = design.Y, scale = s, attrs = attrs,
-		legacyNav        = false,   -- §AGX/UI-P3 (W3): LegacyNav deleted
+		legacyNav        = false,   -- §AGX/UI-P3: no LegacyNav
 		hasRail          = props.railSlot ~= nil,
 		railCount        = props.railCount,
 		classBadge       = props.classBadge,
@@ -154,7 +151,7 @@ local function HUD(props)
 			layout = L, run = run, visible = show.topCentre,
 		}) or nil,
 		-- §AGX/UI-FIX: 7 — mounted whenever the HUD owns the party (combat +
-		-- partyInHud) and only hidden otherwise, so opening a panel no longer
+		-- partyInHud) and only hidden otherwise, so opening a panel never
 		-- unmounts TeammateVitals (and drops its VitalsUpdate state).
 		party = e(PartyRegion, {
 			layout  = L,

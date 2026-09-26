@@ -8,14 +8,14 @@
 
     Mounted in CombatApp; renders nothing when no vote is active.
 
-    §AGX/UI-P6: Theme v2 re-skin (docs/UI_REVAMP.md D1 Hybrid / D2).
+    §AGX/UI-P6: Theme v2 re-skin (DESIGN_DECISIONS.md#ui-decisions, UI-D1 Hybrid / UI-D2).
       • Content = design px inside UIScaleRoot.Local (the Shell mounts this
         unscaled). Header Text + timer Bar + a row of Common Card tiles.
       • Card: selected = blue focus ring, winner = legendary (gold) stroke;
         the lane tag + vote count sit in the card footer.
-      • Private palette gone: lane colours map onto Theme roles (LANE_ROLE).
-      • Kept: useModalPresence("vote"), the Notify "vote" banner, the §VG5
-        anti-misclick window, every server event and payload.
+      • Lane colours map onto Theme roles (LANE_ROLE).
+      • useModalPresence("vote"), the Notify "vote" banner and the §VG5
+        anti-misclick window sit on top of the server events.
 ]]
 
 local Players           = game:GetService("Players")
@@ -41,7 +41,7 @@ local e  = React.createElement
 local R  = Theme.Roles
 local SP = Theme.Space
 -- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
--- outside a PanelHost, so Wave 1 behaves exactly as before).
+-- outside a PanelHost).
 local PanelStackHooks = { useCloseHandler = function(_fn) end, useModalPresence = function(_k, _v) end }
 do
 	local shell = script.Parent:FindFirstChild("Shell")
@@ -62,10 +62,10 @@ end
 local CARD_W    = 232      -- 3 x 232 + 2 x 12 = 720 <= 844 phone width
 local CARD_GAP  = SP.md
 local TIMER_H   = 8
-local OVERLAY_Z = Theme.Z.modal   -- was a literal 50
+local OVERLAY_Z = Theme.Z.modal
 
--- Lane / card-type identity (was the private palette: greed red, control
--- blue, relief green, supply amber, tactical purple).
+-- Lane / card-type identity: greed red, control blue, relief green,
+-- supply amber, tactical purple, as Theme roles.
 local LANE_ROLE = {
     greed    = "state.danger",
     control  = "accent.secondary",
@@ -143,7 +143,7 @@ local function VoteCard(props)
             rarity      = props.isWinner and "legendary" or nil,
             footer      = footer,
             zIndex      = z,
-            -- The whole card is the tap target (was a transparent overlay button).
+            -- The whole card is the tap target.
             onActivated = function()
                 if props.onSelect then
                     props.onSelect(props.index)

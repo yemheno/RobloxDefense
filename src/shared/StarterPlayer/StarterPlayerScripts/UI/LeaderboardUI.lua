@@ -1,4 +1,4 @@
--- shared/StarterPlayerScripts/UI/LeaderboardUI.lua  (§AGX/UI-P3 W4: moved from lobby/UI; its manager loads in every place)
+-- shared/StarterPlayerScripts/UI/LeaderboardUI.lua  (§AGX/UI-P3: shared, its manager loads in every place)
 --[[
     Minimal Leaderboard panel.  Three tabs: GearScore, HighestWave, TotalPlayTime.
     Fires GetLeaderboard on mount and on tab switch.
@@ -7,11 +7,10 @@
     Props:
       onClose  function
 
-    §AGX/UI-P6: Theme v2 re-skin. AppWindow variant "auto" (sheet on
-    phone); body = design px inside UIScaleRoot.Local: Common Tabs (blue
-    underline, 44 px) over a scrolling list of Panel rows, then a "your
-    score" footer. Private palette, minText helper, hand-rolled tabs and
-    their hit boxes are gone. formatScore (§AGX/X27 play time) is kept.
+    §AGX/UI-P6: AppWindow variant "auto" (sheet on phone); body = design px
+    inside UIScaleRoot.Local: Common Tabs (blue underline, 44 px) over a
+    scrolling list of Panel rows, then a "your score" footer. formatScore
+    (§AGX/X27 play time).
 ]]
 
 local Players           = game:GetService("Players")
@@ -39,7 +38,7 @@ local ROW_H    = 44
 local RANK_W   = 56
 local SCORE_W  = 120
 local FOOTER_H = 32
-local TABS_H   = Theme.Metrics.tabs.height   -- 44 (§AGX/UI-P1: tabs were 16 px on a phone)
+local TABS_H   = Theme.Metrics.tabs.height   -- 44 (§AGX/UI-P1: tap target on a phone)
 
 local BOARDS = { "GearScore", "HighestWave", "TotalPlayTime" }
 
@@ -149,9 +148,8 @@ local function LeaderboardUI(props)
 		end
 	end
 
-	-- §AGX/UI-P6: the footer is the local Gear Score (PlayerGearScore is the
-	-- only score the server sends); it used to borrow the active tab's label
-	-- and format ("Your Play Time: 0m" for a gear score).
+	-- §AGX/UI-P6: the footer is always the local Gear Score (PlayerGearScore
+	-- is the only score the server sends), labelled and formatted as such.
 	local footerH = myScore and (FOOTER_H + SP.sm) or 0
 	local listTop = TABS_H + SP.sm
 

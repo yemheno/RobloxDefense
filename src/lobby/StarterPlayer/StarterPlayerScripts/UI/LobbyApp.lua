@@ -2,7 +2,7 @@
 --[[
     Root React component for the Lobby place.
 
-    §AGX/UI-P3 (W2): a thin wrapper around the shared Shell
+    §AGX/UI-P3: a thin wrapper around the shared Shell
     (UI/Shell/Shell.lua). Which screens exist lives in Shell/Registry
     (Lobby: MainMenu "play", Class, Stats, Talents, Equipment, Wardrobe,
     Inventory, Achievements, Daily Login, Leaderboard, Party/SocialPanel,

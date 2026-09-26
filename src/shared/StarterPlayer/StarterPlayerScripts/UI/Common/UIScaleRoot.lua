@@ -1,7 +1,7 @@
 -- UI/Common/UIScaleRoot.lua
 --[[
     §AGX/UI-P1v2: the D2 scale layer ("fixed px at phone scale + ONE UIScale
-    per form factor", docs/UI_REVAMP.md §4).
+    per form factor", DESIGN_DECISIONS.md#ui-decisions UI-D2).
 
     WHY A LAYER AND NOT A UIScale DIRECTLY UNDER AppGui
       A UIScale scales Scale-sized children too, and AbsoluteSize /

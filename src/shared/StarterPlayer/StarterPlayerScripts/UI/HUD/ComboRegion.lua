@@ -1,6 +1,6 @@
 -- UI/HUD/ComboRegion.lua
 --[[
-    §AGX/UI-P5: personal combo counter (moved from HUD.lua:920-945), shown
+    §AGX/UI-P5: personal combo counter, shown
     at >= 3 hits. Bottom-centre: above the safe edge on touch (kept left of
     the SkillPad footprint), above the ActionBar on desktop / console.
     props: layout (L), combo (number?), visible

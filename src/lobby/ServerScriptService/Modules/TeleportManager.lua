@@ -219,9 +219,8 @@ function TeleportManager.TeleportToGameMode(players, options)
 	teleportOptions:SetTeleportData(teleportData)
 
 	-- Attempt teleport.
-	-- §T7/G4 (carried since the first audit): retry with backoff. A
-	-- transient TeleportService hiccup used to permanently strand the
-	-- matched party in "Launching" after a single failed pcall.
+	-- §T7/G4: retry with backoff, so a transient TeleportService hiccup
+	-- can't strand the matched party in "Launching" after one failed pcall.
 	local success, errorMsg = false, nil
 	local teleportResult = nil
 	local RETRIES, delaySec = 3, 1
@@ -267,11 +266,10 @@ function TeleportManager.TeleportToGameMode(players, options)
 		end
 	else
 		warn("[TeleportManager] Teleport failed after retries:", errorMsg)
-		-- §L9 fix: notify clients of the error AND clear their matchmaking
-		-- state so they have a path back to the queue UI.
-		-- §AGX/X14: the old CancelQueue call was a no-op (the queue entry
-		-- and countdown are already gone by launch time); clear the
-		-- `launching` flag instead.
+		-- §L9, §AGX/X14: notify clients of the error AND clear their matchmaking
+		-- state so they have a path back to the queue UI. CancelQueue would be a
+		-- no-op here (the queue entry and countdown are already gone by launch
+		-- time), so clear the `launching` flag instead.
 		local mm = getMatchmaking()
 		if mm and mm.ClearLaunching then
 			mm.ClearLaunching(players)

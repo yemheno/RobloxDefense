@@ -38,7 +38,7 @@ local e = React.createElement
 
 local LEAVE_TIMEOUT = 10   -- s; ReturnTeleporter retries once after 2 s
 
--- PanelStack (Agent A) is optional: used only to veto Back while travelling.
+-- PanelStack is optional: used only to veto Back while travelling.
 local PanelStack = nil
 do
 	local mod = script.Parent:FindFirstChild("PanelStack")

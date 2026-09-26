@@ -13,9 +13,9 @@
         (Deviation from the spec's `Theme.Colors.accent`: Theme v2 wins.)
 
     Badge.useBadges() -> get(key) -> number
-        Subscribes ONCE to BadgeStore (Agent A, UI/Shell/BadgeStore) and
-        re-renders on any change. `get` is nil-safe: no store, no key, or a
-        store error all read as 0, so menus render before BadgeStore lands.
+        Subscribes ONCE to BadgeStore (UI/Shell/BadgeStore) and re-renders on
+        any change. `get` is nil-safe: no store, no key, or a store error all
+        read as 0, so menus always render.
 
     Badge.sum(get, keys) -> number    OR of several keys (group / ☰ badge)
 ]]

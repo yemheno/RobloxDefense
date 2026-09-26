@@ -30,7 +30,7 @@ if cpBtn then
 	end)
 end
 
--- §EV5 fix: server fires "PartyUpdate" (PartyManager.lua:618 et al). The
+-- §EV5 fix: server fires "PartyUpdate" (PartyManager.BroadcastUpdate et al). The
 -- legacy "PartyUpdated" name made the client WaitForChild time out and
 -- warn at lobby boot.
 -- Server pushes updated party roster after any member join/leave

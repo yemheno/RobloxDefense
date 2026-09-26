@@ -1,8 +1,7 @@
 -- UI/HUD/VitalsRegion.lua
 --[[
     §AGX/UI-P5: the vitals region (shell-spec §4.1 / §4.2).
-      variant "full" (Combat): HP / Resource / XP rows (moved from
-          HUD.lua:808-878; same panel, same StatusBar rows).
+      variant "full" (Combat): HP / Resource / XP StatusBar rows.
       variant "chip" (Lobby / Plaza, mobile.md §2.5): Level + XP only, built
           from Theme v2 Text + Bar.
     props: rect (Layout RECT, design px), variant, info (PlayerInfo state), visible

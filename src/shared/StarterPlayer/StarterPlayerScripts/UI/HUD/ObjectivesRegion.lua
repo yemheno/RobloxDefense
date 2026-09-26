@@ -1,8 +1,7 @@
 -- UI/HUD/ObjectivesRegion.lua
 --[[
-    §AGX/UI-P5: defense-line bar (moved from HUD.lua:950-973; under the
-    vitals, Layout L.defense) + defense-combo badge (HUD.lua:975-993; above
-    the combo counter, Layout L.defCombo).
+    §AGX/UI-P5: defense-line bar (under the vitals, Layout L.defense) +
+    defense-combo badge (above the combo counter, Layout L.defCombo).
     props: layout (L), run (RunState state), showBar, showCombo
 ]]
 

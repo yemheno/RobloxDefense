@@ -3,7 +3,7 @@
     Shared root React component for all combat places
     (LaneDefense, CentralBoss, HordeMode).
 
-    §AGX/UI-P3 (W2): a thin wrapper around the shared Shell
+    §AGX/UI-P3: a thin wrapper around the shared Shell
     (UI/Shell/Shell.lua) with place = "Combat". The Shell mounts the HUD
     (which owns the BattleClassUI badge and TeammateVitals: classBadge /
     partyInHud), PanelHost (every Registry panel: class reference, Stats,

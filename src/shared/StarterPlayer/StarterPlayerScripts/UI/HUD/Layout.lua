@@ -52,13 +52,14 @@ local ATTR = {
 	topRightBottom    = "UI_TopRightBottomPx",
 	topCentreReserved = "UI_TopCentreReservedPx",
 	topCentreButtons  = "UI_TopCentreButtonsBottomPx",
-	leftColumnRight   = "UI_LeftColumnRightPx",     -- §AGX/UI-P5 new
-	rightRailLeft     = "UI_RightRailLeftPx",       -- §AGX/UI-P5 new
-	skillPadTop       = "UI_SkillPadTopPx",         -- §AGX/UI-P5 new (SkillPad)
-	skillPadLeft      = "UI_SkillPadLeftPx",        -- §AGX/UI-P5 new (SkillPad)
-	actionBarTop      = "UI_ActionBarTopPx",        -- §AGX/UI-P5 new (ActionBar)
-	hudMode           = "UI_HudMode",               -- §AGX/UI-P5 new (PanelStack, string)
-	-- legacy: published while legacyNav / a standalone TeammateVitals exist (retired in W3)
+	-- §AGX/UI-P5
+	leftColumnRight   = "UI_LeftColumnRightPx",
+	rightRailLeft     = "UI_RightRailLeftPx",
+	skillPadTop       = "UI_SkillPadTopPx",         -- published by SkillPad
+	skillPadLeft      = "UI_SkillPadLeftPx",        -- published by SkillPad
+	actionBarTop      = "UI_ActionBarTopPx",        -- published by ActionBar
+	hudMode           = "UI_HudMode",               -- published by PanelStack (string)
+	-- legacy: published while legacyNav / a standalone TeammateVitals exist
 	topLeftBottom     = "UI_TopLeftBottomPx",
 	topLeftX          = "UI_TopLeftXPx",
 	navToggleTop      = "UI_NavToggleTopPx",        -- published by HUD/LegacyNav
@@ -76,7 +77,7 @@ local OUTPUT_ATTRS = {
 	ATTR.topLeftBottom, ATTR.topLeftX,
 }
 
-local TOP_GAP = 10                        -- S = topbar + 10 (HUD.lua:280, Notify)
+local TOP_GAP = 10                        -- S = topbar + 10 (same gap as Notify)
 local DEFAULT_RAIL = { cell = 44, gap = 8, pad = 6 }
 local BADGE_SCALE = Vector2.new(0.13, 0.07)  -- BattleClassUI badge (scale-sized, A's file)
 local LEGACY_BADGE_DY = 40                   -- BattleClassUI default y = safeTop + 40 (screen px)
@@ -310,14 +311,14 @@ function Layout.compute(args)
 
 	local leftX = E
 	if legacyBadge and isTouch then
-		leftX = math.max(E, BADGE_SCALE.X * W + G)   -- was 0.14W + 8 (HUD.lua:346)
+		leftX = math.max(E, BADGE_SCALE.X * W + G)
 	end
 
 	local variant = combat and "full" or "chip"
 	local vs = combat and sz.vitalsFull or sz.vitalsChip
 	if isTouch and combat then
-		-- Keep a corridor for a 120-wide run button (the Wave-1 badge shift
-		-- pushes the stack right; HUD.lua:347 capped the width the same way).
+		-- Keep a corridor for a 120-wide run button (the legacy badge shift
+		-- pushes the stack right).
 		local maxW = W / 2 - RUN_MIN_HALF - G - leftX
 		if maxW < vs.X then vs = V2(math.max(MIN_VITALS_W, maxW), vs.Y) end
 	end

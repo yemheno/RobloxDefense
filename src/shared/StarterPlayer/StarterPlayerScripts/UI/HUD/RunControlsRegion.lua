@@ -1,9 +1,8 @@
 -- UI/HUD/RunControlsRegion.lua
 --[[
-    §AGX/UI-P5: Start / Countdown / Next Wave / Return (moved from
-    HUD.lua:880-918, 998-1044), now Theme v2 Buttons in the top-centre slot
-    below the boss reserve (Layout L.run). Return sits one row lower in the
-    post-run Idle, under Start (§AGX/X14).
+    §AGX/UI-P5: Start / Countdown / Next Wave / Return, as Theme v2 Buttons
+    in the top-centre slot below the boss reserve (Layout L.run). Return sits
+    one row lower in the post-run Idle, under Start (§AGX/X14).
 
     Publishes UI_TopCentreButtonsBottomPx (screen px, nil when no button is
     visible) so Notify's banner sits below the column.
@@ -57,19 +56,15 @@ local function RunControlsRegion(props)
 		end
 	end, {})
 
-	-- §AGX/UI-P7: gamepad only: select Return when it appears
-	-- (§AGX/UI-FIX: R2: Start and Next Wave are never auto-focused). Never
-	-- steals from an open panel; B (engine) drops the selection and the
-	-- stick drives the character again.
+	-- §AGX/UI-P7: gamepad only: select Return when it appears (the run is
+	-- over). Never steals from an open panel; B (engine) drops the selection
+	-- and the stick drives the character again.
 	local rootRef = React.useRef(nil)
-	-- §AGX/UI-P7: Next Wave is NOT auto-focused — between waves the player
-	-- is still fighting/moving, and a selected button steals the left stick.
-	-- §AGX/UI-FIX: R2: Start is NOT auto-focused either: any player can
-	-- start the run for the whole party, and a pad player pressing A (Jump)
-	-- in the Idle place would fire RequestStartGame. Only Return stays
-	-- focused (the run is over). rootRef now wraps Return alone, so the
-	-- findFirst fallback can never land on Start in the post-run Idle,
-	-- where both show.
+	-- §AGX/UI-FIX: R2: Start and Next Wave are NEVER auto-focused: a selected
+	-- button steals the left stick mid-fight, and any player can start the run
+	-- for the whole party, so a pad player pressing A (Jump) in Idle would fire
+	-- RequestStartGame. rootRef wraps Return alone, so the findFirst fallback
+	-- can never land on Start in the post-run Idle, where both show.
 	local focusKey = show.returnBtn and "return" or nil
 	GamepadFocus.useAutoSelect(rootRef, focusKey,
 		{ prefer = { "ReturnToLobby" }, steal = false })
@@ -123,8 +118,8 @@ local function RunControlsRegion(props)
 			NetworkManager.FireServer("RequestNextWave")
 		end) or nil,
 
-		-- §AGX/UI-FIX: R2: full-size transparent slot (same coordinates as
-		-- before, not Active, so it never takes a click) that scopes the
+		-- §AGX/UI-FIX: R2: full-size transparent slot (same coordinates as the
+		-- column, not Active, so it never takes a click) that scopes the
 		-- gamepad auto-select to Return.
 		returnSlot = e("Frame", {
 			Name                   = "ReturnSlot",

@@ -5,10 +5,8 @@
     Displays item cards with name, description, price, and a
     Buy button. Fires "NPCResponse" → { npcId, action = "Buy", itemId }.
 
-    §AGX/UI-P6: Theme v2 re-skin: AppWindow chrome, Card items,
-    CurrencyPill prices, Button buys, design px under UIScaleRoot.Local.
-    The palette table, the hand-rolled backdrop / panel / ✕ are gone.
-    useExternal, useNpcDistanceClose, useRequest and closeShop unchanged.
+    §AGX/UI-P6: AppWindow chrome, Card items, CurrencyPill prices, Button
+    buys, design px under UIScaleRoot.Local.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -35,7 +33,7 @@ do
 	end
 end
 
--- §AGX/UI-P6: shared components (the private palette is gone).
+-- §AGX/UI-P6: shared components.
 local Common       = PlayerScripts_UI:WaitForChild("Common")
 local Theme        = require(Common:WaitForChild("Theme"))
 local AppWindow    = require(Common:WaitForChild("AppWindow"))
@@ -57,15 +55,13 @@ local BUY_W = 104   -- design px
 local function ItemCard(props)
 	local item = props.item
 	local npcId = props.npcId
-	-- §AGX/UI-P4: the card's inline status is useRequest (was a local
-	-- statusMsg + flashStatus timer fed by a ShopUI-level listener).
-	-- Same behaviour: "Purchasing…" while pending, the server's
-	-- ShopSuccess/ShopError message for 3 s. Results still arrive as
-	-- NPCDialogue { type = "ShopSuccess"|"ShopError", npcId, message,
-	-- itemId? } (ShopHandler.lua); ShopError has no itemId, so it goes
-	-- to the card the player last clicked (props.getPendingItem), as
-	-- before (§AGX/UX-03). New: no reply within 4 s shows an error
-	-- instead of silently clearing (out of range / dropped request).
+	-- §AGX/UI-P4, §AGX/UX-03: the card's inline status is useRequest:
+	-- "Purchasing…" while pending, the server's ShopSuccess/ShopError message
+	-- for 3 s. Results arrive as NPCDialogue { type = "ShopSuccess"|"ShopError",
+	-- npcId, message, itemId? } (NPCManager ShopHandler); ShopError has no
+	-- itemId, so it goes to the card the player last clicked
+	-- (props.getPendingItem). No reply within 4 s shows an error (out of
+	-- range / dropped request) instead of silently clearing.
 	local getPendingItem = props.getPendingItem
 	local buy = useRequest("NPCResponse", {
 		reply       = "NPCDialogue",
@@ -153,7 +149,7 @@ local function ShopUI(props)
 	local onClose = props.onClose or function() end
 
 	local shopData, setShopData = React.useState(nil)
-	-- §AGX/UI-P4: result routing moved into each card's useRequest; only
+	-- §AGX/UI-P4: result routing lives in each card's useRequest; only
 	-- the last-clicked item is kept here (ShopError carries no itemId).
 	local pendingItemRef = React.useRef(nil)   -- item.id of the last Buy click
 	local getPendingItem = React.useCallback(function() return pendingItemRef.current end, {})
@@ -174,8 +170,7 @@ local function ShopUI(props)
 	end, {})
 
 	-- §AGX/UI-P3: one close helper, defined before the early return so the
-	-- stack (useExternal) can call it. Fires NPCResponse Close exactly as the
-	-- ✕ always did.
+	-- stack (useExternal) can call it. Fires NPCResponse Close.
 	local shopDataRef = React.useRef(nil)
 	shopDataRef.current = shopData
 	local function closeShop()
@@ -190,10 +185,9 @@ local function ShopUI(props)
 		onClose()
 	end
 
-	-- §AGX/X29: the server now drops NPC responses from out of range, so
-	-- close the panel when the player walks away (same as NPCDialog).
-	-- §AGX/UI-P3: UX-17 nit, the distance path now sends NPCResponse Close
-	-- too (it used to only hide the panel; NPCDialog sends it on both paths).
+	-- §AGX/X29, §AGX/UI-P3: the server drops NPC responses from out of range,
+	-- so close the panel when the player walks away; this path also sends
+	-- NPCResponse Close (UX-17, same as NPCDialog).
 	useNpcDistanceClose(shopData and shopData.npcId, shopData ~= nil, closeShop)
 
 	-- §AGX/UI-P3: A10, register with the PanelStack (replaces / is replaced).

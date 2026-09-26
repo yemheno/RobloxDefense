@@ -8,13 +8,12 @@
 
     Mounted in CombatApp; renders nothing when state == "Alive".
 
-    §AGX/UI-P6: Theme v2 re-skin (docs/UI_REVAMP.md D1 Hybrid / D2).
+    §AGX/UI-P6: Theme v2 re-skin (DESIGN_DECISIONS.md#ui-decisions, UI-D1 Hybrid / UI-D2).
       • Content = design px inside UIScaleRoot.Local (the Shell mounts this
         unscaled), on one raised card so the text reads over any world.
       • Revive is the ONE primary (orange) CTA; Respawn is secondary.
         The paid price is an essence CurrencyPill beside the button.
-      • Private palette, TextScaled labels and hand-rolled buttons are gone
-        (Theme roles + Text + Button). The Lighting ColorCorrection tints
+      • Theme roles + Text + Button. The Lighting ColorCorrection tints
         below are world effects, not UI colours, and keep their values.
 ]]
 
@@ -43,7 +42,7 @@ local SP = Theme.Space
 -- §AGX/UI-P6: layout in DESIGN px (phone scale).
 local CARD_W      = 380
 local BUTTON_W    = 260
-local OVERLAY_Z   = Theme.Z.modal   -- was a literal 100
+local OVERLAY_Z   = Theme.Z.modal
 
 -- ═══════════════════════════════════════════════════════════
 -- COLOR CORRECTION EFFECTS
@@ -308,7 +307,7 @@ local function DeathUI()
 						NetworkManager.FireServer("WipeReviveAccept")
 					end,
 				}),
-				-- Currency always via CurrencyPill (was "N ♦" in the label).
+				-- Currency always via CurrencyPill.
 				cost = (not isFree) and e(CurrencyPill, {
 					currency    = "essence",
 					value       = wipeOffer.cost,

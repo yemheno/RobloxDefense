@@ -49,11 +49,11 @@
         and an external's closeFn is not called again.
       • vetoes are honoured for "x" "back" "backdrop" "replace" "toggle".
 
-    ── Wave-1 gate ──────────────────────────────────────────────────────
+    ── Attach gate ──────────────────────────────────────────────────────
     Side effects (the UI context token, the CAS B-sink, UI_HudMode, NPC
     self-registration through useExternal) only run while a PanelHost is
-    mounted (PanelStack.attach). Until Wave 2 mounts the Shell, every hook
-    in the panels is a no-op and the game behaves exactly as before.
+    mounted (PanelStack.attach). Without one, every hook in the panels is a
+    no-op.
 ]]
 
 local ReplicatedStorage    = game:GetService("ReplicatedStorage")
@@ -784,7 +784,7 @@ function PanelStack.usePresentation()
 end
 
 --- Inside a panel mounted by PanelHost: fn(reason) -> false vetoes.
---- Outside PanelHost (Wave 1 / legacy mounts) it does nothing.
+--- Outside PanelHost (legacy mounts) it does nothing.
 function PanelStack.useCloseHandler(fn)
 	local ctx = React.useContext(PanelStack.EntryContext)
 	local fnRef = React.useRef(fn)

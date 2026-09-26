@@ -192,7 +192,7 @@ w(piToast, "DismissBtn").Activated:Connect(function()
 	piToast.Visible = false
 end)
 
--- §EV1 fix: server fires "PartyInvite" (PartyManager.lua:353); the legacy
+-- §EV1 fix: server fires "PartyInvite" (PartyManager.InvitePlayer); the legacy
 -- "PartyInviteReceived" name made the client WaitForChild time out, blocking
 -- lobby boot for 3 s and warning "Event not found".
 nm.OnServerEvent("PartyInvite", function(data)
@@ -242,7 +242,7 @@ for _, b in ipairs(achSidebar:GetChildren()) do
 end
 
 -- ── Class Menu: switch buttons ────────────────────────────────────────────────
--- §EV10 fix: server registers "RequestClassSwitch" (ClassManager.lua:93)
+-- §EV10 fix: server registers "RequestClassSwitch" (ClassManager)
 -- with signature (player, className). The legacy "RequestClassChange" name
 -- + table payload silently no-op'd.
 for _, col in ipairs(w(cmPn, "Columns"):GetChildren()) do
@@ -263,8 +263,8 @@ end
 -- ── Stats Menu: allocate + respec ─────────────────────────────────────────────
 -- §EV11 fix: server signature is AllocateStat(player, statName, points)
 -- where statName is a STRING and points is a NUMBER (SharedEventHandlers
--- line 198). Was being fired with a single table payload, which the
--- type check at line 199 silently rejected.
+-- AllocateStat handler). Was being fired with a single table payload, which
+-- its type check silently rejected.
 for _, row in ipairs(w(smPn, "PrimaryStats"):GetChildren()) do
 	if not row:IsA("Frame") then continue end
 	local addBtn   = row:FindFirstChild("AddBtn")
@@ -375,8 +375,8 @@ for _, b in ipairs(w(npcPn, "Choices"):GetChildren()) do
 	end
 end
 
--- §EV3 fix: server fires a single "NPCDialogue" event (NPCManager/init.lua:89,
--- LoreHandler.lua:44). Different stages carry a `type` field — "Dialogue",
+-- §EV3 fix: server fires a single "NPCDialogue" event (NPCManager and its
+-- Shop/Quest/Lore handlers). Different stages carry a `type` field — "Dialogue",
 -- "ShopSuccess", "ShopError", "QuestAccepted", "QuestCompleted",
 -- "QuestError", "TeleportComplete". Open the panel for actual dialogue
 -- nodes; everything else is a transient toast that the panel doesn't show.
@@ -433,7 +433,7 @@ for _, c in ipairs(voteP:GetChildren()) do
 	end
 end
 
--- §EV4 fix: server emits "VoteStart" / "VoteResult" (VoteManager.lua:113-115);
+-- §EV4 fix: server emits "VoteStart" / "VoteResult" (VoteManager);
 -- the legacy "VoteStarted" / "VoteEnded" names were stalling lobby boot for
 -- 3 s each waiting for events that don't exist. Note: in combat places the
 -- React VoteUI manages its own panel visibility — these handlers only

@@ -123,10 +123,9 @@ function MatchmakingManager.QueueForMode(player, modeId, difficulty)
 	if difficulty == "Auto" or type(difficulty) ~= "string" or not DifficultyConfig.IsValid(difficulty) then
 		difficulty = DifficultyConfig.AutoSelect(partyLevels)
 	else
-		-- §T5-T9/S3: enforce requiredLevel on EXPLICIT picks too. A valid
-		-- tier name ("Nightmare") used to skip the auto-select branch —
-		-- and requiredLevel was only enforced inside AutoSelect — so a
-		-- level-1 party could queue Nightmare with a hand-crafted packet.
+		-- §T5-T9/S3: enforce requiredLevel on EXPLICIT picks too (AutoSelect
+		-- only covers "Auto"), so a hand-crafted packet can't queue a level-1
+		-- party into Nightmare.
 		local tier = DifficultyConfig.GetDifficulty(difficulty)
 		local minLevel = math.huge
 		for _, lvl in ipairs(partyLevels) do
@@ -193,7 +192,7 @@ function MatchmakingManager.QueueForMode(player, modeId, difficulty)
 		end
 	end
 
-	-- §L6 fix: check IsQueued for EVERY party member, not just the leader.
+	-- §L6: check IsQueued for EVERY party member, not just the leader.
 	-- A member could already be in a queue from a prior solo-queue attempt
 	-- whose CancelQueue was lost, or from a malicious / replayed packet.
 	-- Without this, two queue entries can co-exist for the same player and
@@ -212,7 +211,7 @@ function MatchmakingManager.QueueForMode(player, modeId, difficulty)
 		end
 	end
 
-	-- §L8 fix: clone the members array so the queue snapshot doesn't
+	-- §L8: clone the members array so the queue snapshot doesn't
 	-- alias PartyManager's live members list. Without this, joining or
 	-- leaving the party while queued would silently mutate the queued
 	-- list — the players who eventually teleport may not match the ones
@@ -395,7 +394,7 @@ function MatchmakingManager.LaunchMatch(players, modeId, difficulty)
 		return
 	end
 
-	-- §L7 fix: re-check minPlayers AFTER disconnect-filter. If a 5-player
+	-- §L7: re-check minPlayers AFTER disconnect-filter. If a 5-player
 	-- party where 4 disconnected during the 5s countdown reaches here,
 	-- only 1 remains — teleporting them solo into a 5-player mode would
 	-- be a guaranteed loss. Cancel the launch instead and let the

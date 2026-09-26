@@ -13,10 +13,10 @@ local Vector3  = Vector3
 local BrickColor = BrickColor
 
 -- §AGX/X24: NPC shop listings are BUILT from ShopConfig (single source of
--- truth, Audit §5.6). The registry names only itemIds; price, currency,
--- tab, level requirement and `enabled` come from ShopConfig, display text
--- from ConsumableConfig. The old hand-written prices (10/15 Essence) did
--- not match what ShopManager charges (25/30 Merits).
+-- truth, ARCHITECTURE.md#single-source-of-truth). The registry names only
+-- itemIds; price, currency, tab, level requirement and `enabled` come from
+-- ShopConfig, display text from ConsumableConfig, so the NPC price is
+-- always what ShopManager charges.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Shared            = ReplicatedStorage:WaitForChild("Shared")
 local ShopConfig        = require(Shared:WaitForChild("ShopConfig"))
@@ -109,9 +109,8 @@ return {
 				objectives  = {
 					{ type = "CompleteMode", mode = "Defense", count = 1, label = "Complete 1 Defense" },
 				},
-				-- §AGX/X41: 100 → 25 Essence. 100 was ≈28 runs of Lane drops;
-				-- 25 pays the first two tier-ups (10 + 15) — a welcome gift,
-				-- not a stockpile.
+				-- §AGX/X41: 25 Essence pays the first two tier-ups (10 + 15) — a
+				-- welcome gift, not a stockpile.
 				rewards     = {
 					{ type = "Essence", amount = 25 },
 					{ type = "XP",      percent = 35 },
@@ -125,10 +124,8 @@ return {
 				objectives   = {
 					{ type = "CompleteMode", mode = "Defense", count = 5, label = "Complete 5 Defenses" },
 				},
-				-- §AGX/X41: was 10 Merits / 300 Essence (looked swapped; 300 E
-				-- ≈ 83 runs of drops). Now 2,500 Merits (≈3 runs at the level
-				-- you finish 5 runs) + 10 Essence ≈ 5,000 Merits of value at
-				-- the 250:1 anchor (BALANCE_NUMBERS §33).
+				-- §AGX/X41: ≈5,000 Merits of value at the 250:1 anchor
+				-- (BALANCE_NUMBERS.md#economy-anchor).
 				rewards      = {
 					{ type = "Merits",  amount = 2500 },
 					{ type = "Essence", amount = 10   },
@@ -232,8 +229,8 @@ return {
 
 		-- Displayed as selectable destinations in the NPCTeleportOffer UI.
 		-- Each entry triggers MatchmakingManager.QueueForMode(player, mode.id).
-		-- §LN1 fix: was Defense-only; alpha launches with both modes available
-		-- so list both. CentralBoss is intentionally omitted — see TODO_PARKING_LOT.md.
+		-- §LN1: list every live mode. CentralBoss is intentionally omitted
+		-- until it ships (BACKLOG §AGX/X28-NEXT).
 		modes = {
 			{
 				id          = "Defense",

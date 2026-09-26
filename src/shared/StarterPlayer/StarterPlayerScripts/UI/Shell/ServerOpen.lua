@@ -6,16 +6,15 @@
         ServerOpen.useServerOpen(place)     -- place = "Lobby" | "Plaza" | "Combat"
 
     1. Character creation: subscribe to CharacterCreationRequired, THEN fire
-       RequestCharacterStatus (same race-safe order as LobbyApp.lua:76-88),
-       then PanelStack.open("characterCreation"). Replaces the three copies
-       in the Apps (W2 deletes them).
+       RequestCharacterStatus (listener first, so a fast reply is not lost),
+       then PanelStack.open("characterCreation"). This is the only subscriber.
     2. Daily login (D14, Lobby only): fire GetDailyLoginStatus on mount (not
        ready-gated); on DailyLoginStatus{canClaim=true}, at most once per
        client session, PanelStack.openWhenIdle("dailyLogin"), so it waits
        for CharacterCreation. ❓ Strict "first lobby join of the day" needs a
        profile field (Pablo's call); this is the canClaim rule.
     3. Death: LocalPlayer DeathState in { KnockedDown, Dead } ->
-       PanelStack.setPresence("death", "system", true). DeathUI is untouched.
+       PanelStack.setPresence("death", "system", true). DeathUI draws itself.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")

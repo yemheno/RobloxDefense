@@ -1,8 +1,8 @@
 -- UI/HUD/StatusBar.lua
 --[[
-    label | [====-------] | current / max        (moved from HUD.lua:132-199)
+    label | [====-------] | current / max
 
-    §AGX/UI-P5: unchanged look. Colours now come from the Theme v2 aliases
+    §AGX/UI-P5: colours come from the Theme v2 aliases
     (track / textDim / text), and the three column widths can be narrowed
     with `columns = { label, trackX, trackW, valueX, valueW }` (scale of the
     row) so the 220-design-px phone vitals still fit "1234 / 1234".

@@ -1,9 +1,9 @@
 -- UI/Shell/GamepadNav.lua
 --[[
-    §AGX/UI-P7: gamepad navigation for PanelHost entries (docs/UI_REVAMP.md
-    §5 P7, shell-spec §3.5). Used by PanelHost's EntryWrapper; every hook is
+    §AGX/UI-P7: gamepad navigation for PanelHost entries (ARCHITECTURE.md#gamepad,
+    shell-spec §3.5). Used by PanelHost's EntryWrapper; every hook is
     unconditional and inert unless the entry is the visible top AND
-    FormFactor input == "Gamepad", so mouse / touch behave exactly as before.
+    FormFactor input == "Gamepad", so mouse / touch are unaffected.
 
     GamepadNav.useEntryNav(frameRef, { enabled, entryId }) -> { hasTabs }
       • First focus: when the entry becomes top, select the panel's own
