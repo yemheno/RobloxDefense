@@ -137,6 +137,13 @@ function SkillInput.Init()
 			for slot, id in pairs(data.skills) do
 				mapSlot(tonumber(slot), id)
 			end
+			-- §AGX/UI-P2: server-sent base costs seed affordability.
+			if type(data.costs) == "table" then
+				for slot, cost in pairs(data.costs) do
+					local s = tonumber(slot)
+					if s and type(cost) == "number" and cost > 0 then minCost[s] = cost end
+				end
+			end
 			emit(stateListeners)
 		end
 

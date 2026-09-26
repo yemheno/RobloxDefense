@@ -157,8 +157,20 @@ function SkillManager.SetupPlayer(player)
 	local className = ClassManager.GetClassName(player)
 	local classSkills = SkillRegistry.GetClassSkillIds(className)
 
+	-- §AGX/UI-P2: include base resource costs so the touch SkillPad /
+	-- ActionBar can dim unaffordable skills from the start (was learned
+	-- only after a failed cast). usesAllResource skills need any > 0.
+	local costs = {}
+	local classModule = SkillRegistry.GetClassModule(className)
+	if classModule and classModule.GetAllSkills then
+		for slot, skill in pairs(classModule.GetAllSkills()) do
+			costs[slot] = skill.usesAllResource and 1 or (skill.resourceCost or 0)
+		end
+	end
+
 	NetworkManager.FireClient(player, "SkillCooldownUpdate", {
 		skills = classSkills,
+		costs = costs,
 		cooldowns = {},
 	})
 end
