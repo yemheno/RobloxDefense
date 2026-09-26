@@ -30,6 +30,15 @@ local C = {
 	close   = Color3.fromRGB(180, 50, 50),
 }
 
+-- §AGX/UI-P1: minimum tap target. Close is AppWindow's (44x44 floor there);
+-- the tabs were 16 px tall on a phone (0.07 of the window body).
+local MIN_TAP_PX = 44
+
+-- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
+local function minText()
+	return React.createElement("UITextSizeConstraint", { MinTextSize = 12 })
+end
+
 local BOARDS = { "GearScore", "HighestWave", "TotalPlayTime" }
 
 -- §AGX/X27: TotalPlayTime is stored in seconds — show it as hours/minutes.
@@ -79,6 +88,10 @@ local function LeaderboardUI(props)
 	local tabs = {}
 	for i, board in ipairs(BOARDS) do
 		local isActive = board == activeBoard
+		local function selectBoard()
+			setEntries({})
+			setActiveBoard(board)
+		end
 		tabs["tab_" .. i] = React.createElement("TextButton", {
 			Size             = UDim2.fromScale(1 / #BOARDS, 1),
 			BackgroundColor3 = isActive and C.tabOn or C.tabOff,
@@ -89,12 +102,25 @@ local function LeaderboardUI(props)
 			TextScaled       = true,
 			LayoutOrder      = i,
 			ZIndex           = 12,
-			[React.Event.Activated] = function()
-				setEntries({})
-				setActiveBoard(board)
-			end,
+			[React.Event.Activated] = selectBoard,
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.15, 0) }),
+			minText = minText(),  -- §AGX/UI-P1: M11 text floor
+			-- §AGX/UI-P1: transparent hit box, 44 px tall, grown upward from
+			-- the tab's bottom edge (+2 px) so it stays off the list below.
+			-- The visual tab is unchanged, so desktop looks the same.
+			hit = React.createElement("TextButton", {
+				Name                   = "HitArea",
+				AnchorPoint            = Vector2.new(0.5, 1),
+				Position               = UDim2.new(0.5, 0, 1, 2),
+				Size                   = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				Text                   = "",
+				ZIndex                 = 13,
+				[React.Event.Activated] = selectBoard,
+			}, {
+				minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, MIN_TAP_PX) }),
+			}),
 		})
 	end
 
@@ -125,7 +151,7 @@ local function LeaderboardUI(props)
 			Font                   = Enum.Font.Gotham,
 			TextScaled             = true,
 			LayoutOrder            = 1,
-		})
+		}, { minText = minText() })  -- §AGX/UI-P1: M11 text floor
 	else
 		for i, entry in ipairs(entries) do
 			local isSelf = entry.userId == localUserId
@@ -144,7 +170,7 @@ local function LeaderboardUI(props)
 					TextColor3             = (entry.rank or 99) <= 3 and C.gold or C.dim,
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 				nameLbl  = React.createElement("TextLabel", {
 					Position               = UDim2.fromScale(0.13, 0),
 					Size                   = UDim2.fromScale(0.62, 1),
@@ -154,7 +180,7 @@ local function LeaderboardUI(props)
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
 					TextXAlignment         = Enum.TextXAlignment.Left,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 				scoreLbl = React.createElement("TextLabel", {
 					Position               = UDim2.fromScale(0.76, 0),
 					Size                   = UDim2.fromScale(0.22, 1),
@@ -164,7 +190,7 @@ local function LeaderboardUI(props)
 					Font                   = Enum.Font.Gotham,
 					TextScaled             = true,
 					TextXAlignment         = Enum.TextXAlignment.Right,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 			})
 		end
 	end
@@ -189,7 +215,7 @@ local function LeaderboardUI(props)
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
 				ZIndex                 = 12,
-			}) or nil,
+			}, { minText = minText() }) or nil,  -- §AGX/UI-P1: M11 text floor
 
 			tabBar = React.createElement("Frame", {
 				Position               = UDim2.fromScale(0.04, 0.11),

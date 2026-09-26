@@ -50,6 +50,34 @@ local CLASS_DISPLAY = {
 	LifeSteward = { icon = "🌿", color = Color3.fromRGB(100, 220, 80) },
 }
 
+-- §AGX/UI-P1: minimum tap target.
+local MIN_TAP_PX = 44
+
+-- §AGX/UI-P1: transparent hit box at least minSize (default 44x44), centred on
+-- the visual unless anchor/position are given. The visual keeps its size.
+local function hitArea(onActivated, opts)
+	opts = opts or {}
+	return e("TextButton", {
+		Name                   = "HitArea",
+		AnchorPoint            = opts.anchor or Vector2.new(0.5, 0.5),
+		Position               = opts.position or UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text                   = "",
+		ZIndex                 = opts.zIndex,
+		[React.Event.Activated] = onActivated,
+	}, {
+		minSize = e("UISizeConstraint", {
+			MinSize = opts.minSize or Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+		}),
+	})
+end
+
+-- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
+local function minText()
+	return e("UITextSizeConstraint", { MinTextSize = 12 })
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- SUB-COMPONENTS
 -- ═══════════════════════════════════════════════════════════
@@ -83,7 +111,10 @@ local function SkillRow(props)
 
 		-- Slot key badge
 		Key = e("Frame", {
-			Size            = UDim2.fromScale(0.011, 0.020),
+			-- §AGX/UI-P1: V1/M11: was fromScale(0.011, 0.020) of the skill row
+			-- (a few px). 0.011x1920 = 21 px; the Info column's (1,-30) width
+			-- already reserves 22 px + 8 px padding for it.
+			Size            = UDim2.fromOffset(22, 22),
 			BackgroundColor3 = accent,
 			BackgroundTransparency = 0.35,
 			BorderSizePixel = 0,
@@ -97,7 +128,7 @@ local function SkillRow(props)
 				TextColor3             = C.text,
 				Font                   = Enum.Font.GothamBold,
 				TextScaled             = true,
-			}),
+			}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 		}),
 
 		-- Name + description column
@@ -243,26 +274,10 @@ local function BattleClassUI(props)
 			LayoutOrder = 1,
 		})
 
-		if props.onClose then
-			panelChildren.CloseBtn = e("TextButton", {
-				AnchorPoint = Vector2.new(1, 0),
-				Position = UDim2.new(1, -8, 0, 8),
-				-- §LD-BC3: was fromScale(0.030, 0.026) which collapsed to
-				-- ~9 × 23 px on a panel that's already ≤30 % screen wide,
-				-- making it impossible to click. Pin to a fixed pixel size.
-				Size = UDim2.fromOffset(64, 24),
-				BackgroundColor3 = Color3.fromRGB(80, 36, 36),
-				BorderSizePixel = 0,
-				Text = "Close",
-				TextColor3 = Color3.fromRGB(245, 100, 100),
-				Font = Enum.Font.GothamBold,
-				TextSize = 12,
-				ZIndex = (props.zIndex or 3) + 1,
-				[React.Event.Activated] = props.onClose,
-			}, {
-				Corner = e("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
-			})
-		end
+		-- §AGX/UI-P1: V2: CloseBtn used to be added here, i.e. inside the
+		-- UIListLayout, which ignored its Position/AnchorPoint and rendered it
+		-- as the first row, top-left. It is now built on the outer panel
+		-- below (sibling of Scroll), absolutely positioned top-right.
 
 		panelChildren.Header = e("Frame", {
 				Size            = UDim2.new(1, 0, 0, 32),
@@ -276,14 +291,18 @@ local function BattleClassUI(props)
 					SortOrder         = Enum.SortOrder.LayoutOrder,
 				}),
 				IconLbl = e("TextLabel", {
-					Size                   = UDim2.fromScale(0.015, 0.026),
+					-- §AGX/UI-P1: V1: was fromScale(0.015, 0.026) of this 32 px
+					-- header (under 1 px tall). 0.015x1920 = 28 px.
+					Size                   = UDim2.fromOffset(28, 28),
 					BackgroundTransparency = 1,
 					Text                   = display.icon,
 					TextScaled             = true,
 					LayoutOrder            = 1,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 				NameLbl = e("TextLabel", {
-					Size                   = UDim2.new(1, -84, 1, 0),
+					-- §AGX/UI-P1: reserve icon 28 + resource 80 + 2 x 8 padding
+					-- (was -84, sized for the collapsed labels).
+					Size                   = UDim2.new(1, -124, 1, 0),
 					BackgroundTransparency = 1,
 					Text                   = activeClass,
 					TextColor3             = display.color,
@@ -293,7 +312,9 @@ local function BattleClassUI(props)
 					LayoutOrder            = 2,
 				}),
 				ResLbl = e("TextLabel", {
-					Size                   = UDim2.fromScale(0.042, 0.019),
+					-- §AGX/UI-P1: V1: was fromScale(0.042, 0.019) of the header
+					-- (under 1 px tall). 0.042x1920 = 80 px wide.
+					Size                   = UDim2.fromOffset(80, 20),
 					BackgroundTransparency = 1,
 					Text                   = "* " .. (classInfo.resource or ""),
 					TextColor3             = C.gold,
@@ -363,6 +384,10 @@ local function BattleClassUI(props)
 				end,
 			}, {
 				Corner = e("UICorner", { CornerRadius = UDim.new(0, 6) }),
+				-- §AGX/UI-P1: T25: 26 px button; 44 px tall hit box.
+				hit = hitArea(function()
+					setShowKeybinds(true)
+				end, { minSize = Vector2.new(0, MIN_TAP_PX) }),
 			})
 
 		-- §LD-BC4: panel is now scale-bound (no AutomaticSize.Y) and
@@ -381,6 +406,36 @@ local function BattleClassUI(props)
 		local outerStroke = scrollChildren.Stroke
 		scrollChildren.Corner = nil
 		scrollChildren.Stroke = nil
+
+		-- §AGX/UI-P1: V2: Close lives on the outer panel (not in the list),
+		-- top-right, above the scrolling content. Visual stays 64x24; the hit
+		-- box is 44 px tall, anchored to the panel top so the panel's
+		-- ClipsDescendants doesn't cut it.
+		local closeBtn = nil
+		if props.onClose then
+			closeBtn = e("TextButton", {
+				AnchorPoint = Vector2.new(1, 0),
+				Position = UDim2.new(1, -8, 0, 8),
+				-- §LD-BC3: was fromScale(0.030, 0.026) which collapsed to
+				-- ~9 × 23 px on a panel that's already ≤30 % screen wide,
+				-- making it impossible to click. Pin to a fixed pixel size.
+				Size = UDim2.fromOffset(64, 24),
+				BackgroundColor3 = Color3.fromRGB(80, 36, 36),
+				BorderSizePixel = 0,
+				Text = "Close",
+				TextColor3 = Color3.fromRGB(245, 100, 100),
+				Font = Enum.Font.GothamBold,
+				TextSize = 12,
+				ZIndex = (props.zIndex or 3) + 1,
+				[React.Event.Activated] = props.onClose,
+			}, {
+				Corner = e("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
+				hit = hitArea(props.onClose, {
+					anchor   = Vector2.new(0.5, 0),
+					position = UDim2.new(0.5, 0, 0, -8),
+				}),
+			})
+		end
 
 		panel = e("Frame", {
 			Position               = UDim2.fromOffset(0, showBadge and 50 or 0),
@@ -405,6 +460,7 @@ local function BattleClassUI(props)
 				ScrollingDirection     = Enum.ScrollingDirection.Y,
 				ElasticBehavior        = Enum.ElasticBehavior.Never,
 			}, scrollChildren),
+			CloseBtn = closeBtn,  -- §AGX/UI-P1: V2
 		})
 	end
 
@@ -466,7 +522,7 @@ local function BattleClassUI(props)
 						BackgroundTransparency = 1,
 						Text                   = display.icon,
 						TextScaled             = true,
-					}),
+					}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 				}),
 
 				ClassName = e("TextLabel", {
@@ -478,7 +534,7 @@ local function BattleClassUI(props)
 					TextXAlignment         = Enum.TextXAlignment.Left,
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 				Subtitle = e("TextLabel", {
 					Position               = UDim2.fromScale(0.28, 0.56),
@@ -489,7 +545,7 @@ local function BattleClassUI(props)
 					TextXAlignment         = Enum.TextXAlignment.Left,
 					Font                   = Enum.Font.Gotham,
 					TextScaled             = true,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 			}),
 		}) or nil,
 

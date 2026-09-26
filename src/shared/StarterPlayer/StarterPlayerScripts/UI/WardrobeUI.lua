@@ -28,6 +28,34 @@ local e         = React.createElement
 local useState  = React.useState
 local useEffect = React.useEffect
 
+-- §AGX/UI-P1: minimum tap target. Legacy sizes were px/1920 scales applied
+-- inside a scaled panel, so the close button was 9x8 px on a phone (T12).
+local MIN_TAP_PX = 44
+
+-- §AGX/UI-P1: transparent hit box centred on a small visual button, at least
+-- MIN_TAP_PX on each axis (minSize overrides). The visual keeps its own size
+-- so desktop looks the same; only the clickable area grows.
+local function hitArea(onActivated, minSize)
+	return e("TextButton", {
+		Name                   = "HitArea",
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text                   = "",
+		[React.Event.Activated] = onActivated,
+	}, {
+		minSize = e("UISizeConstraint", {
+			MinSize = minSize or Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+		}),
+	})
+end
+
+-- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
+local function minText()
+	return e("UITextSizeConstraint", { MinTextSize = 12 })
+end
+
 -- ── Palette ───────────────────────────────────────────────
 local C = {
 	overlay    = Color3.fromRGB(0, 0, 0),
@@ -123,7 +151,7 @@ local function CosmeticCard(props)
 			Font                   = Enum.Font.GothamBold,
 			TextXAlignment         = Enum.TextXAlignment.Left,
 			TextTruncate           = Enum.TextTruncate.AtEnd,
-		}),
+		}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 		-- Rarity
 		rarityLabel = e("TextLabel", {
@@ -135,7 +163,7 @@ local function CosmeticCard(props)
 			TextScaled             = true,
 			Font                   = Enum.Font.Gotham,
 			TextXAlignment         = Enum.TextXAlignment.Left,
-		}),
+		}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 		-- Description
 		descLabel = e("TextLabel", {
@@ -153,7 +181,9 @@ local function CosmeticCard(props)
 
 		-- Equipped badge
 		equippedBadge = isEquipped and e("TextLabel", {
-			Size                   = UDim2.fromScale(0.031, 0.015),
+			-- §AGX/UI-P1: V1: was fromScale(0.031, 0.015) of the card (a few px);
+			-- the (1,-65,1,-22) position shows the intended 60x16 px badge.
+			Size                   = UDim2.fromOffset(60, 16),
 			Position               = UDim2.new(1, -65, 1, -22),
 			BackgroundColor3       = C.accent,
 			BackgroundTransparency = 0.1,
@@ -164,6 +194,7 @@ local function CosmeticCard(props)
 			BorderSizePixel        = 0,
 		}, {
 			corner = e("UICorner", { CornerRadius = UDim.new(0, 4) }),
+			minText = minText(),  -- §AGX/UI-P1: M11 text floor
 		}) or nil,
 
 		-- Locked overlay
@@ -183,7 +214,7 @@ local function CosmeticCard(props)
 				TextColor3             = C.text_dim,
 				TextScaled             = true,
 				Font                   = Enum.Font.GothamBold,
-			}),
+			}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 		}) or nil,
 	})
 end
@@ -207,6 +238,9 @@ local function TabButton(props)
 		[React.Event.Activated] = props.onActivated,
 	}, {
 		corner = e("UICorner", { CornerRadius = UDim.new(0, 6) }),
+		minText = minText(),  -- §AGX/UI-P1: M11 text floor
+		-- §AGX/UI-P1: tab is 36 px tall; hit box makes the tap axis 44 px.
+		hit = hitArea(props.onActivated, Vector2.new(0, MIN_TAP_PX)),
 	})
 end
 
@@ -263,7 +297,11 @@ local function WardrobeUI(props)
 
 	local cardChildren = {
 		layout = e("UIGridLayout", {
-			CellSize                = UDim2.fromScale(0.068, 0.102),
+			-- §AGX/UI-P1: M14/T27: was fromScale(0.068, 0.102), i.e. 130x110 px
+			-- divided by 1920x1080 but applied to the scroll frame, so cells
+			-- were ~29x10 px on a phone and 70x56 at 1080p (content clipped).
+			-- Use the intended pixel size (>= 96x96 everywhere).
+			CellSize                = UDim2.fromOffset(120, 110),
 			CellPadding             = UDim2.fromOffset(8, 8),
 			FillDirection           = Enum.FillDirection.Horizontal,
 			HorizontalAlignment     = Enum.HorizontalAlignment.Left,
@@ -320,6 +358,11 @@ local function WardrobeUI(props)
 			BorderSizePixel  = 0,
 		}, {
 			corner = e("UICorner", { CornerRadius = UDim.new(0, 12) }),
+			-- §AGX/UI-P1: M14: 154 px of fixed chrome is subtracted from this
+			-- scale panel, leaving the grid 100 px (iPhone) / 80 px (Android).
+			-- The floor keeps the grid remainder >= 196 px and still fits an
+			-- 800x360 screen. 1080p (1056x702) and tablet are unaffected.
+			minSize = e("UISizeConstraint", { MinSize = Vector2.new(420, 350) }),
 
 			-- Title
 			title = e("TextLabel", {
@@ -331,7 +374,7 @@ local function WardrobeUI(props)
 				TextScaled             = true,
 				Font                   = Enum.Font.GothamBold,
 				TextXAlignment         = Enum.TextXAlignment.Left,
-			}),
+			}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 			-- Close button
 			closeBtn = e("TextButton", {
@@ -347,6 +390,12 @@ local function WardrobeUI(props)
 				[React.Event.Activated] = onClose,
 			}, {
 				corner = e("UICorner", { CornerRadius = UDim.new(0, 6) }),
+				-- §AGX/UI-P1: T12: visual was 9x8 px on a phone; floor it at the
+				-- 1080p size (20x23) so it stays visible, and give it a 44x44
+				-- transparent hit box.
+				visMin = e("UISizeConstraint", { MinSize = Vector2.new(20, 20) }),
+				minText = minText(),
+				hit = hitArea(onClose),
 			}),
 
 			-- Tab bar
@@ -386,6 +435,22 @@ local function WardrobeUI(props)
 				[React.Event.Activated] = onUnequipSlot,
 			}, {
 				corner = e("UICorner", { CornerRadius = UDim.new(0, 6) }),
+				-- §AGX/UI-P1: V1: visual was 29x7 px on a phone; floor it at the
+				-- 1080p size (~67x18). The hit box is 44 px tall, anchored at
+				-- y=96 so it stays clear of the tab hit boxes above.
+				visMin = e("UISizeConstraint", { MinSize = Vector2.new(64, 18) }),
+				minText = minText(),
+				hit = e("TextButton", {
+					Name                   = "HitArea",
+					AnchorPoint            = Vector2.new(0.5, 0),
+					Position               = UDim2.new(0.5, 0, 0, -4),
+					Size                   = UDim2.fromScale(1, 1),
+					BackgroundTransparency = 1,
+					Text                   = "",
+					[React.Event.Activated] = onUnequipSlot,
+				}, {
+					minSize = e("UISizeConstraint", { MinSize = Vector2.new(MIN_TAP_PX, MIN_TAP_PX) }),
+				}),
 			}),
 
 			-- Scrolling card grid

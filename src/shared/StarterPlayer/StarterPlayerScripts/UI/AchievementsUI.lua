@@ -14,6 +14,7 @@
 
 local Players           = game:GetService("Players")
 local TweenService      = game:GetService("TweenService")
+local UserInputService  = game:GetService("UserInputService")  -- §AGX/UI-P1
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
@@ -41,6 +42,35 @@ local C = {
     toast_gold = Color3.fromRGB(255, 200,  60),
 }
 
+-- §AGX/UI-P1: minimum tap target. Touch-only growth keeps desktop unchanged.
+local MIN_TAP_PX = 44
+local IS_TOUCH   = UserInputService.TouchEnabled
+
+-- §AGX/UI-P1: transparent hit box centred on a small visual button, at least
+-- MIN_TAP_PX on each axis. The visual keeps its size; only the hit area grows.
+local function hitArea(onActivated, zIndex)
+    return React.createElement("TextButton", {
+        Name                   = "HitArea",
+        AnchorPoint            = Vector2.new(0.5, 0.5),
+        Position               = UDim2.fromScale(0.5, 0.5),
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text                   = "",
+        ZIndex                 = zIndex,
+        [React.Event.Activated] = onActivated,
+    }, {
+        minSize = React.createElement("UISizeConstraint", {
+            MinSize = Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+        }),
+    })
+end
+
+-- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
+-- (Panel only; the always-mounted Toast below is out of scope for this pass.)
+local function minText()
+    return React.createElement("UITextSizeConstraint", { MinTextSize = 12 })
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- SUB-COMPONENTS
 -- ═══════════════════════════════════════════════════════════
@@ -49,7 +79,9 @@ local C = {
 local function CategoryTab(props)
     local active = props.active
     return React.createElement("TextButton", {
-        Size             = UDim2.new(1, 0, 0, 32),
+        -- §AGX/UI-P1: 32 px tabs at a 36 px pitch can't hold a 44 px hit box
+        -- without overlapping, so tabs grow to 44 px on touch devices only.
+        Size             = UDim2.new(1, 0, 0, IS_TOUCH and MIN_TAP_PX or 32),
         BackgroundColor3 = active and C.tab_active or C.tab_idle,
         BorderSizePixel  = 0,
         Text             = props.label,
@@ -60,6 +92,7 @@ local function CategoryTab(props)
         [React.Event.Activated] = props.onSelect,
     }, {
         corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
+        minText = minText(),  -- §AGX/UI-P1: M11 text floor
     })
 end
 
@@ -124,7 +157,7 @@ local function AchievementCard(props)
             TextColor3             = isMax and C.gold or (isActive and C.text or C.locked_txt),
             Font                   = Enum.Font.GothamBold,
             TextScaled             = true,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
         -- Name (leaves room for tier badge)
         nameLbl = React.createElement("TextLabel", {
@@ -136,7 +169,7 @@ local function AchievementCard(props)
             Font                   = Enum.Font.GothamBold,
             TextScaled             = true,
             TextXAlignment         = Enum.TextXAlignment.Left,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
         -- Tier badge (top-right)
         tierBadge = React.createElement("TextLabel", {
@@ -148,7 +181,7 @@ local function AchievementCard(props)
             Font                   = Enum.Font.GothamBold,
             TextScaled             = true,
             TextXAlignment         = Enum.TextXAlignment.Right,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
         -- Description
         descLbl = React.createElement("TextLabel", {
@@ -160,7 +193,7 @@ local function AchievementCard(props)
             Font                   = Enum.Font.Gotham,
             TextScaled             = true,
             TextXAlignment         = Enum.TextXAlignment.Left,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
         -- Progress bar background
         barBg = React.createElement("Frame", {
@@ -190,7 +223,7 @@ local function AchievementCard(props)
                 TextScaled             = true,
                 TextXAlignment         = Enum.TextXAlignment.Right,
                 ZIndex                 = 2,
-            }),
+            }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
         }),
     })
 end
@@ -310,12 +343,15 @@ local function AchievementsUIPanel(props)
                     TextScaled             = true,
                     TextXAlignment         = Enum.TextXAlignment.Left,
                     ZIndex                 = 10,
-                }),
+                }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
                 closeBtn = React.createElement("TextButton", {
                     AnchorPoint      = Vector2.new(1, 0.5),
                     Position         = UDim2.fromScale(0.99, 0.5),
-                    Size             = UDim2.fromScale(0.019, 0.033),
+                    -- §AGX/UI-P1: T13/V1: was fromScale(0.019, 0.033) of the
+                    -- header = 26x3 px at 1080p, 12x1 on a phone. 0.019 x 1920
+                    -- shows the intended 36 px square.
+                    Size             = UDim2.fromOffset(36, 36),
                     BackgroundColor3 = C.close_bg,
                     BorderSizePixel  = 0,
                     Text             = "✕",
@@ -326,16 +362,26 @@ local function AchievementsUIPanel(props)
                     [React.Event.Activated] = onClose,
                 }, {
                     cc = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+                    minText = minText(),
+                    hit = hitArea(onClose, 12),  -- §AGX/UI-P1: 44x44 hit box
                 }),
             }),
 
             -- Left: category tabs
-            sidebar = React.createElement("Frame", {
+            -- §AGX/UI-P1: ScrollingFrame (was Frame) so 8 tabs at the 44 px
+            -- touch height scroll instead of spilling below the panel on a
+            -- phone. On desktop the tabs fit, so no scrollbar is shown.
+            sidebar = React.createElement("ScrollingFrame", {
                 Position         = UDim2.fromScale(0, 0.1),
                 Size             = UDim2.fromScale(0.18, 0.88),
                 BackgroundColor3 = C.panel,
                 BorderSizePixel  = 0,
                 ZIndex           = 9,
+                ScrollBarThickness   = 4,
+                ScrollBarImageColor3 = C.gold_dim,
+                AutomaticCanvasSize  = Enum.AutomaticSize.Y,
+                CanvasSize           = UDim2.fromScale(0, 0),
+                ScrollingDirection   = Enum.ScrollingDirection.Y,
             }, {
                 layout = React.createElement("UIListLayout", {
                     FillDirection     = Enum.FillDirection.Vertical,
@@ -381,123 +427,40 @@ end
 -- ═══════════════════════════════════════════════════════════
 -- TOAST COMPONENT (always mounted, self-manages)
 -- ═══════════════════════════════════════════════════════════
+-- §AGX/UI-P4: the unlock toast is now a Notify BANNER (top-centre, priority
+-- "achievement", the lowest). It used to be its own CanvasGroup at
+-- (0.5, 0.07) scale with a private queue, a 4 s timer and a fade tween,
+-- i.e. under the topbar on phones and on top of the HUD wave banner.
+-- This component only bridges AchievementClient.OnUnlocked → Notify and
+-- renders nothing; the export name stays so the App roots are untouched.
+-- Notify's banner queue replaces the private queue; staleAfter = inf so a
+-- burst of unlocks is never dropped while a wave/boss banner is showing.
 
-local TOAST_DURATION   = 4.0   -- seconds visible
-local TOAST_FADE_TIME  = 0.4   -- seconds to fade out
+local TOAST_DURATION = 4.0   -- seconds visible (unchanged)
+
+local Notify = require(script.Parent:WaitForChild("Common"):WaitForChild("Notify"))  -- §AGX/UI-P4
 
 local function AchievementToast()
-    local toastData,       setToastData       = React.useState(nil)
-    local toastVisible,    setToastVisible    = React.useState(false)
-    local toastTransp,     setToastTransp     = React.useState(1)     -- 1 = invisible
-    local panelRef = React.useRef(nil)
-
     React.useEffect(function()
-        local queue   = {}
-        local showing = false
-
-        local function showNext()
-            if #queue == 0 then showing = false; return end
-            showing = true
-            local item = table.remove(queue, 1)
-
-            setToastData(item)
-            setToastVisible(true)
-            setToastTransp(0)  -- fully visible (BackgroundTransparency = 0)
-
-            -- Auto-dismiss after TOAST_DURATION
-            task.delay(TOAST_DURATION, function()
-                -- Fade out (we tween directly via ref for smoothness)
-                local frame = panelRef.current
-                if frame then
-                    TweenService:Create(frame,
-                        TweenInfo.new(TOAST_FADE_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
-                        { GroupTransparency = 1 }
-                    ):Play()
-                end
-                task.delay(TOAST_FADE_TIME, function()
-                    setToastVisible(false)
-                    setToastTransp(1)
-                    showNext()
-                end)
-            end)
-        end
-
-        local unsub = AchievementClient.OnUnlocked(function(data)
-            table.insert(queue, data)
-            if not showing then
-                showNext()
+        return AchievementClient.OnUnlocked(function(data)
+            data = data or {}
+            local name = (data.icon or "") .. "  " .. (data.name or "")
+                .. (data.tier and ("  [Tier " .. data.tier .. "/" .. (data.maxTier or "?") .. "]") or "")
+            local subtitle = name
+            if data.rewards and #data.rewards > 0 then
+                subtitle = subtitle .. "  ·  Rewards: " .. table.concat(data.rewards, ", ")
             end
+            Notify.banner("🏆  Achievement Unlocked!", {
+                subtitle   = subtitle,
+                priority   = "achievement",
+                color      = C.toast_gold,
+                duration   = TOAST_DURATION,
+                staleAfter = math.huge,
+            })
         end)
-
-        return unsub
     end, {})
 
-    if not toastVisible then return nil end
-
-    local data = toastData or {}
-    local rewardsText = ""
-    if data.rewards and #data.rewards > 0 then
-        rewardsText = "Rewards: " .. table.concat(data.rewards, ", ")
-    end
-    local hasRewards = rewardsText ~= ""
-
-    return React.createElement("CanvasGroup", {
-        ref              = panelRef,
-        AnchorPoint      = Vector2.new(0.5, 0),
-        Position         = UDim2.fromScale(0.5, 0.07),
-        Size             = UDim2.fromScale(0.36, hasRewards and 0.12 or 0.09),
-        BackgroundColor3 = C.toast_bg,
-        GroupTransparency  = toastTransp,
-        BackgroundTransparency = 0,
-        BorderSizePixel  = 0,
-        ZIndex           = 20,
-    }, {
-        corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
-        stroke = React.createElement("UIStroke", {
-            Color        = C.toast_gold,
-            Thickness    = 2,
-            Transparency = 0,
-        }),
-
-        -- Header label
-        header = React.createElement("TextLabel", {
-            Position               = UDim2.fromScale(0.03, 0.02),
-            Size                   = UDim2.fromScale(0.94, hasRewards and 0.28 or 0.38),
-            BackgroundTransparency = 1,
-            Text                   = "🏆  Achievement Unlocked!",
-            TextColor3             = C.toast_gold,
-            Font                   = Enum.Font.GothamBold,
-            TextScaled             = true,
-            TextXAlignment         = Enum.TextXAlignment.Left,
-            ZIndex                 = 21,
-        }),
-
-        -- Achievement name
-        achName = React.createElement("TextLabel", {
-            Position               = UDim2.fromScale(0.03, hasRewards and 0.32 or 0.45),
-            Size                   = UDim2.fromScale(0.94, hasRewards and 0.34 or 0.5),
-            BackgroundTransparency = 1,
-            Text                   = (data.icon or "") .. "  " .. (data.name or "") .. (data.tier and ("  [Tier " .. data.tier .. "/" .. (data.maxTier or "?") .. "]") or ""),
-            TextColor3             = C.text,
-            Font                   = Enum.Font.GothamBold,
-            TextScaled             = true,
-            TextXAlignment         = Enum.TextXAlignment.Left,
-            ZIndex                 = 21,
-        }),
-
-        -- Rewards line (conditional)
-        rewards = hasRewards and React.createElement("TextLabel", {
-            Position               = UDim2.fromScale(0.03, 0.70),
-            Size                   = UDim2.fromScale(0.94, 0.26),
-            BackgroundTransparency = 1,
-            Text                   = rewardsText,
-            TextColor3             = Color3.fromRGB(140, 255, 140),
-            Font                   = Enum.Font.Gotham,
-            TextScaled             = true,
-            TextXAlignment         = Enum.TextXAlignment.Left,
-            ZIndex                 = 21,
-        }) or nil,
-    })
+    return nil
 end
 
 -- ═══════════════════════════════════════════════════════════

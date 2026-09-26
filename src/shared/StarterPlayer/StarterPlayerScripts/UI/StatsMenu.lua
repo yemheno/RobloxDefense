@@ -12,6 +12,7 @@
 --   Server      → "StatsUpdate" (fresh snapshot after every allocation)
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService  = game:GetService("UserInputService")  -- §AGX/UI-P1
 local React = require(ReplicatedStorage.Packages.React)
 
 local Modules        = script.Parent.Parent:WaitForChild("Modules")
@@ -35,6 +36,49 @@ local C = {
 	close_text = Color3.fromRGB(245, 100, 100),
 	white      = Color3.fromRGB(255, 255, 255),
 }
+
+-- §AGX/UI-P1: minimum tap target. T11: "+" was 34x17 px on a phone because
+-- rows are 0.115 of a scaled panel. On touch devices rows get a 44 px pixel
+-- height (in a scroll frame); desktop keeps the scale layout unchanged.
+local MIN_TAP_PX = 44
+local IS_TOUCH   = UserInputService.TouchEnabled
+
+-- §AGX/UI-P1: hold-to-repeat on "+": first point on press, then after
+-- HOLD_DELAY_S one point every 1/HOLD_RATE_HZ s. Still one AllocateStat
+-- event per point; the server limit for AllocateStat is the NetworkManager
+-- default (30/s/player), so 8/s stays well under it.
+local HOLD_DELAY_S = 0.4
+local HOLD_RATE_HZ = 8
+
+-- §AGX/UI-P1: transparent hit box at least minSize (default 44x44), centred
+-- on a visual unless anchor/position are given. The visual keeps its size.
+local function hitArea(opts)
+	return React.createElement("TextButton", {
+		Name                   = "HitArea",
+		AnchorPoint            = opts.anchor or Vector2.new(0.5, 0.5),
+		Position               = opts.position or UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text                   = "",
+		AutoButtonColor        = false,
+		[React.Event.Activated]  = opts.onActivated,
+		[React.Event.InputBegan] = opts.onInputBegan,
+	}, {
+		minSize = React.createElement("UISizeConstraint", {
+			MinSize = opts.minSize or Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+		}),
+	})
+end
+
+-- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
+local function minText()
+	return React.createElement("UITextSizeConstraint", { MinTextSize = 12 })
+end
+
+local function isPointer(input)
+	return input ~= nil and (input.UserInputType == Enum.UserInputType.MouseButton1
+		or input.UserInputType == Enum.UserInputType.Touch)
+end
 
 -- ── Static metadata for each primary stat ─────────────────────────────────────
 local STAT_META = {
@@ -75,6 +119,73 @@ local function StatRow(props)
 
 	local addBg = canAdd and C.btn_add or C.btn_dis
 
+	-- §AGX/UI-P1: hold-to-repeat state. Hooks are unconditional; refs let the
+	-- repeat thread see the latest props without re-subscribing.
+	local holdTokenRef   = React.useRef(0)
+	local canAddRef      = React.useRef(canAdd)
+	local onAddRef       = React.useRef(onAdd)
+	local unallocatedRef = React.useRef(props.unallocated or 0)
+	canAddRef.current      = canAdd
+	onAddRef.current       = onAdd
+	unallocatedRef.current = props.unallocated or 0
+
+	React.useEffect(function()
+		return function()
+			holdTokenRef.current += 1  -- cancel any running repeat on unmount
+		end
+	end, {})
+
+	local function addOnce()
+		if canAddRef.current and onAddRef.current then
+			onAddRef.current()
+		end
+	end
+
+	local function onAddInputBegan(_rbx, input)
+		if not isPointer(input) or not canAddRef.current then return end
+		holdTokenRef.current += 1
+		local token = holdTokenRef.current
+		-- Never send more points than were unallocated at press time.
+		local budget = unallocatedRef.current
+		local function fire()
+			if budget <= 0 or not canAddRef.current then return false end
+			budget -= 1
+			addOnce()
+			return true
+		end
+		fire()
+
+		local endConn
+		endConn = input:GetPropertyChangedSignal("UserInputState"):Connect(function()
+			local st = input.UserInputState
+			if st == Enum.UserInputState.End or st == Enum.UserInputState.Cancel then
+				if holdTokenRef.current == token then
+					holdTokenRef.current += 1
+				end
+				endConn:Disconnect()
+			end
+		end)
+
+		task.delay(HOLD_DELAY_S, function()
+			while holdTokenRef.current == token do
+				-- Safety net in case the mouse release never reaches `input`.
+				if input.UserInputType == Enum.UserInputType.MouseButton1
+					and not UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) then
+					break
+				end
+				if not fire() then break end
+				task.wait(1 / HOLD_RATE_HZ)
+			end
+		end)
+	end
+
+	-- Pointer presses are handled on InputBegan above; Activated only covers
+	-- gamepad / keyboard activation so a click doesn't add two points.
+	local function onAddActivated(_rbx, input)
+		if isPointer(input) then return end
+		addOnce()
+	end
+
 	return React.createElement("Frame", {
 		Size             = UDim2.fromScale(1, 1),
 		BackgroundColor3 = rowBg,
@@ -97,7 +208,7 @@ local function StatRow(props)
 				Font                   = Enum.Font.GothamBold,
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
-			}),
+			}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 			name = React.createElement("TextLabel", {
 				Position               = UDim2.fromScale(0.22, 0),
 				Size                   = UDim2.fromScale(0.40, 0.55),
@@ -107,7 +218,7 @@ local function StatRow(props)
 				Font                   = Enum.Font.GothamBold,
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
-			}),
+			}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 			aff = React.createElement("TextLabel", {
 				Position               = UDim2.fromScale(0.22, 0.52),
 				Size                   = UDim2.fromScale(0.78, 0.48),
@@ -117,7 +228,7 @@ local function StatRow(props)
 				Font                   = Enum.Font.Gotham,
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
-			}),
+			}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 		}),
 
 		-- Allocated count (no minus button; use Full Respec)
@@ -129,7 +240,7 @@ local function StatRow(props)
 			TextColor3             = C.text_val,
 			Font                   = Enum.Font.GothamBold,
 			TextScaled             = true,
-		}),
+		}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 		-- Plus button
 		btnAdd = React.createElement("TextButton", {
@@ -142,9 +253,15 @@ local function StatRow(props)
 			Font             = Enum.Font.GothamBold,
 			TextScaled       = true,
 			AutoButtonColor  = canAdd,
-			[React.Event.Activated] = canAdd and onAdd or nil,
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
+			minText = minText(),  -- §AGX/UI-P1: M11 text floor
+			-- §AGX/UI-P1: T11: 44x44 hit box (covers the visual), with
+			-- hold-to-repeat.
+			hit = hitArea({
+				onActivated  = onAddActivated,
+				onInputBegan = onAddInputBegan,
+			}),
 		}),
 	})
 end
@@ -167,7 +284,7 @@ local function DerivedRow(props)
 			Font                   = Enum.Font.Gotham,
 			TextScaled             = true,
 			TextXAlignment         = Enum.TextXAlignment.Left,
-		}),
+		}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 		val = React.createElement("TextLabel", {
 			Position               = UDim2.fromScale(0.62, 0),
 			Size                   = UDim2.fromScale(0.38, 1),
@@ -177,7 +294,7 @@ local function DerivedRow(props)
 			Font                   = Enum.Font.GothamBold,
 			TextScaled             = true,
 			TextXAlignment         = Enum.TextXAlignment.Right,
-		}),
+		}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 	})
 end
 
@@ -246,13 +363,15 @@ local function StatsMenu(props)
 	for i, meta in ipairs(STAT_META) do
 		local allocated = stats.allocated[meta.id] or 0
 		statRows["row_" .. meta.id] = React.createElement("Frame", {
-			Size        = UDim2.fromScale(1, statRowHeight),
+			-- §AGX/UI-P1: T11: 44 px pixel rows on touch (in a scroll frame).
+			Size        = IS_TOUCH and UDim2.new(1, -6, 0, MIN_TAP_PX) or UDim2.fromScale(1, statRowHeight),
 			LayoutOrder = i,
 		}, {
 			inner = React.createElement(StatRow, {
 				meta      = meta,
 				allocated = allocated,
 				canAdd    = stats.unallocated > 0,
+				unallocated = stats.unallocated,  -- §AGX/UI-P1: hold budget
 				alt       = (i % 2 == 0),
 				onAdd     = function() allocate(meta.id) end,
 			}),
@@ -261,7 +380,7 @@ local function StatsMenu(props)
 	statRows.layout = React.createElement("UIListLayout", {
 		FillDirection     = Enum.FillDirection.Vertical,
 		SortOrder         = Enum.SortOrder.LayoutOrder,
-		Padding           = UDim.new(0.012, 0),
+		Padding           = IS_TOUCH and UDim.new(0, 4) or UDim.new(0.012, 0),  -- §AGX/UI-P1
 	})
 
 	-- ── Build derived stat rows ───────────────────────────────────────────────
@@ -293,6 +412,9 @@ local function StatsMenu(props)
 		icon    = "stats",
 		onClose = onClose,
 		size    = UDim2.fromScale(0.72, 0.78),
+		-- §AGX/UI-P1: on touch, let AppWindow grow the window to the
+		-- tallest height that fits under the topbar (it clamps).
+		minSize = IS_TOUCH and Vector2.new(0, 400) or nil,
 		zIndex  = 10,
 	}, {
 			-- Points badge
@@ -310,7 +432,7 @@ local function StatsMenu(props)
 					TextColor3             = C.points,
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 			}),
 
 			-- Full Respec button (uses 1 Respec Scroll if owned, otherwise 25 Essence — §AGX/X42)
@@ -326,6 +448,15 @@ local function StatsMenu(props)
 				[React.Event.Activated] = respecStats,
 			}, {
 				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
+				minText = minText(),  -- §AGX/UI-P1: M11 text floor
+				-- §AGX/UI-P1: 44 px tall hit box, grown upward into the empty
+				-- band above so it never covers the first stat row's "+".
+				hit = hitArea({
+					onActivated = respecStats,
+					anchor      = Vector2.new(0.5, 1),
+					position    = UDim2.fromScale(0.5, 1),
+					minSize     = Vector2.new(0, MIN_TAP_PX),
+				}),
 			}),
 
 			-- Respec feedback
@@ -337,10 +468,21 @@ local function StatsMenu(props)
 				TextColor3             = Color3.fromRGB(255, 200, 100),
 				Font                   = Enum.Font.Gotham,
 				TextScaled             = true,
-			}) or nil,
+			}, { minText = minText() }) or nil,  -- §AGX/UI-P1: M11 text floor
 
 			-- Left: primary stat rows
-			leftPanel = React.createElement("Frame", {
+			-- §AGX/UI-P1: T11: on touch, 5 x 44 px rows don't fit a phone-height
+			-- panel, so it scrolls. Desktop keeps the plain Frame.
+			leftPanel = IS_TOUCH and React.createElement("ScrollingFrame", {
+				Position               = UDim2.fromScale(0.03, 0.20),
+				Size                   = UDim2.fromScale(0.56, 0.76),
+				BackgroundTransparency = 1,
+				BorderSizePixel        = 0,
+				ScrollBarThickness     = 4,
+				CanvasSize             = UDim2.fromScale(0, 0),
+				AutomaticCanvasSize    = Enum.AutomaticSize.Y,
+				ScrollingDirection     = Enum.ScrollingDirection.Y,
+			}, statRows) or React.createElement("Frame", {
 				Position               = UDim2.fromScale(0.03, 0.20),
 				Size                   = UDim2.fromScale(0.56, 0.76),
 				BackgroundTransparency = 1,
@@ -362,7 +504,7 @@ local function StatsMenu(props)
 					TextColor3             = C.accent,
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 				rows = React.createElement("Frame", {
 					Position               = UDim2.fromScale(0.03, 0.09),
 					Size                   = UDim2.fromScale(0.94, 0.88),

@@ -89,6 +89,36 @@ local CURRENCY_COLORS = {
     Robux   = Color3.fromRGB( 50, 200,  80),
 }
 
+-- §AGX/UI-P1: minimum tap target. T15: close was 28x18 px and the tabs
+-- 18 px tall on a phone (0.06 of a scaled panel).
+local MIN_TAP_PX = 44
+
+-- §AGX/UI-P1: transparent hit box at least minSize (default 44x44), centred on
+-- the visual unless anchor/position are given. The visual keeps its size, so
+-- desktop looks the same; only the clickable area grows.
+local function hitArea(onActivated, opts)
+    opts = opts or {}
+    return React.createElement("TextButton", {
+        Name                   = "HitArea",
+        AnchorPoint            = opts.anchor or Vector2.new(0.5, 0.5),
+        Position               = opts.position or UDim2.fromScale(0.5, 0.5),
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text                   = "",
+        ZIndex                 = opts.zIndex,
+        [React.Event.Activated] = onActivated,
+    }, {
+        minSize = React.createElement("UISizeConstraint", {
+            MinSize = opts.minSize or Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+        }),
+    })
+end
+
+-- §AGX/UI-P1: M11/M15: TextScaled labels get a readable floor on phones.
+local function minText()
+    return React.createElement("UITextSizeConstraint", { MinTextSize = 12 })
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- ITEM CARD
 -- ═══════════════════════════════════════════════════════════
@@ -137,7 +167,7 @@ local function ShopItemCard(props)
             BackgroundTransparency = 1,
             Text = icon,
             TextScaled = true,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
         -- Name (with rarity color)
         nameLabel = React.createElement("TextLabel", {
@@ -149,7 +179,7 @@ local function ShopItemCard(props)
             Font       = Enum.Font.GothamBold,
             TextScaled = true,
             TextXAlignment = Enum.TextXAlignment.Left,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
         -- Description
         descLabel = React.createElement("TextLabel", {
@@ -163,7 +193,7 @@ local function ShopItemCard(props)
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Top,
             TextWrapped = true,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
         -- Price
         priceLabel = React.createElement("TextLabel", {
@@ -174,7 +204,7 @@ local function ShopItemCard(props)
             TextColor3 = priceColor,
             Font       = Enum.Font.GothamBold,
             TextScaled = true,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
         -- Buy button
         buyBtn = React.createElement("TextButton", {
@@ -194,6 +224,7 @@ local function ShopItemCard(props)
             end,
         }, {
             corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
+            minText = minText(),  -- §AGX/UI-P1: M11 text floor
         }),
     })
 end
@@ -216,6 +247,15 @@ local function TabButton(props)
         [React.Event.Activated] = props.onActivate,
     }, {
         corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.15, 0) }),
+        minText = minText(),  -- §AGX/UI-P1: M11 text floor
+        -- §AGX/UI-P1: T15/M15: 44 px tall hit box, grown upward from the tab's
+        -- bottom edge so it never covers the item list below.
+        hit = hitArea(props.onActivate, {
+            anchor   = Vector2.new(0.5, 1),
+            position = UDim2.fromScale(0.5, 1),
+            minSize  = Vector2.new(0, MIN_TAP_PX),
+            zIndex   = 13,
+        }),
     })
 end
 
@@ -346,7 +386,7 @@ local function GlobalShopUI(props)
                 TextScaled = true,
                 TextXAlignment = Enum.TextXAlignment.Left,
                 ZIndex = 12,
-            }),
+            }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
             -- Currency display
             currencyBar = React.createElement("TextLabel", {
@@ -358,7 +398,7 @@ local function GlobalShopUI(props)
                 Font       = Enum.Font.GothamBold,
                 TextScaled = true,
                 ZIndex = 12,
-            }),
+            }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
             -- Close button
             close = React.createElement("TextButton", {
@@ -370,10 +410,14 @@ local function GlobalShopUI(props)
                 TextColor3 = C.white,
                 Font     = Enum.Font.GothamBold,
                 TextScaled = true,
-                ZIndex = 12,
+                ZIndex = 13,  -- §AGX/UI-P1: was 12; above tabBar so its hit box wins
                 [React.Event.Activated] = onClose,
             }, {
                 corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.25, 0) }),
+                minText = minText(),
+                -- §AGX/UI-P1: T15: 44x44 hit box. It overlaps the tab hit
+                -- boxes at the top-right; the button's ZIndex 13 keeps it on top.
+                hit = hitArea(onClose, { zIndex = 14 }),
             }),
 
             -- Tab bar
@@ -415,7 +459,7 @@ local function GlobalShopUI(props)
                 Font       = Enum.Font.GothamBold,
                 TextScaled = true,
                 ZIndex = 12,
-            }) or nil,
+            }, { minText = minText() }) or nil,  -- §AGX/UI-P1: M11 text floor
 
             -- Scrolling item list
             scrollFrame = React.createElement("ScrollingFrame", {

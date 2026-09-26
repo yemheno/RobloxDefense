@@ -29,6 +29,33 @@ local C = {
 	close   = Color3.fromRGB(180, 50, 50),
 }
 
+-- §AGX/UI-P1: minimum tap target (T14: close was 8x9 px on a phone).
+local MIN_TAP_PX = 44
+
+-- §AGX/UI-P1: transparent hit box centred on a small visual button, at least
+-- minSize (default 44x44). The visual keeps its size; only the hit area grows.
+local function hitArea(onActivated, zIndex, minSize)
+	return React.createElement("TextButton", {
+		Name                   = "HitArea",
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text                   = "",
+		ZIndex                 = zIndex,
+		[React.Event.Activated] = onActivated,
+	}, {
+		minSize = React.createElement("UISizeConstraint", {
+			MinSize = minSize or Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+		}),
+	})
+end
+
+-- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
+local function minText()
+	return React.createElement("UITextSizeConstraint", { MinTextSize = 12 })
+end
+
 local SLOT_LABELS = {
 	Trinket = "Trinket",
 	Ring1   = "Ring 1",
@@ -73,7 +100,7 @@ local function InventoryUI(props)
 			Font                   = Enum.Font.Gotham,
 			TextScaled             = true,
 			LayoutOrder            = 1,
-		})
+		}, { minText = minText() })  -- §AGX/UI-P1: M11 text floor
 	else
 		for i, item in ipairs(items) do
 			-- Find which slot this item is equipped in (if any)
@@ -95,6 +122,15 @@ local function InventoryUI(props)
 			end
 			local canEquip = isEquipped or targetSlot ~= nil
 
+			-- §AGX/UI-P1: hoisted so the visual button and its hit box share it.
+			local function onAction()
+				if isEquipped then
+					NetworkManager.FireServer("UnequipAccessory", equippedSlot)
+				elseif targetSlot then
+					NetworkManager.FireServer("EquipAccessory", item.itemId, targetSlot)
+				end
+			end
+
 			rows["item_" .. i] = React.createElement("Frame", {
 				Size             = UDim2.new(1, 0, 0, 46),
 				BackgroundColor3 = isEquipped and C.rowEq or C.row,
@@ -112,7 +148,7 @@ local function InventoryUI(props)
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
 					TextXAlignment         = Enum.TextXAlignment.Left,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 				qtyLbl = React.createElement("TextLabel", {
 					Position               = UDim2.fromScale(0.02, 0.55),
@@ -123,7 +159,7 @@ local function InventoryUI(props)
 					Font                   = Enum.Font.Gotham,
 					TextScaled             = true,
 					TextXAlignment         = Enum.TextXAlignment.Left,
-				}),
+				}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 				slotLbl = isEquipped and React.createElement("TextLabel", {
 					Position               = UDim2.fromScale(0.42, 0.10),
@@ -134,7 +170,7 @@ local function InventoryUI(props)
 					Font                   = Enum.Font.GothamBold,
 					TextScaled             = true,
 					TextXAlignment         = Enum.TextXAlignment.Center,
-				}) or nil,
+				}, { minText = minText() }) or nil,  -- §AGX/UI-P1: M11 text floor
 
 				actionBtn = React.createElement("TextButton", {
 					AnchorPoint      = Vector2.new(1, 0.5),
@@ -148,15 +184,13 @@ local function InventoryUI(props)
 					TextScaled       = true,
 					ZIndex           = 12,
 					Active           = isEquipped or canEquip,
-					[React.Event.Activated] = function()
-						if isEquipped then
-							NetworkManager.FireServer("UnequipAccessory", equippedSlot)
-						elseif targetSlot then
-							NetworkManager.FireServer("EquipAccessory", item.itemId, targetSlot)
-						end
-					end,
+					[React.Event.Activated] = onAction,
 				}, {
 					corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
+					minText = minText(),  -- §AGX/UI-P1: M11 text floor
+					-- §AGX/UI-P1: button is 33 px tall (0.72 of a 46 px row);
+					-- hit box makes it 44 px on the tap axis (row pitch is 50).
+					hit = hitArea(onAction, 13, Vector2.new(0, MIN_TAP_PX)),
 				}),
 			})
 		end
@@ -198,7 +232,7 @@ local function InventoryUI(props)
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
 				ZIndex                 = 12,
-			}),
+			}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 			closeBtn = React.createElement("TextButton", {
 				AnchorPoint      = Vector2.new(1, 0),
@@ -214,6 +248,12 @@ local function InventoryUI(props)
 				[React.Event.Activated] = onClose,
 			}, {
 				corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
+				-- §AGX/UI-P1: T14: visual was 8x9 px on a phone; floor it at
+				-- the 1080p size (~17x23) so it stays visible, plus a 44x44
+				-- transparent hit box.
+				visMin = React.createElement("UISizeConstraint", { MinSize = Vector2.new(17, 17) }),
+				minText = minText(),
+				hit = hitArea(onClose, 13),
 			}),
 
 			equippedBar = React.createElement("TextLabel", {
@@ -226,7 +266,7 @@ local function InventoryUI(props)
 				TextScaled             = true,
 				TextXAlignment         = Enum.TextXAlignment.Left,
 				ZIndex                 = 12,
-			}),
+			}, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
 
 			listFrame = React.createElement("ScrollingFrame", {
 				Position              = UDim2.fromScale(0.04, 0.21),

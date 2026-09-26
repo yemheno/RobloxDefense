@@ -42,6 +42,9 @@ local C = {
 	divider    = Color3.fromRGB( 50,  50,  70),
 }
 
+-- §AGX/UI-P1: minimum tap target (close was 51x21 px on a phone).
+local MIN_TAP_PX = 44
+
 -- ── Stat formatting helper ────────────────────────────────────────────────────
 local STAT_LABELS = {
 	critChance       = "Crit Chance",
@@ -78,7 +81,9 @@ local function BonusRow(props)
 			Padding       = UDim.new(0.02, 0),
 		}),
 		dot = React.createElement("TextLabel", {
-			Size               = UDim2.fromScale(0.006, 0.017),
+			-- §AGX/UI-P1: V1: was fromScale(0.006, 0.017) of the bonus row
+			-- (~2 px wide). Pixel box for the 14 pt bullet.
+			Size               = UDim2.fromOffset(12, 16),
 			BackgroundTransparency = 1,
 			Text               = "•",
 			TextColor3         = C.bonus_c,
@@ -467,6 +472,9 @@ local function EquipmentUI(props)
 			TextColor3             = C.text,
 			Font                   = Enum.Font.GothamBold,
 			TextScaled             = true,
+		}, {
+			-- §AGX/UI-P1: M11 text floor
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),
 		}),
 
 		-- Close button
@@ -484,6 +492,23 @@ local function EquipmentUI(props)
 			[React.Event.Activated] = onClose,
 		}, {
 			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
+			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
+			-- §AGX/UI-P1: transparent 44x44 hit box centred on the visual,
+			-- which keeps its size (desktop unchanged).
+			hit = React.createElement("TextButton", {
+				Name                   = "HitArea",
+				AnchorPoint            = Vector2.new(0.5, 0.5),
+				Position               = UDim2.fromScale(0.5, 0.5),
+				Size                   = UDim2.fromScale(1, 1),
+				BackgroundTransparency = 1,
+				Text                   = "",
+				ZIndex                 = 12,
+				[React.Event.Activated] = onClose,
+			}, {
+				minSize = React.createElement("UISizeConstraint", {
+					MinSize = Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+				}),
+			}),
 		}),
 
 		-- Two-column layout

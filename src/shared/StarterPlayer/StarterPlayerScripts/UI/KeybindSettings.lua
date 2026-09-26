@@ -68,6 +68,26 @@ local BLOCKED_KEYS = {
 	[Enum.KeyCode.Escape]       = true,
 }
 
+-- §AGX/UI-P1: minimum tap target (V1: close was ~8x1 px at 1080p).
+local MIN_TAP_PX = 44
+
+-- §AGX/UI-P1: transparent hit box at least 44x44, centred on a small visual
+-- button. The visual keeps its size; only the clickable area grows.
+local function hitArea(onActivated, zIndex)
+	return e("TextButton", {
+		Name                   = "HitArea",
+		AnchorPoint            = Vector2.new(0.5, 0.5),
+		Position               = UDim2.fromScale(0.5, 0.5),
+		Size                   = UDim2.fromScale(1, 1),
+		BackgroundTransparency = 1,
+		Text                   = "",
+		ZIndex                 = zIndex,
+		[React.Event.Activated] = onActivated,
+	}, {
+		minSize = e("UISizeConstraint", { MinSize = Vector2.new(MIN_TAP_PX, MIN_TAP_PX) }),
+	})
+end
+
 -- ── Save helper ───────────────────────────────────────────
 local function saveToServer()
 	local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
@@ -116,7 +136,8 @@ local function ActionRow(props)
 		CustomDot = isCustom and e("Frame", {
 			AnchorPoint      = Vector2.new(1, 0.5),
 			Position         = UDim2.new(1, -76, 0.5, 0),
-			Size             = UDim2.fromScale(0.003, 0.006),
+			-- §AGX/UI-P1: V1: was fromScale(0.003, 0.006) of the row (sub-pixel).
+			Size             = UDim2.fromOffset(6, 6),
 			BackgroundColor3 = C.key_listen,
 			BorderSizePixel  = 0,
 		}, { Corner = e("UICorner", { CornerRadius = UDim.new(1, 0) }) }) or nil,
@@ -125,7 +146,9 @@ local function ActionRow(props)
 		KeyBtn = e("TextButton", {
 			AnchorPoint            = Vector2.new(1, 0.5),
 			Position               = UDim2.new(1, -10, 0.5, 0),
-			Size                   = UDim2.fromScale(0.030, 0.024),
+			-- §AGX/UI-P1: V1: was fromScale(0.030, 0.024) of the row (~11x1 px).
+			-- The dot at (1,-76) implies the intended 60 px width.
+			Size                   = UDim2.fromOffset(60, 26),
 			BackgroundColor3       = keyColor,
 			BackgroundTransparency = isListening and 0 or 0.2,
 			BorderSizePixel        = 0,
@@ -136,6 +159,7 @@ local function ActionRow(props)
 			[React.Event.Activated] = onClickKey,
 		}, {
 			Corner = e("UICorner", { CornerRadius = UDim.new(0, 5) }),
+			hit = hitArea(onClickKey),  -- §AGX/UI-P1: 44 px hit box
 		}),
 	})
 end
@@ -270,6 +294,10 @@ local function KeybindSettings(props)
 			BorderSizePixel        = 0,
 			ZIndex                 = 101,
 		}, {
+			-- §AGX/UI-P1: 118 px of fixed chrome is subtracted from this
+			-- scale panel (185x188 on a phone -> 70 px list). Floor keeps
+			-- the list >= 182 px and fits 800x360. 1080p (420x520) unchanged.
+			MinSize = e("UISizeConstraint", { MinSize = Vector2.new(340, 300) }),
 			Corner = e("UICorner", { CornerRadius = UDim.new(0, 10) }),
 			Stroke = e("UIStroke", { Color = C.border, Thickness = 1.5 }),
 
@@ -303,7 +331,9 @@ local function KeybindSettings(props)
 				CloseBtn = e("TextButton", {
 					AnchorPoint            = Vector2.new(1, 0.5),
 					Position               = UDim2.new(1, -8, 0.5, 0),
-					Size                   = UDim2.fromScale(0.019, 0.026),
+					-- §AGX/UI-P1: V1: was fromScale(0.019, 0.026) of the header
+					-- (~8x1 px at 1080p). 0.019x1920 / 0.026x1080 = 36x28 px.
+					Size                   = UDim2.fromOffset(36, 28),
 					BackgroundColor3       = C.close_bg,
 					BackgroundTransparency = 0.2,
 					BorderSizePixel        = 0,
@@ -315,6 +345,7 @@ local function KeybindSettings(props)
 					[React.Event.Activated] = onClose,
 				}, {
 					Corner = e("UICorner", { CornerRadius = UDim.new(0, 6) }),
+					hit = hitArea(onClose, 104),  -- §AGX/UI-P1: 44x44 hit box
 				}),
 			}),
 
@@ -363,7 +394,9 @@ local function KeybindSettings(props)
 				ResetBtn = e("TextButton", {
 					AnchorPoint            = Vector2.new(0.5, 0.5),
 					Position               = UDim2.fromScale(0.5, 0.5),
-					Size                   = UDim2.fromScale(0.083, 0.028),
+					-- §AGX/UI-P1: V1: was fromScale(0.083, 0.028) of the footer
+					-- (~35x1 px). Pixel size fits "Reset All to Default" at 13 pt.
+					Size                   = UDim2.fromOffset(180, 30),
 					BackgroundColor3       = C.reset_bg,
 					BackgroundTransparency = 0.15,
 					BorderSizePixel        = 0,
@@ -380,6 +413,12 @@ local function KeybindSettings(props)
 					end,
 				}, {
 					Corner = e("UICorner", { CornerRadius = UDim.new(0, 6) }),
+					hit = hitArea(function()  -- §AGX/UI-P1: 44 px tall hit box
+						InputSystem.ResetAllBindings()
+						setListeningFor(nil)
+						bumpVer()
+						saveToServer()
+					end, 104),
 				}),
 			}),
 		}),

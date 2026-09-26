@@ -69,6 +69,39 @@ local TAB_ACTIONS = {
     Controls = { "Attack", "Dash", "Interact", "EmoteWheel" },
 }
 
+-- §AGX/UI-P1: minimum tap target. T8 and V1: the window is 0.48x0.68 of the
+-- screen, so tabs were 15 px tall and slider rows 24 px on a phone, and the
+-- knob was invisible everywhere (0.007x0.013 of the track). On touch devices
+-- the tab bar and rows use 44 px pixel heights (content scrolls if needed);
+-- desktop keeps its scale layout.
+local MIN_TAP_PX        = 44
+local IS_TOUCH          = UserInputService.TouchEnabled
+local TOUCH_CONTENT_TOP = 4 + MIN_TAP_PX + 4   -- below the 44 px tab bar
+local TOUCH_FOOTER_H    = 22                   -- version footer
+
+-- §AGX/UI-P1: transparent hit box at least minSize (default 44x44), centred on
+-- the visual. The visual keeps its size; only the clickable area grows.
+local function hitArea(onActivated, minSize)
+    return React.createElement("TextButton", {
+        Name                   = "HitArea",
+        AnchorPoint            = Vector2.new(0.5, 0.5),
+        Position               = UDim2.fromScale(0.5, 0.5),
+        Size                   = UDim2.fromScale(1, 1),
+        BackgroundTransparency = 1,
+        Text                   = "",
+        [React.Event.Activated] = onActivated,
+    }, {
+        minSize = React.createElement("UISizeConstraint", {
+            MinSize = minSize or Vector2.new(MIN_TAP_PX, MIN_TAP_PX),
+        }),
+    })
+end
+
+-- §AGX/UI-P1: M11: TextScaled labels get a readable floor on phones.
+local function minText()
+    return React.createElement("UITextSizeConstraint", { MinTextSize = 12 })
+end
+
 local function VolumeSlider(props)
     local label = props.label
     local value = props.value or 0.5
@@ -121,14 +154,15 @@ local function VolumeSlider(props)
             Font = Enum.Font.GothamBold,
             TextScaled = true,
             TextXAlignment = Enum.TextXAlignment.Left,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
         track = React.createElement("Frame", {
             ref = sliderRef,
             Position = UDim2.fromScale(0.32, 0.30),
             Size = UDim2.fromScale(0.52, 0.40),
             BackgroundColor3 = C.slider_bg,
             BorderSizePixel = 0,
-            [React.Event.InputBegan] = onInputBegan,
+            -- §AGX/UI-P1: InputBegan moved to the `grab` band below, which
+            -- covers the whole track (avoids a double handler).
         }, {
             corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.5, 0) }),
             fill = React.createElement("Frame", {
@@ -142,12 +176,31 @@ local function VolumeSlider(props)
             knob = React.createElement("Frame", {
                 AnchorPoint = Vector2.new(0.5, 0.5),
                 Position = UDim2.fromScale(value, 0.5),
-                Size = UDim2.fromScale(0.007, 0.013),
+                -- §AGX/UI-P1: V1: was fromScale(0.007, 0.013) of the track
+                -- (sub-pixel, invisible). Now a circle 1.2x the track height,
+                -- at least 16 px.
+                Size = UDim2.fromScale(1.2, 1.2),
+                SizeConstraint = Enum.SizeConstraint.RelativeYY,
                 BackgroundColor3 = C.slider_knob,
                 BorderSizePixel = 0,
                 ZIndex = 2,
             }, {
                 corner = React.createElement("UICorner", { CornerRadius = UDim.new(1, 0) }),
+                minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(16, 16) }),
+            }),
+            -- §AGX/UI-P1: V1: invisible grab band, at least 44 px tall and
+            -- 22 px past each end of the track, so the knob can be grabbed at
+            -- 0 % and 100 %. Same handler as the track (values are measured
+            -- against the track via sliderRef).
+            grab = React.createElement("Frame", {
+                AnchorPoint = Vector2.new(0.5, 0.5),
+                Position = UDim2.fromScale(0.5, 0.5),
+                Size = UDim2.new(1, MIN_TAP_PX, 1, 0),
+                BackgroundTransparency = 1,
+                ZIndex = 3,
+                [React.Event.InputBegan] = onInputBegan,
+            }, {
+                minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, MIN_TAP_PX) }),
             }),
         }),
         pct = React.createElement("TextLabel", {
@@ -158,7 +211,7 @@ local function VolumeSlider(props)
             TextColor3 = C.accent,
             Font = Enum.Font.GothamBold,
             TextScaled = true,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
     })
 end
 
@@ -176,6 +229,7 @@ local function TabButton(props)
         [React.Event.Activated] = props.onActivate,
     }, {
         corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
+        minText = minText(),  -- §AGX/UI-P1: M11 text floor
     })
 end
 
@@ -204,7 +258,7 @@ local function BindingRow(props)
             Font = Enum.Font.GothamBold,
             TextScaled = true,
             TextXAlignment = Enum.TextXAlignment.Left,
-        }),
+        }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
         keyBtn = React.createElement("TextButton", {
             AnchorPoint = Vector2.new(1, 0.5),
             Position = UDim2.fromScale(0.97, 0.5),
@@ -218,6 +272,9 @@ local function BindingRow(props)
             [React.Event.Activated] = onActivate,
         }, {
             corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.2, 0) }),
+            minText = minText(),  -- §AGX/UI-P1: M11 text floor
+            -- §AGX/UI-P1: 30 px tall key button; 44 px hit box (row is 44).
+            hit = hitArea(onActivate, Vector2.new(MIN_TAP_PX, MIN_TAP_PX)),
         }),
     })
 end
@@ -326,69 +383,113 @@ local function SettingsUI(props)
     local content = nil
     if activeTab == "Audio" then
         local sliderHeight = 0.16
-        content = React.createElement("Frame", {
-            Position = UDim2.fromScale(0.04, 0.22),
-            Size = UDim2.fromScale(0.92, 0.68),
-            BackgroundTransparency = 1,
-            ZIndex = 12,
-        }, {
-            musicSlider = React.createElement("Frame", {
-                Position = UDim2.fromScale(0, 0),
-                Size = UDim2.fromScale(1, sliderHeight),
-                BackgroundTransparency = 1,
-            }, {
-                inner = React.createElement(VolumeSlider, {
-                    label = "Music",
-                    value = musicVol,
-                    onChange = changeMusicVol,
-                }),
-            }),
-            sfxSlider = React.createElement("Frame", {
-                Position = UDim2.fromScale(0, sliderHeight + 0.04),
-                Size = UDim2.fromScale(1, sliderHeight),
-                BackgroundTransparency = 1,
-            }, {
-                inner = React.createElement(VolumeSlider, {
-                    label = "SFX",
-                    value = sfxVol,
-                    onChange = changeSfxVol,
-                }),
-            }),
-            uiSlider = React.createElement("Frame", {
-                Position = UDim2.fromScale(0, (sliderHeight + 0.04) * 2),
-                Size = UDim2.fromScale(1, sliderHeight),
-                BackgroundTransparency = 1,
-            }, {
-                inner = React.createElement(VolumeSlider, {
-                    label = "UI",
-                    value = uiVol,
-                    onChange = changeUiVol,
-                }),
-            }),
-            muteBtn = React.createElement("TextButton", {
-                Position = UDim2.fromScale(0, 0.62),
-                Size = UDim2.fromScale(1, 0.12),
+        -- §AGX/UI-P1: shared pieces for the desktop (scale) and touch
+        -- (44 px list) layouts below.
+        local musicInner = React.createElement(VolumeSlider, {
+            label = "Music",
+            value = musicVol,
+            onChange = changeMusicVol,
+        })
+        local sfxInner = React.createElement(VolumeSlider, {
+            label = "SFX",
+            value = sfxVol,
+            onChange = changeSfxVol,
+        })
+        local uiInner = React.createElement(VolumeSlider, {
+            label = "UI",
+            value = uiVol,
+            onChange = changeUiVol,
+        })
+        local function muteButton(position, size, order)
+            return React.createElement("TextButton", {
+                Position = position,
+                Size = size,
                 BackgroundColor3 = muted and C.btn_muted or C.btn_active,
                 BorderSizePixel = 0,
                 Text = muted and "Unmute All" or "Mute All",
                 TextColor3 = C.white,
                 Font = Enum.Font.GothamBold,
                 TextScaled = true,
+                LayoutOrder = order,
                 [React.Event.Activated] = toggleMute,
             }, {
                 corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.15, 0) }),
-            }),
-            hint = React.createElement("TextLabel", {
-                Position = UDim2.fromScale(0, 0.80),
-                Size = UDim2.fromScale(1, 0.08),
+                minText = minText(),  -- §AGX/UI-P1: M11 text floor
+            })
+        end
+
+        if IS_TOUCH then
+            -- §AGX/UI-P1: touch: 44 px rows in a scroll frame (at a 29 px
+            -- row pitch a 44 px grab band would overlap the next slider).
+            -- The hint row is dropped; the footer says the same thing.
+            local rowSize = UDim2.new(1, -6, 0, MIN_TAP_PX)
+            content = React.createElement("ScrollingFrame", {
+                Position = UDim2.new(0.04, 0, 0, TOUCH_CONTENT_TOP),
+                Size = UDim2.new(0.92, 0, 1, -(TOUCH_CONTENT_TOP + TOUCH_FOOTER_H)),
                 BackgroundTransparency = 1,
-                Text = "Audio values update immediately.",
-                TextColor3 = C.text_dim,
-                Font = Enum.Font.Gotham,
-                TextScaled = true,
-                TextXAlignment = Enum.TextXAlignment.Left,
-            }),
-        })
+                BorderSizePixel = 0,
+                ScrollBarThickness = 4,
+                CanvasSize = UDim2.fromScale(0, 0),
+                AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                ScrollingDirection = Enum.ScrollingDirection.Y,
+                ZIndex = 12,
+            }, {
+                layout = React.createElement("UIListLayout", {
+                    SortOrder = Enum.SortOrder.LayoutOrder,
+                    Padding = UDim.new(0, 4),
+                }),
+                musicSlider = React.createElement("Frame", {
+                    Size = rowSize, BackgroundTransparency = 1, LayoutOrder = 1,
+                }, { inner = musicInner }),
+                sfxSlider = React.createElement("Frame", {
+                    Size = rowSize, BackgroundTransparency = 1, LayoutOrder = 2,
+                }, { inner = sfxInner }),
+                uiSlider = React.createElement("Frame", {
+                    Size = rowSize, BackgroundTransparency = 1, LayoutOrder = 3,
+                }, { inner = uiInner }),
+                muteBtn = muteButton(UDim2.new(), rowSize, 4),
+            })
+        else
+            content = React.createElement("Frame", {
+                Position = UDim2.fromScale(0.04, 0.22),
+                Size = UDim2.fromScale(0.92, 0.68),
+                BackgroundTransparency = 1,
+                ZIndex = 12,
+            }, {
+                musicSlider = React.createElement("Frame", {
+                    Position = UDim2.fromScale(0, 0),
+                    Size = UDim2.fromScale(1, sliderHeight),
+                    BackgroundTransparency = 1,
+                }, {
+                    inner = musicInner,
+                }),
+                sfxSlider = React.createElement("Frame", {
+                    Position = UDim2.fromScale(0, sliderHeight + 0.04),
+                    Size = UDim2.fromScale(1, sliderHeight),
+                    BackgroundTransparency = 1,
+                }, {
+                    inner = sfxInner,
+                }),
+                uiSlider = React.createElement("Frame", {
+                    Position = UDim2.fromScale(0, (sliderHeight + 0.04) * 2),
+                    Size = UDim2.fromScale(1, sliderHeight),
+                    BackgroundTransparency = 1,
+                }, {
+                    inner = uiInner,
+                }),
+                muteBtn = muteButton(UDim2.fromScale(0, 0.62), UDim2.fromScale(1, 0.12), nil),
+                hint = React.createElement("TextLabel", {
+                    Position = UDim2.fromScale(0, 0.80),
+                    Size = UDim2.fromScale(1, 0.08),
+                    BackgroundTransparency = 1,
+                    Text = "Audio values update immediately.",
+                    TextColor3 = C.text_dim,
+                    Font = Enum.Font.Gotham,
+                    TextScaled = true,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
+            })
+        end
     else
         local rows = {
             layout = React.createElement("UIListLayout", {
@@ -415,25 +516,28 @@ local function SettingsUI(props)
             })
         end
 
+        -- §AGX/UI-P1: touch: pixel geometry below the 44 px tab bar, and a
+        -- 44 px Reset button; desktop keeps the scale layout.
         content = React.createElement("Frame", {
-            Position = UDim2.fromScale(0.04, 0.22),
-            Size = UDim2.fromScale(0.92, 0.68),
+            Position = IS_TOUCH and UDim2.new(0.04, 0, 0, TOUCH_CONTENT_TOP) or UDim2.fromScale(0.04, 0.22),
+            Size = IS_TOUCH and UDim2.new(0.92, 0, 1, -(TOUCH_CONTENT_TOP + TOUCH_FOOTER_H))
+                or UDim2.fromScale(0.92, 0.68),
             BackgroundTransparency = 1,
             ZIndex = 12,
         }, {
             hint = React.createElement("TextLabel", {
                 Position = UDim2.fromScale(0, 0),
-                Size = UDim2.fromScale(1, 0.10),
+                Size = IS_TOUCH and UDim2.new(1, 0, 0, 20) or UDim2.fromScale(1, 0.10),
                 BackgroundTransparency = 1,
                 Text = "Click a binding, then press a key or mouse button. Esc cancels.",
                 TextColor3 = C.text_dim,
                 Font = Enum.Font.Gotham,
                 TextScaled = true,
                 TextXAlignment = Enum.TextXAlignment.Left,
-            }),
+            }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
             scroll = React.createElement("ScrollingFrame", {
-                Position = UDim2.fromScale(0, 0.12),
-                Size = UDim2.fromScale(1, 0.72),
+                Position = IS_TOUCH and UDim2.fromOffset(0, 22) or UDim2.fromScale(0, 0.12),
+                Size = IS_TOUCH and UDim2.new(1, 0, 1, -(22 + MIN_TAP_PX + 4)) or UDim2.fromScale(1, 0.72),
                 BackgroundTransparency = 1,
                 BorderSizePixel = 0,
                 ScrollBarThickness = 4,
@@ -443,7 +547,7 @@ local function SettingsUI(props)
             resetBtn = React.createElement("TextButton", {
                 AnchorPoint = Vector2.new(0.5, 1),
                 Position = UDim2.fromScale(0.5, 1),
-                Size = UDim2.fromScale(0.50, 0.12),
+                Size = IS_TOUCH and UDim2.new(0.50, 0, 0, MIN_TAP_PX) or UDim2.fromScale(0.50, 0.12),
                 BackgroundColor3 = C.reset_bg,
                 BorderSizePixel = 0,
                 Text = "Reset All Keybinds",
@@ -457,6 +561,7 @@ local function SettingsUI(props)
                 end,
             }, {
                 corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.15, 0) }),
+                minText = minText(),  -- §AGX/UI-P1: M11 text floor
             }),
         })
     end
@@ -471,11 +576,15 @@ local function SettingsUI(props)
             onClose()
         end,
         size    = UDim2.fromScale(0.48, 0.68),
+        -- §AGX/UI-P1: on touch, let AppWindow grow the window (it clamps to
+        -- the screen below the topbar). 1080p (922x734) is already larger.
+        minSize = IS_TOUCH and Vector2.new(560, 400) or nil,
         zIndex  = 10,
     }, {
             tabBar = React.createElement("Frame", {
-                Position = UDim2.fromScale(0.04, 0.13),
-                Size = UDim2.fromScale(0.92, 0.07),
+                -- §AGX/UI-P1: T8: 44 px tabs on touch (were 15 px on a phone).
+                Position = IS_TOUCH and UDim2.new(0.04, 0, 0, 4) or UDim2.fromScale(0.04, 0.13),
+                Size = IS_TOUCH and UDim2.new(0.92, 0, 0, MIN_TAP_PX) or UDim2.fromScale(0.92, 0.07),
                 BackgroundTransparency = 1,
                 ZIndex = 12,
             }, tabButtons),
@@ -483,14 +592,15 @@ local function SettingsUI(props)
             version = React.createElement("TextLabel", {
                 AnchorPoint = Vector2.new(0.5, 1),
                 Position = UDim2.fromScale(0.5, 0.97),
-                Size = UDim2.fromScale(0.90, 0.04),
+                -- §AGX/UI-P1: 18 px on touch so the 12 px text floor fits.
+                Size = IS_TOUCH and UDim2.new(0.90, 0, 0, 18) or UDim2.fromScale(0.90, 0.04),
                 BackgroundTransparency = 1,
                 Text = activeTab == "Audio" and "Audio settings update immediately." or "Bindings save through SaveKeybindings for testing.",
                 TextColor3 = C.text_muted,
                 Font = Enum.Font.Gotham,
                 TextScaled = true,
                 ZIndex = 12,
-            }),
+            }, { minText = minText() }),  -- §AGX/UI-P1: M11 text floor
     })
 end
 
