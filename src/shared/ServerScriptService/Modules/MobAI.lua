@@ -16,6 +16,32 @@ local MobBehaviors   = require(Modules:WaitForChild("MobBehaviors"))
 local HitTracker = nil
 local MonitoringSystem = nil
 
+-- §AGX/X12: DamageHandler, lazy (§5.3 pattern, `false` = looked, not found).
+-- Thorns kills route through DamageHandler.ApplyRawDamage and the Died
+-- safety net asks IsDeathHandled. Lazy so there's no load-order coupling
+-- with AttackHandler.
+local _DamageHandler = nil
+local function getDamageHandler()
+	if _DamageHandler ~= nil then
+		return _DamageHandler or nil
+	end
+	local ah = Modules:FindFirstChild("AttackHandler")
+	local mod = ah and ah:FindFirstChild("DamageHandler")
+	if not mod then
+		_DamageHandler = false
+		warn("[MobAI] DamageHandler not found — Thorns kills skip the death path.")
+		return nil
+	end
+	local ok, result = pcall(require, mod)
+	_DamageHandler = ok and result or false
+	return _DamageHandler or nil
+end
+
+-- §AGX/X12: a registered mob whose Humanoid died but that nobody Destroy()ed
+-- within this window (a kill from a path that still bypasses HandleMobDeath)
+-- is removed, so corpses can't pile up and bloat AttackShapes scans.
+local UNHANDLED_CORPSE_TIMEOUT = 2
+
 -- ═══════════════════════════════════════════════════════════
 -- CONSTANTS
 -- ═══════════════════════════════════════════════════════════
@@ -312,6 +338,20 @@ end
 
 function MobAI.OnMobDied(mob)
 	MobAI.UnregisterMob(mob)
+
+	-- §AGX/X12: safety net. The normal death path (HandleMobDeath) Destroys
+	-- the mob synchronously; anything still parented after the timeout was
+	-- killed by a path that skipped it. Unregistered mobs are invisible to
+	-- MobSpawner.Reset / DefenseDetection, so nothing else would clean it.
+	task.delay(UNHANDLED_CORPSE_TIMEOUT, function()
+		if mob.Parent then
+			local dh = getDamageHandler()
+			if not (dh and dh.IsDeathHandled and dh.IsDeathHandled(mob)) then
+				warn("[MobAI] Unhandled mob death — destroying corpse:", mob.Name)
+			end
+			mob:Destroy()
+		end
+	end)
 end
 
 function MobAI.UnregisterMob(mob)
@@ -1193,7 +1233,15 @@ function MobAI.DamagePlayer(player, baseDamage, mobData, skillId)
 		if mobHumanoid and mobHumanoid.Health > 0 then
 			local reflectDamage = math.floor(finalDamage * thorns / 100)
 			if reflectDamage > 0 then
-				mobHumanoid:TakeDamage(reflectDamage)
+				-- §AGX/X12: route through DamageHandler so a Thorns kill
+				-- credits the player and runs the normal death path (was a
+				-- bare TakeDamage: corpse left behind, no rewards).
+				local dh = getDamageHandler()
+				if dh and dh.ApplyRawDamage then
+					dh.ApplyRawDamage(mobData.mob, reflectDamage, player)
+				else
+					mobHumanoid:TakeDamage(reflectDamage)
+				end
 			end
 		end
 	end

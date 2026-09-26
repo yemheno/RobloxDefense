@@ -7,11 +7,27 @@
         DropManager.Init()
             – Must be called after CurrencyManager & NetworkManager are loaded.
 
-        DropManager.ProcessKill(player, mobId, mobTier, worldPosition)
-            – Roll the drop table, grant currencies, fire "LootDrop" to killer.
+        DropManager.ProcessKill(player, mobId, mobTier, worldPosition, mobLevel, playerLevel, scaleLevel)
+            – Roll the drop table for ONE recipient and queue the result.
+              §AGX/X44: called once per eligible party member per kill
+              (KillRewardManager), each with an independent roll.
 
-    Called from DamageHandler.HandleMobDeath.
+    §AGX/X44 batching: grants and the "LootDrop" notification are
+    accumulated per player and flushed every FLUSH_WINDOW seconds — one
+    AddMerits + one AddEssence + one LootDrop per player per window,
+    instead of per kill per recipient (each AddMerits fires CurrencyUpdate,
+    writes a leaderstat and prints). Drops are a direct grant; there are
+    no physical drop Instances.
+
+    LootDrop payload (batched):  { drops = { {type, amount}, ... }, kills = n }
+      – one entry per currency type, summed over the window. Merits are
+        post-meritScalar, pre-MeritBonus (MeritBonus is applied inside
+        CurrencyManager.AddMerits, as before).
+
+    Called from KillRewardManager.ProcessKill (via DamageHandler.HandleMobDeath).
 ]]
+
+local Players = game:GetService("Players")
 
 local DropManager = {}
 
@@ -98,6 +114,12 @@ function DropManager.Init()
 	-- Event the client listens to for floating loot text / pickups
 	NetworkManager.GetEvent("LootDrop")
 
+	-- §AGX/X44: a leaver's queued window is granted before the data unloads
+	-- (best effort — PlayerDataManager's leave-save may already be in flight;
+	-- at most FLUSH_WINDOW seconds of drops are at stake).
+	Players.PlayerRemoving:Connect(function(player)
+		DropManager.FlushPlayer(player)
+	end)
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -148,6 +170,11 @@ end
 function DropManager.RollDrops(dropTable, mobLevel, delta)
 	local results = {}
 	local levelMultiplier = 1 + ((mobLevel or 1) - 1) * 0.1
+	-- §AGX/X44: resolved once per roll instead of per entry — RollDrops now
+	-- runs once per party member per kill, and an unresolved lookup retries
+	-- a pcall(require) each call.
+	local modeMults = getModeMults()
+	local diffMults = getDiffMults()
 
 	for _, entry in ipairs(dropTable) do
 		if RNG:NextNumber() <= entry.chance then
@@ -165,7 +192,6 @@ function DropManager.RollDrops(dropTable, mobLevel, delta)
 			end
 
 			-- §36: Apply mode-specific reward multiplier (e.g. HordeMode)
-			local modeMults = getModeMults()
 			if modeMults then
 				if entry.type == "Merits" and modeMults.meritsMult then
 					mult = mult * modeMults.meritsMult
@@ -174,7 +200,6 @@ function DropManager.RollDrops(dropTable, mobLevel, delta)
 				end
 			end
 			-- Apply difficulty-tier reward multiplier (Hard/Nightmare)
-			local diffMults = getDiffMults()
 			if diffMults then
 				if entry.type == "Merits" and diffMults.meritMult then
 					mult = mult * diffMults.meritMult
@@ -195,23 +220,30 @@ function DropManager.RollDrops(dropTable, mobLevel, delta)
 	return results
 end
 
---- Grant a single drop result to the player.
+--- §AGX/X44: meritScalar (BountyBoard) for one Merits drop. Split out of
+--- GrantDrop so the batched path applies it exactly once per drop too.
+local function applyMeritScalar(amount)
+	local rm = getRunModifiers()
+	if rm then
+		local scalar = rm.GetModifier("meritScalar")
+		if scalar and scalar > 0 then
+			amount = math.floor(amount * (1 + scalar) + 0.5)
+		end
+	end
+	return amount
+end
+
+--- Grant a single drop result to the player immediately (unbatched).
+--- ProcessKill no longer uses this (§AGX/X44 queues instead); kept for
+--- any direct caller.
 function DropManager.GrantDrop(player, drop)
 	if not CurrencyManager then
 		warn("[DropManager] GrantDrop called before Init — drop lost:", drop.type)
 		return
 	end
 	if drop.type == "Merits" then
-		local amount = drop.amount
 		-- Apply meritScalar from RunModifiers (e.g. BountyBoard 2×)
-		local rm = getRunModifiers()
-		if rm then
-			local scalar = rm.GetModifier("meritScalar")
-			if scalar and scalar > 0 then
-				amount = math.floor(amount * (1 + scalar) + 0.5)
-			end
-		end
-		CurrencyManager.AddMerits(player, amount)
+		CurrencyManager.AddMerits(player, applyMeritScalar(drop.amount))
 	elseif drop.type == "Essence" then
 		CurrencyManager.AddEssence(player, drop.amount)
 	else
@@ -221,17 +253,105 @@ function DropManager.GrantDrop(player, drop)
 end
 
 -- ═══════════════════════════════════════════════════════════
+-- §AGX/X44: PER-PLAYER BATCH (§SCALE/S5 dirty-flag pattern)
+-- ═══════════════════════════════════════════════════════════
+
+local FLUSH_WINDOW = 0.25
+local pendingByPlayer = {}  -- [player] = { totals = { [type] = n }, order = { type, ... }, kills = n }
+local flushScheduled = false
+
+local function flushEntry(player, entry)
+	if not player.Parent then return end
+	if CurrencyManager then
+		for dropType, amount in pairs(entry.totals) do
+			if dropType == "Merits" then
+				CurrencyManager.AddMerits(player, amount)
+			elseif dropType == "Essence" then
+				CurrencyManager.AddEssence(player, amount)
+			else
+				-- Future: item drops, materials, etc.
+				warn("[DropManager] Unknown drop type:", dropType)
+			end
+		end
+	else
+		warn("[DropManager] flush before Init — drops lost for", player.Name)
+		return
+	end
+	if NetworkManager then
+		local drops = table.create(#entry.order)
+		for i, dropType in ipairs(entry.order) do
+			drops[i] = { type = dropType, amount = entry.totals[dropType] }
+		end
+		NetworkManager.FireClient(player, "LootDrop", {
+			drops = drops,       -- array of { type, amount }, summed per type
+			kills = entry.kills, -- kills that contributed to this window
+		})
+	end
+end
+
+local function flushAll()
+	flushScheduled = false
+	-- Swap first so grants that re-enter (callbacks) queue into a fresh window.
+	local batch = pendingByPlayer
+	pendingByPlayer = {}
+	for player, entry in pairs(batch) do
+		-- One bad grant must not drop everyone else's window.
+		local ok, err = pcall(flushEntry, player, entry)
+		if not ok then
+			warn("[DropManager] flush failed for", player.Name, err)
+		end
+	end
+end
+
+--- §AGX/X44: grant + notify one player's queued window right now.
+function DropManager.FlushPlayer(player)
+	local entry = pendingByPlayer[player]
+	if not entry then return end
+	pendingByPlayer[player] = nil
+	flushEntry(player, entry)
+end
+
+local function queueDrops(player, drops)
+	local entry = pendingByPlayer[player]
+	if not entry then
+		entry = { totals = {}, order = {}, kills = 0 }
+		pendingByPlayer[player] = entry
+	end
+	entry.kills = entry.kills + 1
+	for _, drop in ipairs(drops) do
+		local amount = drop.amount
+		if drop.type == "Merits" then
+			amount = applyMeritScalar(amount)  -- once per drop, as GrantDrop did
+		end
+		if entry.totals[drop.type] == nil then
+			entry.totals[drop.type] = 0
+			table.insert(entry.order, drop.type)
+		end
+		entry.totals[drop.type] = entry.totals[drop.type] + amount
+	end
+
+	if not flushScheduled then
+		flushScheduled = true
+		task.delay(FLUSH_WINDOW, flushAll)
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
 -- PUBLIC: PROCESS KILL
 -- ═══════════════════════════════════════════════════════════
 
---- Called once per mob death.  Rolls the table, grants rewards, notifies client.
----@param player     Player   – the killer
+--- Called once per mob death PER RECIPIENT (§AGX/X44). Rolls the table and
+--- queues the result for the batched grant + LootDrop flush.
+---@param player     Player   – the recipient (killer or eligible party member)
 ---@param mobId      string   – e.g. "Zombie", "Ogre"
 ---@param mobTier    string   – "normal" | "miniboss" | "boss"
----@param worldPos   Vector3  – where the mob died (for floating text)
----@param mobLevel   number?  – mob / wave level for scaling (default 1)
----@param playerLevel number? – killer's account level (for §6 delta window)
-function DropManager.ProcessKill(player, mobId, mobTier, worldPos, mobLevel, playerLevel)
+---@param worldPos   Vector3  – where the mob died (unused since the batch; kept for API compat)
+---@param mobLevel   number?  – mob RewardLevel (for the §6 delta window)
+---@param playerLevel number? – recipient's account level (for §6 delta window)
+---@param scaleLevel number?  – §AGX/X44: level for the +10%/level amount
+---                             scaling; the recipient's own reward level.
+---                             Defaults to mobLevel (old behaviour).
+function DropManager.ProcessKill(player, mobId, mobTier, worldPos, mobLevel, playerLevel, scaleLevel)
 	-- §Dr1: bail if the killer disconnected between the killing-blow
 	-- damage event and this drop-processing call. Without this, FireClient
 	-- on a leaving player produces console warns and AddMerits/Essence run
@@ -246,21 +366,14 @@ function DropManager.ProcessKill(player, mobId, mobTier, worldPos, mobLevel, pla
 		delta = mobLevel - playerLevel
 	end
 
-	local drops = DropManager.RollDrops(dropTable, mobLevel, delta)
+	-- §AGX/X44: amounts scale with the recipient's own level (scaleLevel),
+	-- not the party's highest — a level-5 carried by a level-100 used to
+	-- get ~3.9× the Merits of a solo level-5.
+	local drops = DropManager.RollDrops(dropTable, scaleLevel or mobLevel, delta)
 	if #drops == 0 then return end
 
-	-- Grant every drop
-	for _, drop in ipairs(drops) do
-		DropManager.GrantDrop(player, drop)
-	end
-
-	-- Notify the killer's client so it can show floating loot text
-	NetworkManager.FireClient(player, "LootDrop", {
-		mobId    = mobId,
-		mobTier  = mobTier,
-		position = worldPos,
-		drops    = drops,   -- array of { type, amount }
-	})
+	-- §AGX/X44: queued; granted + notified on the next FLUSH_WINDOW tick.
+	queueDrops(player, drops)
 end
 
 -- ═══════════════════════════════════════════════════════════

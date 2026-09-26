@@ -277,22 +277,69 @@ end
 -- MOB DEATH
 -- ═══════════════════════════════════════════════════════════
 
+-- §AGX/X12: mobs whose death has already been processed. HandleMobDeath
+-- is now reachable from three paths (DamageMob, DoT ticks, Thorns reflect)
+-- that can land in the same frame; the first one wins and the rest are
+-- no-ops, so a mob can never be rewarded twice. Weak keys: the mob is
+-- Destroy()ed right after, so the entry is collectable.
+local handledMobs = setmetatable({}, { __mode = "k" })
+
+--- §AGX/X12: true once HandleMobDeath has run for this mob (used by the
+--- MobAI Died safety net and by ApplyRawDamage).
+function DamageHandler.IsDeathHandled(mob)
+	return handledMobs[mob] == true
+end
+
 function DamageHandler.HandleMobDeath(mob, player, damageResult)
+	-- §AGX/X12: idempotent — see handledMobs above.
+	if not mob or handledMobs[mob] then return end
+	handledMobs[mob] = true
+
 	-- Delegate all reward logic (XP, drops, weapon XP, callbacks, client notify)
 	-- to the centralised KillRewardManager.
 	-- Wrapped in pcall so an error in reward processing never leaves a phantom mob.
-	if KillRewardManager then
+	-- §AGX/X12: player may be nil (raw damage whose source left); the
+	-- corpse is still destroyed, it just pays nothing.
+	if player and KillRewardManager then
 		local ok, err = pcall(KillRewardManager.ProcessKill, player, mob, damageResult)
 		if not ok then
 			warn("[DamageHandler] KillRewardManager.ProcessKill error:", err)
 		end
-	else
+	elseif player then
 		warn("[DamageHandler] KillRewardManager unavailable — rewards skipped for", player.Name)
 	end
 
-	if mob and mob.Parent then
+	if mob.Parent then
 		mob:Destroy()
 	end
+end
+
+--- §AGX/X12: damage that bypasses StatsManager.CalculateDamage (DoT ticks,
+--- Thorns reflect) used to call humanoid:TakeDamage directly, so a kill
+--- skipped HandleMobDeath: the corpse was never destroyed and paid no XP,
+--- drops, weapon XP or achievements. Every raw-damage site goes through
+--- here instead. `amount` is final (already scaled by the caller).
+--- `sourcePlayer` is credited with the kill; nil / departed = no rewards,
+--- but the mob is still cleaned up. Returns true if this call killed it.
+function DamageHandler.ApplyRawDamage(mob, amount, sourcePlayer)
+	if not mob or handledMobs[mob] then return false end
+	local humanoid = mob:FindFirstChild("Humanoid")
+	if not humanoid or humanoid.Health <= 0 then return false end
+
+	humanoid:TakeDamage(amount)
+	if humanoid.Health > 0 then return false end
+
+	if sourcePlayer and not sourcePlayer.Parent then
+		sourcePlayer = nil
+	end
+	local mobId = mob:GetAttribute("MobId") or mob:GetAttribute("MobType") or "Unknown"
+	DamageHandler.HandleMobDeath(mob, sourcePlayer, {
+		damage  = amount,
+		mobId   = mobId,
+		mobTier = mob:GetAttribute("MobTier") or MobRegistry.GetMobTier(mobId) or "normal",
+		isKill  = true,
+	})
+	return true
 end
 
 return DamageHandler

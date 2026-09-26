@@ -10,7 +10,8 @@
       1. Player XP  (shared across nearby party members via BonusExpSystem)
       2. Weapon XP  (killer only)
       3. Armor XP   (killer only)
-      4. Loot drops  (DropManager — merits, essence, items)
+      4. Loot drops  (DropManager — merits, essence, items; §AGX/X44: one
+         independent roll per eligible party member, batched per player)
       5. Kill callbacks (AchievementManager and any other subscribers)
       6. Client notification (MobDeath)
 
@@ -56,6 +57,24 @@ local runModifiersLoaded = false
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local DifficultyConfig  = nil
 
+-- §AGX/X22: TeleportDataReader module ref, resolved once (§5.4). Declared
+-- above its first callers (getModeRewardMultipliers / getDifficultyXPMult).
+local _TeleportDataReader = nil  -- nil = unresolved, false = not found
+local function getTeleportDataReader()
+	if _TeleportDataReader ~= nil then
+		return _TeleportDataReader or nil
+	end
+	local modules = ServerScriptService:FindFirstChild("Modules")
+	local tdrModule = modules and modules:FindFirstChild("TeleportDataReader")
+	if not tdrModule then
+		-- Not cached as false: the module may simply not be loaded yet.
+		return nil
+	end
+	local ok, TeleportDataReader = pcall(require, tdrModule)
+	_TeleportDataReader = ok and TeleportDataReader or false
+	return _TeleportDataReader or nil
+end
+
 -- Cached mode data (set once at init or first use)
 local cachedModeId        = nil
 local cachedRewardMults   = nil  -- { xpMult, meritsMult, essenceMult } or nil
@@ -63,12 +82,10 @@ local cachedRewardMults   = nil  -- { xpMult, meritsMult, essenceMult } or nil
 local function getModeRewardMultipliers()
 	if cachedRewardMults ~= nil then return cachedRewardMults end
 	-- Resolve mode ID from TeleportDataReader
-	local tdrModule = Modules:FindFirstChild("TeleportDataReader")
-	if tdrModule then
-		local ok, TeleportDataReader = pcall(require, tdrModule)
-		if ok and TeleportDataReader and TeleportDataReader.GetModeId then
-			cachedModeId = TeleportDataReader.GetModeId()
-		end
+	-- §AGX/X22: cached module ref (was pcall(require) per call)
+	local TeleportDataReader = getTeleportDataReader()
+	if TeleportDataReader and TeleportDataReader.GetModeId then
+		cachedModeId = TeleportDataReader.GetModeId()
 	end
 	if cachedModeId then
 		local mode = GameModeConfig.GetMode(cachedModeId)
@@ -93,14 +110,12 @@ local function getDifficultyXPMult()
 		end
 	end
 	if not DifficultyConfig then return 1 end
-	-- Resolve tier each time via TeleportDataReader (don't cache)
-	local tdrModule = Modules:FindFirstChild("TeleportDataReader")
+	-- Resolve tier each time via TeleportDataReader (don't cache the tier)
+	-- §AGX/X22: the module ref IS cached (was pcall(require) per recipient per kill)
 	local diffTier = "Normal"
-	if tdrModule then
-		local ok, TeleportDataReader = pcall(require, tdrModule)
-		if ok and TeleportDataReader and TeleportDataReader.GetDifficulty then
-			diffTier = TeleportDataReader.GetDifficulty() or "Normal"
-		end
+	local TeleportDataReader = getTeleportDataReader()
+	if TeleportDataReader and TeleportDataReader.GetDifficulty then
+		diffTier = TeleportDataReader.GetDifficulty() or "Normal"
 	end
 	local tier = DifficultyConfig.GetDifficulty(diffTier)
 	return tier.xpMult or 1
@@ -125,19 +140,33 @@ local function isWithinRange(player, position, range)
 	return (p - position).Magnitude <= range
 end
 
+-- §AGX/X22 + X44: the party list used to be rebuilt on EVERY kill
+-- (pcall(require) + name→Player lookups). It only changes when a player
+-- joins/leaves or TeleportDataReader adopts a new partyData table, so it's
+-- cached per server. Invalidated on PlayerAdded/PlayerRemoving; a changed
+-- partyData table reference (TeleportDataReader.ProcessPlayer replaces it
+-- on arrival) also misses the cache. There's no PartyManager module in the
+-- tree, so no party-change hook exists to subscribe to.
+local partyCache       = nil  -- array of Player, or nil = stale
+local partyCacheSource = nil  -- the partyData table the cache was built from
+
+local function invalidatePartyCache()
+	partyCache = nil
+	partyCacheSource = nil
+end
+Players.PlayerAdded:Connect(invalidatePartyCache)
+Players.PlayerRemoving:Connect(invalidatePartyCache)
+
 local function getPartyMembersFromTeleportData()
-	local modules = ServerScriptService:FindFirstChild("Modules")
-	if not modules then return nil end
-
-	local tdrModule = modules:FindFirstChild("TeleportDataReader")
-	if not tdrModule then return nil end
-
-	local ok, TeleportDataReader = pcall(require, tdrModule)
-	if not ok or not TeleportDataReader then return nil end
-	if not TeleportDataReader.GetPartyData then return nil end
+	local TeleportDataReader = getTeleportDataReader()
+	if not TeleportDataReader or not TeleportDataReader.GetPartyData then return nil end
 
 	local partyData = TeleportDataReader.GetPartyData()
 	if type(partyData) ~= "table" or #partyData == 0 then return nil end
+
+	if partyCache and partyCacheSource == partyData then
+		return partyCache
+	end
 
 	local members = {}
 	for _, entry in ipairs(partyData) do
@@ -147,6 +176,8 @@ local function getPartyMembersFromTeleportData()
 			if p then table.insert(members, p) end
 		end
 	end
+	partyCache = members
+	partyCacheSource = partyData
 	return members
 end
 
@@ -328,9 +359,32 @@ function KillRewardManager.ProcessKill(player, mob, damageResult)
 		local dm = Modules:FindFirstChild("DropManager")
 		if dm then DropManager = require(dm) end
 	end
+	-- §AGX/X44 (Pablo: "drop is personal, but every mob killed by the party
+	-- is a drop instance"): every XP-eligible recipient rolls their OWN
+	-- independent drop, so tanks/healers aren't starved. The killer always
+	-- rolls (old behaviour), even if the eligibility filter left them out.
+	-- Per recipient:
+	--   • scaleLevel = the recipient's own reward level, using MobSpawner's
+	--     formula (max(5, level)) capped at the mob's frozen RewardLevel.
+	--     Was the party's highest level for everyone (carry: 3.9× Merits).
+	--   • delta (§6 window) unchanged: mob RewardLevel − own level.
+	--   • mode / difficulty (RollDrops), meritScalar (DropManager queue) and
+	--     MeritBonus (CurrencyManager.AddMerits) each apply once.
+	-- Cost: pure math per recipient; grants + LootDrop are batched per
+	-- player (0.25 s) inside DropManager. No drop Instances exist.
 	if DropManager then
-		local playerLevel = PlayerDataManager.GetAccountData(player, "Level") or 1
-		DropManager.ProcessKill(player, mobId, mobTier, mobPosition, mobLevel, playerLevel)
+		local killerRolled = false
+		for _, member in ipairs(recipients) do
+			if member == player then killerRolled = true end
+			local memberLevel = PlayerDataManager.GetAccountData(member, "Level") or 1
+			local scaleLevel  = math.min(mobLevel, math.max(5, memberLevel))
+			DropManager.ProcessKill(member, mobId, mobTier, mobPosition, mobLevel, memberLevel, scaleLevel)
+		end
+		if not killerRolled then
+			local playerLevel = PlayerDataManager.GetAccountData(player, "Level") or 1
+			local scaleLevel  = math.min(mobLevel, math.max(5, playerLevel))
+			DropManager.ProcessKill(player, mobId, mobTier, mobPosition, mobLevel, playerLevel, scaleLevel)
+		end
 	end
 
 	-- ── 4b. Merit scalar bonus (BountyBoard) ──────────────────────────

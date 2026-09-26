@@ -30,6 +30,7 @@ SkillEffects.NetworkManager = nil
 SkillEffects.MobAI          = nil
 SkillEffects.SkillManager   = nil
 SkillEffects.StatsManager   = nil
+SkillEffects.DamageHandler  = nil  -- §AGX/X12: DoT kills route through ApplyRawDamage
 
 -- §PB-D5: WeaponManager is now lazy-loaded instead of injected by the
 -- place bootstrap. SkillEffects is a "leaf" module (nothing else
@@ -135,6 +136,7 @@ function SkillEffects.Init(dependencies)
 	SkillEffects.MobAI          = dependencies.MobAI
 	SkillEffects.SkillManager   = dependencies.SkillManager
 	SkillEffects.StatsManager   = dependencies.StatsManager
+	SkillEffects.DamageHandler  = dependencies.DamageHandler  -- §AGX/X12
 
 	-- Start the mob-effect tick loop
 	task.spawn(function()
@@ -424,14 +426,23 @@ function SkillEffects.TickDoT(mob, entry)
 	end
 
 	local tickDamage = baseDamage * damageCoef * stacks
-	humanoid:TakeDamage(tickDamage)
+	-- §AGX/X12: capture the number position BEFORE damage — a killing tick
+	-- now Destroy()s the mob, after which its parts are gone.
+	local rootPart = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
+	local pos = rootPart and rootPart.Position or mob:GetPivot().Position
+	-- §AGX/X12: route through DamageHandler so a DoT kill runs the normal
+	-- death path (rewards to the DoT owner + corpse Destroy). Was a bare
+	-- humanoid:TakeDamage, which left the corpse and paid nothing.
+	local dh = SkillEffects.DamageHandler
+	if dh and dh.ApplyRawDamage then
+		dh.ApplyRawDamage(mob, tickDamage, player)
+	else
+		humanoid:TakeDamage(tickDamage)
+	end
 
 	-- Fire DoT damage number to the player (small, side-positioned)
 	-- §SCALE/S5: batched — was one RemoteEvent per DoT tick per mob.
 	if player and SkillEffects.NetworkManager then
-		local rootPart = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
-		local pos = rootPart and rootPart.Position or mob:GetPivot().Position
-
 		queueNumber(pendingDamageNumbers, player, {
 			position      = pos,
 			damage        = tickDamage,
