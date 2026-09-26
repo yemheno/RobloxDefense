@@ -286,6 +286,10 @@ Theme.Z = {
 Theme.DisplayOrder = {
 	app = 0, combatControls = 1, joystick = 5, castBar = 8,
 	notify = 30, modal = 40, tooltip = 50, flash = 100, loading = 1000,
+	-- §AGX/UI-P3: PanelGui (PanelHost) sits above the combat controls (1),
+	-- JoystickAim (5) and the cast bar (8) and below NotifyGui (30), so
+	-- toasts stay readable over panels (shell-spec §3.2 rule 6).
+	panels = 20,
 }
 
 Theme.Elevation = {
@@ -315,6 +319,24 @@ Theme.Metrics = {
 	tooltip    = { maxWidth = 260, pad = 8, offset = 10, holdTime = 0.35, moveCancel = 10 },
 	window     = { windowedSize = UDim2.fromScale(0.88, 0.82), topGap = 4, closeInset = 8, titleSize = 26 },
 	scrollBar  = 6,
+	-- §AGX/UI-P3: menu surfaces (shell-spec §4.5). Kind-independent values;
+	-- the per-kind rail sizes live in Theme.Layout[kind].rail. Ratios and
+	-- times are here, NOT in Theme.Layout, because FormFactor multiplies
+	-- every number in a Layout table into ff.tokens.
+	menu       = {
+		tileGap      = 8,      -- between tiles in a section
+		sectionGap   = 16,     -- between sections that share a row
+		rowGap       = 12,     -- between rows of sections
+		tileMinW     = 88,     -- a sheet may shrink 96 -> 88 to save a whole row
+		tileIcon     = 28,
+		badge        = 16,     -- badge circle (Phone: badgePhone)
+		badgePhone   = 18,
+		sheetMaxW    = 780,    -- the sheet is a centred card on wide screens
+		radialShortFrac = 0.62,
+		radialDeadzone  = 0.5,
+		holdConfirm     = 0.25,  -- s of DPadDown hold before release confirms
+		flyoutGroups = { character = true, progress = true },  -- D3: flyouts only here
+	},
 }
 
 -- ── Speed styling constants (used by AppWindow chrome) ────────────────────────
@@ -348,6 +370,13 @@ Theme.Icons = {
 	-- Combat
 	attack      = "rbxassetid://0",
 	skillLocked = "rbxassetid://0",
+
+	-- §AGX/UI-P3: shell menu icons with no delivered art yet (shell-spec
+	-- §2.1). Add to the Claude Design brief; the glyphs below render meanwhile.
+	play        = "rbxassetid://0",
+	leave       = "rbxassetid://0",
+	emote       = "rbxassetid://0",
+	menu        = "rbxassetid://0",
 }
 
 -- §AGX/UI-P1v2: text glyph fallbacks while an icon id is a placeholder (and
@@ -356,6 +385,13 @@ Theme.Glyphs = {
 	close = "✕", back = "‹", check = "✓", lock = "🔒", plus = "+", minus = "−",
 	info = "i", warning = "!", menu = "☰", more = "⋮",
 	merits = "★", essence = "◆",
+	-- §AGX/UI-P3: menu icon fallbacks while Theme.Icons are placeholders.
+	-- Keyed like Theme.Icons, so IconButton / Card / MenuIcon pick them up.
+	-- Colour emoji ignore TextColor3: dim them with TextTransparency.
+	classes = "⚔️", stats = "📊", talents = "✨", equipment = "🛡️",
+	wardrobe = "👕", inventory = "🎒", achievements = "🏆", dailyLogin = "🎁",
+	leaderboard = "🏅", social = "👥", shop = "🛒", settings = "⚙️",
+	play = "▶", leave = "🚪", emote = "👋",
 }
 
 --- Convenience: icon id or nil when still a placeholder (lets callers
@@ -448,6 +484,8 @@ Theme.Layout = {
 		font      = { min = 12, body = 16, title = 22, hudMax = 28 },
 		header    = 56, close = 48,
 		attack    = 96, skill = 60, dash = 52,
+		-- §AGX/UI-P3: shell-spec §4.4; the rail never fits the phone band.
+		rail      = { collapsed = true, menuButton = 48, tile = Vector2.new(96, 72) },
 		skillPad  = {
 			-- Attack centre, measured in from the safe area's bottom-right corner
 			anchor     = Vector2.new(68, 68),
@@ -468,6 +506,9 @@ Theme.Layout = {
 		font      = { min = 12, body = 16, title = 22, hudMax = 28 },
 		header    = 56, close = 48,
 		attack    = 98, skill = 60, dash = 52,
+		-- §AGX/UI-P3: rail in Lobby/Plaza, ☰ in combat (the band decides, §4.4).
+		rail      = { cell = 44, gap = 8, pad = 6, icon = 28, menuButton = 48,
+			tile = Vector2.new(96, 72) },
 		skillPad  = {
 			anchor     = Vector2.new(70, 70),
 			arcRadius  = 130,                    -- chord 67.3 >= 60+6
@@ -487,6 +528,9 @@ Theme.Layout = {
 		font      = { min = 12, body = 16, title = 21, hudMax = 24 },
 		header    = 56, close = 44,
 		skill     = 48,
+		-- §AGX/UI-P3: rail in every place (shell-spec §4.4).
+		rail      = { cell = 44, gap = 8, pad = 6, icon = 28, menuButton = 44,
+			tile = Vector2.new(88, 64) },
 		actionBar = {
 			slot     = 48,     -- Skill1..4
 			dashSlot = 44,
@@ -506,6 +550,11 @@ Theme.Layout = {
 		font      = { min = 14, body = 16, title = 24, hudMax = 27 },
 		header    = 54, close = 44,
 		skill     = 44,
+		-- §AGX/UI-P3: radial menu (shell-spec §4.5). min/max are SCREEN px of
+		-- the wheel diameter (like EmoteWheel); btnMin is design px. The
+		-- short-side fraction is Theme.Metrics.menu.radialShortFrac.
+		rail      = { collapsed = true, menuButton = 64, tile = Vector2.new(96, 72),
+			radial = { min = 320, max = 560, btnMin = 64 } },
 		actionBar = {
 			slot     = 44,
 			dashSlot = 40,

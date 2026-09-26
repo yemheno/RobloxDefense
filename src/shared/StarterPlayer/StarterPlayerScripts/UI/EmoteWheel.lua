@@ -58,11 +58,16 @@ local WHEEL_MIN, WHEEL_MAX = 220, 320
 local BTN_MIN          = 56     -- >= 48 px touch target
 local MOVE_CLOSE_EPS   = 0.1    -- Humanoid.MoveDirection magnitude that closes it
 
-local function wheelMetrics(viewport)
+-- §AGX/UI-P3: exported (EmoteWheel.wheelMetrics) for MenuRadial, B6.
+-- `opts` overrides the wheel's own numbers: { shortFrac, min, max, btnMin }
+-- (screen px, like the defaults). No opts = the emote wheel, unchanged.
+local function wheelMetrics(viewport, opts)
+	opts = opts or {}
 	local short = math.min(viewport.X, viewport.Y)
 	if short <= 0 then short = 720 end
-	local wheel  = math.clamp(math.floor(short * WHEEL_SHORT_FRAC), WHEEL_MIN, WHEEL_MAX)
-	local btn    = math.max(BTN_MIN, math.floor(wheel * 0.26))
+	local wheel  = math.clamp(math.floor(short * (opts.shortFrac or WHEEL_SHORT_FRAC)),
+		opts.min or WHEEL_MIN, opts.max or WHEEL_MAX)
+	local btn    = math.max(opts.btnMin or BTN_MIN, math.floor(wheel * 0.26))
 	local radius = math.floor(wheel / 2 - btn / 2 - 6)
 	return wheel, btn, radius
 end
@@ -370,5 +375,6 @@ EmoteWheelExport.open   = function() setAllVisible(true) end
 EmoteWheelExport.close  = function() setAllVisible(false) end
 EmoteWheelExport.toggle = function() setAllVisible(function(v) return not v end) end
 EmoteWheelExport.Component = EmoteWheel
+EmoteWheelExport.wheelMetrics = wheelMetrics   -- §AGX/UI-P3: MenuRadial geometry (B6)
 
 return EmoteWheelExport

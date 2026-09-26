@@ -108,6 +108,11 @@ ctx.Load(SharedModules, "SharedEventHandlers")
 ctx.Load(SharedModules, "BonusExpSystem")
 ctx.Load(SharedModules, "AdminTesting")
 
+-- §AGX/UI-P3: D15 exit from the Plaza (shell-spec F4/B9). The menu's
+-- `leave` entry fires RequestReturnToLobby; only NetworkManager and
+-- TeleportService are needed, and the handler has no state gate.
+ctx.Load(SharedModules, "ReturnTeleporter")
+
 -- ───────────────────────────────────────────────────────────
 -- VALIDATE CRITICAL MODULES
 -- ───────────────────────────────────────────────────────────

@@ -57,6 +57,63 @@ local LANG = {
 		switch_cooldown     = "On cooldown (%ds)",
 		switch_failed       = "Cannot switch.",
 		class_locked_match_feedback = "Class is locked while in defense.",
+
+		-- ── §AGX/UI-P3: shell menu (shell-spec §2.2, B2) ──────────
+		-- Entry labels (rail tooltips, sheet/flyout tiles, radial centre).
+		-- Keep them short: a sheet tile's label line is ~84 px wide.
+		nav_menu_title      = "Menu",
+		nav_play            = "Play",
+		nav_leave           = "Leave",
+		nav_stats           = "Stats",
+		nav_talents         = "Talents",
+		nav_equipment       = "Equipment",
+		nav_wardrobe        = "Wardrobe",
+		nav_inventory       = "Inventory",
+		nav_achievements    = "Achievements",
+		nav_daily           = "Daily Reward",
+		nav_leaderboard     = "Leaderboard",
+		nav_party           = "Party",
+		nav_emotes          = "Emotes",
+		nav_shop            = "Shop",
+		nav_settings        = "Settings",
+		nav_close           = "Close",
+
+		-- Group (section) labels, Registry.Groups order.
+		nav_group_play      = "Play",
+		nav_group_exit      = "Exit",
+		nav_group_character = "Character",
+		nav_group_progress  = "Progress",
+		nav_group_social    = "Social",
+		nav_group_store     = "Store",
+		nav_group_system    = "System",
+
+		-- Locked reasons. The short form fits on a tile; `<key>_long` is
+		-- used where there is room (radial centre, toasts, tooltips).
+		nav_locked_lobby         = "Lobby only",
+		nav_locked_lobby_long    = "Available in the Lobby",
+		nav_locked_party         = "Lobby only",
+		nav_locked_party_long    = "Parties are formed in the Lobby",
+		nav_locked_battle        = "Not in battle",
+		nav_locked_battle_long   = "Not available in battle",
+		nav_locked_plaza         = "Not in the Plaza",
+		nav_locked_plaza_long    = "Not available in the Plaza",
+		nav_locked               = "Locked",            -- Registry.isAvailable default
+		nav_locked_long          = "Not available here",
+		nav_locked_generic       = "Locked",
+		nav_locked_generic_long  = "Not available here",
+		nav_blocked              = "Finish what's open first",
+
+		-- Leave / exit confirmation (ConfirmDialog, `leave` action).
+		nav_leave_confirm_title        = "Return to Lobby?",
+		nav_leave_confirm_body         = "You'll leave this place and travel back to the Lobby.",
+		nav_leave_confirm_body_combat  = "You'll leave the battle and return to the Lobby. Your team carries on without you.",
+		nav_leave_confirm_yes          = "Leave",
+		nav_leave_confirm_no           = "Stay",
+		nav_leave_confirm_pending      = "Travelling…",
+		nav_leave_confirm_failed       = "Couldn't reach the Lobby. Try again.",
+
+		-- Radial / sheet hints.
+		nav_hint_radial     = "Stick to choose  •  Ⓐ Select  •  Ⓑ Back",
 	},
 
 	-- ── Future language example ────────────────────────────────────────────────
@@ -89,6 +146,14 @@ function Locale.Get(key, ...)
 		return string.format(str, table.unpack(args))
 	end
 	return str
+end
+
+-- §AGX/UI-P3: true when `key` exists (in the active language or English),
+-- so callers can prefer an optional variant ("<key>_long") without
+-- rendering the "[key]" placeholder.
+function Locale.Has(key)
+	local dict = LANG[Locale.Language] or LANG.en
+	return (dict[key] or LANG.en[key]) ~= nil
 end
 
 return Locale
