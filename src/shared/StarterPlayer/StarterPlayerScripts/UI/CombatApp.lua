@@ -3,13 +3,16 @@
     Shared root React component for all combat places
     (LaneDefense, CentralBoss, HordeMode).
 
-    Renders the full combat HUD with:
-      - HUD (currency, vitals, resource bars, combo counter)
-      - BattleClassUI (compact read-only class badge)
-      - StatsMenu, TalentTreeUI, EquipmentUI, WardrobeUI
-      - CharacterCreation (first login edge case)
-      - TeammateVitals (real-time HP bars for teammates)
-      - AchievementsUI, SettingsUI, GlobalShopUI, TestingUI
+    §AGX/UI-P3 (W2): a thin wrapper around the shared Shell
+    (UI/Shell/Shell.lua) with place = "Combat". The Shell mounts the HUD
+    (which owns the BattleClassUI badge and TeammateVitals: classBadge /
+    partyInHud), PanelHost (every Registry panel: class reference, Stats,
+    Talents, Equipment, Wardrobe, Inventory, Achievements, Daily Login,
+    Leaderboard, Shop, Settings, CharacterCreation, leave confirm),
+    SkillPad / ActionBar, DeathUI, VoteUI, Notify.Host and the TooltipHost.
+
+    props.topCentreSlot: an element for the HUD's top-centre slot
+    (CentralBossApp passes BossHud{slotted=true}).
 
     Each combat place re-exports this component from a thin wrapper.
 ]]
@@ -18,208 +21,17 @@ local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
-local PlayerScripts = Players.LocalPlayer:WaitForChild("PlayerScripts")
-local SharedModules = PlayerScripts:WaitForChild("Modules")
-local SharedUI      = PlayerScripts:WaitForChild("UI")
+local SharedUI = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI")
+local Shell    = require(SharedUI:WaitForChild("Shell"):WaitForChild("Shell"))
 
-local NetworkManager    = require(SharedModules:WaitForChild("NetworkManager"))
-local CharacterCreation = require(SharedUI:WaitForChild("CharacterCreation"))
-local HUD               = require(SharedUI:WaitForChild("HUD"))
-local StatsMenu         = require(SharedUI:WaitForChild("StatsMenu"))
-local TalentTreeUI      = require(SharedUI:WaitForChild("TalentTreeUI"))
-local EquipmentUI       = require(SharedUI:WaitForChild("EquipmentUI"))
-local WardrobeUI        = require(SharedUI:WaitForChild("WardrobeUI"))
-local AchievementsUI    = require(SharedUI:WaitForChild("AchievementsUI"))
-local TestingUI         = require(SharedUI:WaitForChild("TestingUI"))
-local SettingsUI        = require(SharedUI:WaitForChild("SettingsUI"))
-local GlobalShopUI      = require(SharedUI:WaitForChild("GlobalShopUI"))
+-- §AGX/UI-P3: load the combat-only modules (SkillPad / ActionBar / DeathUI /
+-- VoteUI) here, where yielding is fine, so render never waits on them.
+Shell.preload("Combat")
 
-local BattleClassUI  = require(SharedUI:WaitForChild("BattleClassUI"))
-local TeammateVitals = require(SharedUI:WaitForChild("TeammateVitals"))
-local DeathUI        = require(SharedUI:WaitForChild("DeathUI"))
-local VoteUI         = require(SharedUI:WaitForChild("VoteUI"))
-
--- §AGX/UI-P2: combat input controls (mobile.md M1/§2.5, UX-04). SkillPad on
--- touch, ActionBar (skill bar with cooldowns) on desktop/console.
-local SharedCommon  = SharedUI:WaitForChild("Common")
-local useFormFactor = require(SharedCommon:WaitForChild("useFormFactor"))
-local SkillPad      = require(SharedCommon:WaitForChild("SkillPad"))
-local ActionBar     = require(SharedCommon:WaitForChild("ActionBar"))
--- §AGX/UI-P4: Notify host (toasts / banner / feed) for every combat place;
--- CentralBossApp wraps this component, so it is mounted here only.
-local Notify        = require(SharedCommon:WaitForChild("Notify"))
--- §AGX/UI-P1v2: D2 scale layer + the one TooltipHost for every combat place
--- (CentralBossApp wraps this component, so it is mounted here only).
-local Theme         = require(SharedCommon:WaitForChild("Theme"))
-local UIScaleRoot   = require(SharedCommon:WaitForChild("UIScaleRoot"))
-local Tooltip       = require(SharedCommon:WaitForChild("Tooltip"))
-
-local function CombatApp()
-	local showCharCreate, setShowCharCreate = React.useState(false)
-	local showClassReference, setShowClassReference = React.useState(false)
-	local showStatsMenu,  setShowStatsMenu  = React.useState(false)
-	local showTalents,    setShowTalents    = React.useState(false)
-	local showEquipment,  setShowEquipment  = React.useState(false)
-	local showWardrobe,     setShowWardrobe     = React.useState(false)
-	local showAchievements, setShowAchievements = React.useState(false)
-	local showSettings,     setShowSettings     = React.useState(false)
-	local showShop,         setShowShop         = React.useState(false)
-	-- §AGX/UI-P2: picks SkillPad vs ActionBar; live across input switches.
-	local formFactor = useFormFactor()
-
-	-- Listen for character creation (edge case: first login on this place)
-	React.useEffect(function()
-		local conn = NetworkManager.OnServerEvent("CharacterCreationRequired", function()
-			setShowCharCreate(true)
-		end)
-		NetworkManager.FireServer("RequestCharacterStatus")
-		return function()
-			if conn then conn:Disconnect() end
-		end
-	end, {})
-
-	local fullscreenOpen = showCharCreate or showClassReference or showStatsMenu or showTalents or showEquipment
-		or showWardrobe or showAchievements or showSettings or showShop
-
-	return React.createElement("Frame", {
-		Name                   = "AppRoot",
-		Size                   = UDim2.fromScale(1, 1),
-		BackgroundTransparency = 1,
-	}, {
-		-- HUD (no MainMenu button in combat places)
-		-- §AGX/UX-02: always mounted; `hidden` hides it while a menu is open.
-		-- Unmounting reset its run state (gameState/runEnded/betweenWaves),
-		-- so closing Stats mid-wave showed "Start Game" and lost Next Wave.
-		hud = React.createElement(HUD, {
-			hidden              = fullscreenOpen,
-			onClassesClick      = function() setShowClassReference(true) end,
-			onStatsClick        = function() setShowStatsMenu(true) end,
-			onTalentsClick      = function() setShowTalents(true) end,
-			onEquipClick        = function() setShowEquipment(true) end,
-			onCosmeticsClick    = function() setShowWardrobe(true) end,
-			onAchievementsClick = function() setShowAchievements(true) end,
-			onSettingsClick     = function() setShowSettings(true) end,
-			onShopClick         = function() setShowShop(true) end,
-		}),
-
-		-- Battle class badge (compact, read-only)
-		battleClass = (not fullscreenOpen) and React.createElement(BattleClassUI) or nil,
-
-		-- Character creation (first login)
-		characterCreation = showCharCreate and React.createElement(CharacterCreation, {
-			onDismiss = function() setShowCharCreate(false) end,
-		}) or nil,
-
-		-- Combat class reference (current class only, no class switching)
-		-- §LD-BC3 fix companion: use TextButton for the dim layer so
-		-- click-outside-the-panel also closes (in addition to the now-
-		-- clickable close button at top-right of the panel).
-		-- §AGX/UX-14: the panel used to be a CHILD of the closing backdrop
-		-- button and its Frames weren't Active, so a click on empty panel
-		-- space fell through and closed it. Backdrop and panel are now
-		-- siblings in a transparent holder, and BattleClassUI's expanded
-		-- panel is Active (sinks input). Only clicks outside close it.
-		classReference = showClassReference and React.createElement("Frame", {
-			Size = UDim2.fromScale(1, 1),
-			BackgroundTransparency = 1,
-			ZIndex = 6,
-		}, {
-			backdrop = React.createElement("TextButton", {
-				Size = UDim2.fromScale(1, 1),
-				BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-				BackgroundTransparency = 0.35,
-				BorderSizePixel = 0,
-				Text = "",
-				AutoButtonColor = false,
-				ZIndex = 6,
-				[React.Event.Activated] = function() setShowClassReference(false) end,
-			}),
-			reference = React.createElement(BattleClassUI, {
-				showBadge = false,
-				expanded = true,
-				-- §LD-BC5: match StatsMenu's panel shape (0.72 x 0.78,
-				-- centered). Pablo's spec: two window types in the game —
-				-- this is the "Stats-style" 70 % overlay, not the full-screen
-				-- "Talents-style". 0.30 was way too narrow.
-				panelScale  = 0.72,
-				panelScaleY = 0.78,
-				position = UDim2.fromScale(0.5, 0.5),
-				anchorPoint = Vector2.new(0.5, 0.5),
-				onClose = function() setShowClassReference(false) end,
-				zIndex = 7,
-			}),
-		}) or nil,
-
-		-- Stats allocation
-		statsMenu = showStatsMenu and React.createElement(StatsMenu, {
-			onClose = function() setShowStatsMenu(false) end,
-		}) or nil,
-
-		-- Talent tree
-		talentTree = showTalents and React.createElement(TalentTreeUI, {
-			onClose = function() setShowTalents(false) end,
-		}) or nil,
-
-		-- Equipment viewer
-		equipmentUI = showEquipment and React.createElement(EquipmentUI, {
-			onClose = function() setShowEquipment(false) end,
-		}) or nil,
-
-		-- Wardrobe (cosmetics browser)
-		wardrobeUI = showWardrobe and React.createElement(WardrobeUI, {
-			onClose = function() setShowWardrobe(false) end,
-		}) or nil,
-
-		-- Teammate vitals strip (right side)
-		teammateVitals = (not fullscreenOpen) and React.createElement(TeammateVitals) or nil,
-
-		-- Achievements panel
-		achievementsUI = showAchievements and React.createElement(AchievementsUI.default, {
-			onClose = function() setShowAchievements(false) end,
-		}) or nil,
-
-		-- Achievement toast (always mounted, self-manages via AchievementClient)
-		achievementToast = React.createElement(AchievementsUI.Toast),
-
-		-- Settings panel
-		settingsUI = showSettings and React.createElement(SettingsUI, {
-			onClose = function() setShowSettings(false) end,
-		}) or nil,
-
-		-- Global shop (3 tabs)
-		globalShopUI = showShop and React.createElement(GlobalShopUI, {
-			onClose = function() setShowShop(false) end,
-		}) or nil,
-
-		-- Admin testing panel (renders nothing for non-creator players)
-		testingPanel = React.createElement(TestingUI),
-
-		-- §AGX/UI-P2: combat controls. Both hide while a fullscreen menu is
-		-- open (and outside the "Combat" input context / while down).
-		skillPad  = formFactor.isTouch and React.createElement(SkillPad.default, {
-			hidden = fullscreenOpen,
-		}) or nil,
-		actionBar = (not formFactor.isTouch) and React.createElement(ActionBar, {
-			hidden = fullscreenOpen,
-		}) or nil,
-
-		-- Death overlay (knocked down / dead states)
-		deathOverlay = React.createElement(DeathUI),
-
-		-- Card vote overlay (auto-shows when server starts a vote)
-		voteOverlay = React.createElement(VoteUI),
-
-		-- §AGX/UI-P4: Notify host (own ScreenGui above AppGui, below modals)
-		notifyHost = React.createElement(Notify.Host),
-
-		-- §AGX/UI-P1v2: UIScale layer at the tooltip band (above every
-		-- window); new-model UI renders inside a UIScaleRoot.Root.
-		tooltipLayer = React.createElement(UIScaleRoot.Root, {
-			name   = "TooltipLayer",
-			zIndex = Theme.Z.tooltip,
-		}, {
-			host = React.createElement(Tooltip.Host),
-		}),
+local function CombatApp(props)
+	return React.createElement(Shell, {
+		place         = "Combat",
+		topCentreSlot = props and props.topCentreSlot or nil,
 	})
 end
 

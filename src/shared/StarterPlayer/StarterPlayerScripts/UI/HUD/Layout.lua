@@ -449,7 +449,7 @@ function Layout.compute(args)
 
 	-- ── §4.3 attributes (screen px; nil = region absent) ──────────────────
 	local function px(v) return v and math.floor(v * s + 0.5) or nil end
-	local legacyAttrs = args.legacyNav ~= false or not partyShown
+	local legacyAttrs = args.legacyNav ~= false  -- §AGX/UI-P5: nothing reads the legacy attrs once the shell owns nav
 	L.publish = {
 		-- Geometry of the row, kept while the HUD is hidden: toasts must not
 		-- jump up over a window's close button.

@@ -1,4 +1,4 @@
--- lobby/UI/InventoryUI.lua
+-- shared/StarterPlayerScripts/UI/InventoryUI.lua  (§AGX/UI-P3 W4: moved from lobby/UI; its manager loads in every place)
 --[[
     Minimal Inventory panel.  Shows owned accessories with equipped slots.
     Equip/unequip buttons fire the appropriate server events.

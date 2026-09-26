@@ -639,8 +639,9 @@ tags in code).
   LeaderboardUI (the last two had ~12-pixel close buttons — the
   "incredibly small" ones). REMAINING: EquipmentUI, WardrobeUI,
   AchievementsUI, GlobalShopUI, KeybindSettings, CharacterCreation
-  (fullscreen), BattleClassUI + lobby: MainMenu, ShopUI, WeaponSmithUI,
-  InventoryUI, SocialPanel, MatchmakingUI, NPCDialog. (Toasts/wheels — EmoteWheel, PartyInviteToast, VoteUI,
+  (fullscreen), BattleClassUI, InventoryUI (shared since §AGX/UI-P3 W4,
+  with DailyLoginUI and LeaderboardUI) + lobby: MainMenu, ShopUI,
+  WeaponSmithUI, SocialPanel, MatchmakingUI, NPCDialog. (Toasts/wheels — EmoteWheel, PartyInviteToast, VoteUI,
   DeathUI, HUD, TeammateVitals — are NOT windows; leave as-is.)
 - `[Done]` **§PERF/BP — Boot profiler (2026-07-16).** Shared
   `ReplicatedStorage/Shared/BootProfiler` (Mark/Begin spans). Hooks:
@@ -664,6 +665,16 @@ tags in code).
   REMAINING: Studio → Asset Manager → Bulk Import `assets/ui/`, then
   paste ids into `Theme.Icons` (16) and the new `Theme.Images` (11,
   slice rects pre-filled). All UI falls back gracefully until then.
+
+- `[P1/UI]` **§AGX/UI-P3/P5 W6 — Shell + HUD regions Studio pass
+  (Pablo).** Code landed (agents A/B/C + Wave 2 integrator; spec
+  `docs/ui_audit/shell-spec.md` §5): every App is `Shell{place}`,
+  PanelStack owns what's open, the rail / ☰ MenuSheet / console radial
+  replaced the ☰ + ⋮ drawer (LegacyNav deleted) and the Plaza
+  AppearanceBar (HUD quick buttons). Untested: run the W6 checklist in
+  the Device Emulator (iPhone 844×390, Android 800×360, tablet
+  1024×768, 1080p) and with a gamepad. P7 no longer moves Dash off B
+  (context gating: B = Dash in Combat, Back in UI).
 
 ### Discussion-batch outcomes (§DISC, 2026-06-12)
 
@@ -697,9 +708,12 @@ tags in code).
   Instead of an error channel: NPC UIs auto-close when the player walks
   away. New `UI/Common/useNpcDistanceClose` hook (16-stud threshold vs
   the server's 12-stud INTERACT_RANGE, so no boundary flicker), wired
-  into NPCDialog (dialogue/quest/teleport panels). `[P2]` also wire into
-  ShopUI + WeaponSmithUI (same one-liner, they carry npcId in their
-  open events). Scene/card server warns stay as-is.
+  into NPCDialog (dialogue/quest/teleport panels), ShopUI and
+  WeaponSmithUI (done; the old "[P2] also wire into ShopUI +
+  WeaponSmithUI" line was stale, UX-17). §AGX/UI-P3: ShopUI's distance
+  path now sends `NPCResponse Close` like its ✕ (UX-17 nit), and all
+  three NPC panels register with PanelStack (`useExternal`), mounted by
+  PanelHost. Scene/card server warns stay as-is.
 
 - `[P2]` **§T0P2-ORPHANS — Verify 5 unreferenced manifest events.**
   `ArmorRefinementResult`, `ArmorTierUp`, `WeaponRefinementResult`,

@@ -1,4 +1,4 @@
--- lobby/UI/DailyLoginUI.lua
+-- shared/StarterPlayerScripts/UI/DailyLoginUI.lua  (§AGX/UI-P3 W4: moved from lobby/UI; its manager loads in every place)
 --[[
     Minimal Daily Login panel.
     On mount: requests current status from server.

@@ -13,8 +13,11 @@
 >   - talent tree touch (84e210d)
 >   - safe area/notch/landscape/44 px HUD (cfba00b)
 >   - legacy screens at 44 px (b38a8a3)
-> - **P4 Notify has landed** (dfefb37). The HUD/boss/vote migration is in progress.
-> - **Waiting on D1 (visual direction), D2 (sizing model) and D3 (menu surface):** the P1 token re-skin, the P3 shell and the P6 re-skin.
+> - **P4 Notify has landed** (dfefb37), including the wave/run banners, killfeed, combo, boss phase, vote and matchmaking migration (74b7ac8).
+> - **D1–D3 decided** (cdba264): Hybrid visuals, fixed + UIScale sizing, icon rail.
+> - **P1 Theme v2 has landed** (2e3fdf5): tokens, the component library and the compensated UIScale layer.
+> - **P3 Shell and P5 HUD regions have landed** (spec `docs/ui_audit/shell-spec.md`): agents A (e9dab2c: PanelStack, Registry, PanelHost, ServerOpen, BadgeStore, one back route), B (52d7fb3: rail / MenuSheet / radial, leave confirm) and C (8871472: HUD regions + layout table, Notify/SkillPad/ActionBar footprints), then the Wave 2 integration: every place App is now `Shell{place}`, the ☰ + ⋮ drawer (`HUD/LegacyNav`) and the Plaza `AppearanceBar` are deleted, and InventoryUI / LeaderboardUI / DailyLoginUI moved to the shared UI folder (available in every place).
+> - **Next:** the W6 Studio pass (shell-spec §5), then P6 screen migration and P7 gamepad focus.
 > - Nothing has been tested in Studio yet.
 
 ---
@@ -114,13 +117,13 @@ The **first three block the build**. For the rest, the recommended option applie
 | Phase | Scope | Est. |
 |---|---|---|
 | **P0** ✅ | UX-01 (Wardrobe reachable), UX-02 (HUD survives menus), UX-03 (NPC results inline, lore chats fixed), UX-14 (class panel click-through), trumpet → backpack icon | done |
-| **P1 Foundations** | Theme v2 tokens and layers, `FormFactor`/`useFormFactor`, safe-area roots, `Text`/`Button`/`IconButton`/`Window(auto)`. Fix ☰ and the currency strip under the top bar. Fix the AppWindow close-button sizing, which fixes every converted window at once. | 3 d |
+| **P1 Foundations** (Theme v2 landed, 2e3fdf5) | Theme v2 tokens and layers, `FormFactor`/`useFormFactor`, safe-area roots, `Text`/`Button`/`IconButton`/`Window(auto)`. Fix ☰ and the currency strip under the top bar. Fix the AppWindow close-button sizing, which fixes every converted window at once. | 3 d |
 | **P2 Mobile blockers** | `InputSystem.FireAction` plus `ActionBar`/`SkillPad` with cooldowns (this also gives PC a skill bar). NPC interaction (D5). Convert CharacterCreation, MainMenu and PartyInviteToast. Set orientation (D4). | 4–5 d |
-| **P3 Shell** | Registry, PanelStack and UI input context; Esc/B/back; one panel open at a time; route NPC panels through the stack (fixes UX-05, NPC panels stacking over menus); menu surface (D3). | 3 d |
-| **P4 Notify** | ToastHost, banner queue, feed, `useRequest`, and the server `Notify` event. Replace the five existing mechanisms. | 2 d |
-| **P5 HUD regions** | Split `HUD.lua` into region components with a per-form-factor layout table; stop BossHud colliding with the wave banner and Start; keep teammate vitals and the class badge mounted too. | 3 d |
+| **P3 Shell** ✅ (code; Studio pass pending) | Registry, PanelStack and UI input context; Esc/B/back; one panel open at a time; route NPC panels through the stack (fixes UX-05, NPC panels stacking over menus); menu surface (D3). | 3 d |
+| **P4 Notify** ✅ | ToastHost, banner queue, feed, `useRequest`, and the server `Notify` event. Replace the five existing mechanisms. | 2 d |
+| **P5 HUD regions** ✅ (code; Studio pass pending) | Split `HUD.lua` into region components with a per-form-factor layout table; stop BossHud colliding with the wave banner and Start; keep teammate vitals and the class badge mounted too. | 3 d |
 | **P6 Screen migration** | Convert the remaining screens to the components and tokens: Talent tree (touch pan/zoom and D12), Wardrobe, Inventory, Achievements, Stats (48 px +, hold-to-repeat), Emote wheel, GlobalShop tabs, Settings (merge the two keybind editors). Palette sweep and contrast fixes. | 5 d |
-| **P7 Gamepad** | SelectionGroups, first focus, and B = back (move Dash off B). | 2 d |
+| **P7 Gamepad** | SelectionGroups, first focus (P3 left the hooks). B = back already works through context gating (B = Dash in Combat, Back in UI), so Dash stays on B. | 2 d |
 
 **Total: about 22–24 dev-days** plus Studio Device Emulator passes (iPhone 844×390, small Android 800×360, tablet 1024×768, 1080p). P1 and P2 alone (about 7–8 days) make the game playable on phones.
 

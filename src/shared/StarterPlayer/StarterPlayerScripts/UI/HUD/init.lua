@@ -16,7 +16,8 @@
       PartyRegion.lua        TeammateVitals in a rect (partyInHud)
       PlayCta.lua            Lobby PLAY
       QuickButtons.lua       touch Emote / Wardrobe (Lobby, Plaza)
-      LegacyNav.lua          today's ☰ + ⋮ drawer (until W3)
+      (LegacyNav.lua, the old ☰ + ⋮ drawer, was deleted in W3: the Shell's
+      railSlot = MenuSurface is the only menu entry point.)
       StatusBar.lua, Store.lua
 
     SCALE LAYER (D2 / F7)
@@ -25,12 +26,11 @@
       UIScaleRoot.toLocal, and every region renders inside a
       UIScaleRoot.Local in DESIGN px (phone points). So the old
       AbsoluteSize -> Offset write-backs are gone: nothing measured is
-      written back as an Offset without the conversion. LegacyNav and the
-      BattleClassUI badge are legacy screen-px code and sit OUTSIDE the
-      layer. Mount the HUD unscaled (not inside a UIScaleRoot.Root): it
-      applies its own scale.
+      written back as an Offset without the conversion. The BattleClassUI
+      badge is legacy screen-px code and sits OUTSIDE the layer. Mount the
+      HUD unscaled (not inside a UIScaleRoot.Root): it applies its own scale.
 
-    PROPS (all Wave-1 props keep working)
+    PROPS
       place          "Combat" | "Lobby" | "Plaza"
                      (default: hideStartButton and "Lobby" or "Combat")
       hudMode        "full" | "combatSide" | "none"  (default: hidden and "none" or "full")
@@ -45,14 +45,12 @@
                      one (desktop / console combat); false: none;
                      nil (Wave 1): the App mounts it, the layout keeps clear
       onPlay, onEmote, onWardrobe   functions (PLAY CTA / quick buttons)
-      legacyNav      bool, default true: render LegacyNav
-      hidden, hideStartButton, onMenuClick, onClassesClick, onStatsClick,
-      onTalentsClick, onEquipClick, onCosmeticsClick, onAchievementsClick,
-      onSettingsClick, onShopClick, onPartyClick, onDailyLoginClick,
-      onLeaderboardClick, onInventoryClick   (legacy; LegacyNav)
+      hidden, hideStartButton   (legacy fallbacks for hudMode / place)
+      §AGX/UI-P3 (W3): legacyNav and the on*Click drawer props are gone
+      with LegacyNav.lua; menus open through PanelStack / the railSlot.
 ]]
 
-local GuiService        = game:GetService("GuiService")
+local GuiService        = game:GetService("GuiService")  -- legacy topbar inset (class badge)
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
@@ -72,7 +70,6 @@ local ComboRegion       = require(script:WaitForChild("ComboRegion"))
 local PartyRegion       = require(script:WaitForChild("PartyRegion"))
 local PlayCta           = require(script:WaitForChild("PlayCta"))
 local QuickButtons      = require(script:WaitForChild("QuickButtons"))
-local LegacyNav         = require(script:WaitForChild("LegacyNav"))
 
 local e = React.createElement
 
@@ -92,7 +89,6 @@ local function HUD(props)
 	local sc = UIScaleRoot.useUIScale()
 	local place = props.place or (props.hideStartButton and "Lobby" or "Combat")
 	local hudMode = props.hudMode or (props.hidden and "none" or "full")
-	local legacyNav = props.legacyNav ~= false
 
 	-- Measured root size (DeviceSafeInsets makes it smaller than the camera
 	-- viewport on notched phones); the viewport is the first-frame fallback.
@@ -115,16 +111,10 @@ local function HUD(props)
 	local bossActive, setBossActive = React.useState(false)
 	local attrs = Layout.useAttrs()
 
-	local legacyMenu = nil
-	if legacyNav and props.onMenuClick then
-		legacyMenu = UIScaleRoot.toLocal(LegacyNav.menuButtonSize(screen), s)
-	end
-
 	local legacyTopbar = select(1, GuiService:GetGuiInset()).Y
 	local L = Layout.useHudLayout(place, ff, hudMode, {
 		W = design.X, H = design.Y, scale = s, attrs = attrs,
-		legacyNav        = legacyNav,
-		legacyMenu       = legacyMenu,
+		legacyNav        = false,   -- §AGX/UI-P3 (W3): LegacyNav deleted
 		hasRail          = props.railSlot ~= nil,
 		railCount        = props.railCount,
 		classBadge       = props.classBadge,
@@ -204,8 +194,6 @@ local function HUD(props)
 		})
 	end
 
-	local legacyTop = legacyTopbar + 10
-
 	return e("Frame", {
 		Name                   = "HUD",
 		Size                   = UDim2.fromScale(1, 1),
@@ -215,24 +203,6 @@ local function HUD(props)
 	}, {
 		scaled = e(UIScaleRoot.Local, { name = "HUDScale", zIndex = 1 }, regions),
 		classBadge = classBadge,
-		legacyNav = legacyNav and e(LegacyNav.default, {
-			viewport            = screen,
-			safeTop             = legacyTop,
-			visible             = hudMode == "full",
-			onMenuClick         = props.onMenuClick,
-			onClassesClick      = props.onClassesClick,
-			onStatsClick        = props.onStatsClick,
-			onTalentsClick      = props.onTalentsClick,
-			onEquipClick        = props.onEquipClick,
-			onCosmeticsClick    = props.onCosmeticsClick,
-			onAchievementsClick = props.onAchievementsClick,
-			onSettingsClick     = props.onSettingsClick,
-			onShopClick         = props.onShopClick,
-			onPartyClick        = props.onPartyClick,
-			onDailyLoginClick   = props.onDailyLoginClick,
-			onLeaderboardClick  = props.onLeaderboardClick,
-			onInventoryClick    = props.onInventoryClick,
-		}) or nil,
 	})
 end
 

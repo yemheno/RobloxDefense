@@ -77,7 +77,9 @@ Registry.Groups = {
 
 local ALL   = { Lobby = true, Plaza = true, Combat = true }
 local LOBBY = { Lobby = true }
-local NOT_LOBBY_YET = { Plaza = "nav_locked_lobby", Combat = "nav_locked_lobby" }   -- until W4
+-- §AGX/UI-P3 (W4): InventoryUI / LeaderboardUI / DailyLoginUI moved to the
+-- shared UI folder (their managers load in every place), so the
+-- NOT_LOBBY_YET lock is gone and those entries are available everywhere.
 
 -- ═══════════════════════════════════════════════════════════
 -- ENTRIES (§2.2)
@@ -164,8 +166,8 @@ E.wardrobe = {
 E.inventory = {
 	id = "inventory", kind = "panel", group = "character", order = 6,
 	label = "nav_inventory", icon = "inventory", glyph = "INV",
-	module = { folder = "Lobby", name = "InventoryUI" },   -- W4: folder "UI", places ALL
-	places = LOBBY, lockedReason = NOT_LOBBY_YET,
+	module = { folder = "UI", name = "InventoryUI" },   -- §AGX/UI-P3 (W4)
+	places = ALL,
 	class = "panel", presentation = "windowed", phone = "sheet",
 }
 
@@ -181,8 +183,8 @@ E.achievements = {
 E.dailyLogin = {
 	id = "dailyLogin", kind = "panel", group = "progress", order = 2,
 	label = "nav_daily", icon = "dailyLogin", glyph = "DAILY",
-	module = { folder = "Lobby", name = "DailyLoginUI" },  -- W4: folder "UI", places ALL
-	places = LOBBY, lockedReason = NOT_LOBBY_YET,
+	module = { folder = "UI", name = "DailyLoginUI" },  -- §AGX/UI-P3 (W4)
+	places = ALL,
 	class = "panel", presentation = "dialog", phone = "dialog",
 	dismissOnBackdrop = true,   -- D8: small dialog (0.38 x 0.46, DailyLoginUI.lua:86)
 	badge = "daily",
@@ -191,8 +193,8 @@ E.dailyLogin = {
 E.leaderboard = {
 	id = "leaderboard", kind = "panel", group = "progress", order = 3,
 	label = "nav_leaderboard", icon = "leaderboard", glyph = "RANK",
-	module = { folder = "Lobby", name = "LeaderboardUI" },  -- W4: folder "UI", places ALL
-	places = LOBBY, lockedReason = NOT_LOBBY_YET,
+	module = { folder = "UI", name = "LeaderboardUI" },  -- §AGX/UI-P3 (W4)
+	places = ALL,
 	class = "panel", presentation = "windowed", phone = "sheet", combatSide = true,
 }
 

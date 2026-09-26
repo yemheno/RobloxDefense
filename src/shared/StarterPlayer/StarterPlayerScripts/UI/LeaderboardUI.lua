@@ -1,4 +1,4 @@
--- lobby/UI/LeaderboardUI.lua
+-- shared/StarterPlayerScripts/UI/LeaderboardUI.lua  (§AGX/UI-P3 W4: moved from lobby/UI; its manager loads in every place)
 --[[
     Minimal Leaderboard panel.  Three tabs: GearScore, HighestWave, TotalPlayTime.
     Fires GetLeaderboard on mount and on tab switch.
