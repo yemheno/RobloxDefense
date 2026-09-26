@@ -11,6 +11,7 @@ local MobSkillRegistry = require(Modules:WaitForChild("MobSkillRegistry"))
 local StatsManager = require(Modules:WaitForChild("StatsManager"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local MobBehaviors   = require(Modules:WaitForChild("MobBehaviors"))
+local MobSpawnHelper = require(Modules:WaitForChild("MobSpawnHelper"))  -- §AGX/X45: PinServerOwnership
 
 -- Lazy-loaded
 local HitTracker = nil
@@ -295,6 +296,11 @@ function MobAI.RegisterMob(mob, mobId, level, difficultyOverrides)
 	}
 
 	activeMobs[mob] = mobData
+
+	-- §AGX/X45: pin mob physics to the server. RegisterMob is the one
+	-- path every spawner (Lane SpawnMob, HordeModeSpawner, CentralBoss
+	-- boss + placeholder adds) calls right after parenting to workspace.
+	MobSpawnHelper.PinServerOwnership(rootPart, mobData.mobTier)
 
 	-- Resolve and initialize behaviors declared by this mob
 	if config.behaviors then

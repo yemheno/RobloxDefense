@@ -33,7 +33,30 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
-WORKSPACE = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense")
+# §AGX/X49: repo root derived from this file (tools/ -> repo), overridable
+# with --workspace; the old hard-coded Windows path is used only if the
+# derived root doesn't look like the repo and that path exists.
+_LEGACY_WORKSPACE = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense")
+
+
+def resolve_workspace(cli_value=None):
+    if cli_value:
+        return Path(cli_value).expanduser().resolve()
+    repo = Path(__file__).resolve().parent.parent
+    if (repo / "src").is_dir():
+        return repo
+    if _LEGACY_WORKSPACE.exists():
+        return _LEGACY_WORKSPACE
+    return repo
+
+
+def get_api_key():
+    """§AGX/X49: ROBLOX_OPEN_CLOUD_KEY preferred, ROBLOX_API_KEY accepted.
+    Never print the returned value."""
+    return os.environ.get("ROBLOX_OPEN_CLOUD_KEY") or os.environ.get("ROBLOX_API_KEY", "")
+
+
+WORKSPACE = resolve_workspace()
 ASSET_MAP = WORKSPACE / "src/shared/ReplicatedStorage/AssetMap.lua"
 IDS_FILE  = WORKSPACE / "tools/asset_ids.txt"
 ENV_FILE  = WORKSPACE / ".env"
@@ -116,9 +139,9 @@ def main():
     args = parser.parse_args()
 
     load_env()
-    api_key = os.environ.get("ROBLOX_OPEN_CLOUD_KEY", "")
+    api_key = get_api_key()  # §AGX/X49
     if not api_key:
-        print("ERROR: ROBLOX_OPEN_CLOUD_KEY not in .env"); return
+        print("ERROR: ROBLOX_OPEN_CLOUD_KEY (or ROBLOX_API_KEY) not set"); return
     if not ASSET_MAP.exists():
         print("ERROR: AssetMap.lua not found — run gen_manifests_lua.py"); return
     if not IDS_FILE.exists():
@@ -197,7 +220,30 @@ from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
 # ── Config ────────────────────────────────────────────────────────────────────
-WORKSPACE = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense")
+# §AGX/X49: repo root derived from this file (tools/ -> repo), overridable
+# with --workspace; the old hard-coded Windows path is used only if the
+# derived root doesn't look like the repo and that path exists.
+_LEGACY_WORKSPACE = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense")
+
+
+def resolve_workspace(cli_value=None):
+    if cli_value:
+        return Path(cli_value).expanduser().resolve()
+    repo = Path(__file__).resolve().parent.parent
+    if (repo / "src").is_dir():
+        return repo
+    if _LEGACY_WORKSPACE.exists():
+        return _LEGACY_WORKSPACE
+    return repo
+
+
+def get_api_key():
+    """§AGX/X49: ROBLOX_OPEN_CLOUD_KEY preferred, ROBLOX_API_KEY accepted.
+    Never print the returned value."""
+    return os.environ.get("ROBLOX_OPEN_CLOUD_KEY") or os.environ.get("ROBLOX_API_KEY", "")
+
+
+WORKSPACE = resolve_workspace()
 ASSET_MAP = WORKSPACE / "src/shared/ReplicatedStorage/AssetMap.lua"
 ENV_FILE  = WORKSPACE / ".env"
 
@@ -286,11 +332,11 @@ def main():
 
     load_env()
 
-    api_key    = os.environ.get("ROBLOX_OPEN_CLOUD_KEY", "")
+    api_key    = get_api_key()  # §AGX/X49
     creator_id = os.environ.get("ROBLOX_CREATOR_ID", "")
 
     if not api_key:
-        print("ERROR: ROBLOX_OPEN_CLOUD_KEY not set in .env")
+        print("ERROR: ROBLOX_OPEN_CLOUD_KEY (or ROBLOX_API_KEY) not set")
         return
     if not creator_id:
         print("ERROR: ROBLOX_CREATOR_ID not set in .env")

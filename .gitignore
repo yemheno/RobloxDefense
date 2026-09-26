@@ -30,6 +30,10 @@ desktop.ini
 *.swp
 *~
 .env
+# §AGX/X49: env variants (.env.local, .env.production, …) hold secrets too;
+# the committed template stays trackable.
+.env.*
+!.env.example
 
 # ── Node modules (tools/) ──────────────────────────────────
 tools/node_modules/

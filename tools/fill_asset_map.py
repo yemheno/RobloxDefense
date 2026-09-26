@@ -35,9 +35,41 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-ASSET_MAP = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense\src\shared\ReplicatedStorage\AssetMap.lua")
-IDS_FILE  = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense\tools\asset_ids.txt")
-ENV_FILE  = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense\.env")
+# §AGX/X49: repo root derived from this file (tools/ -> repo), overridable
+# with --workspace; the old hard-coded Windows path is used only if the
+# derived root doesn't look like the repo and that path exists.
+_LEGACY_WORKSPACE = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense")
+
+
+def resolve_workspace(cli_value=None):
+    if cli_value:
+        return Path(cli_value).expanduser().resolve()
+    repo = Path(__file__).resolve().parent.parent
+    if (repo / "src").is_dir():
+        return repo
+    if _LEGACY_WORKSPACE.exists():
+        return _LEGACY_WORKSPACE
+    return repo
+
+
+
+def _workspace_from_argv():
+    # §AGX/X49: optional `--workspace <path>` without disturbing the
+    # script's existing argument handling.
+    import sys
+    argv = sys.argv[1:]
+    for i, a in enumerate(argv):
+        if a == "--workspace" and i + 1 < len(argv):
+            return argv[i + 1]
+        if a.startswith("--workspace="):
+            return a.split("=", 1)[1]
+    return None
+
+
+WORKSPACE = resolve_workspace(_workspace_from_argv())
+ASSET_MAP = WORKSPACE / "src" / "shared" / "ReplicatedStorage" / "AssetMap.lua"
+IDS_FILE  = WORKSPACE / "tools" / "asset_ids.txt"
+ENV_FILE  = WORKSPACE / ".env"
 
 MARKETPLACE_API = "https://api.roblox.com/marketplace/productInfo?assetId={}"
 DELAY           = 0.15   # seconds between API calls to avoid rate-limiting

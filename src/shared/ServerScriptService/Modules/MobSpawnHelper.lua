@@ -119,4 +119,45 @@ function MobSpawnHelper.GetSpawnCFrame(spawnPart, yOffset)
 	return spawnPart.CFrame * CFrame.new(rx, size.Y / 2 + yOffset, rz)
 end
 
+-- ═══════════════════════════════════════════════════════════
+-- NETWORK OWNERSHIP (server-pinned mob physics)
+-- ═══════════════════════════════════════════════════════════
+
+-- §AGX/X45: which tiers get their physics pinned to the server. Default:
+-- ALL tiers, normal included. SCALING_AUDIT's Humanoid budget (~100-150
+-- live, 0.05-0.15 ms each) is already a server-side cost; Horde's
+-- aliveCap = 72 sits well inside it, so server-owning trash adds only
+-- the assembly integration and removes the ownership hand-off churn.
+-- Auto ownership let a nearby client own a mob: the client's sim fought
+-- the server's MoveTo (rubber-banding) and an exploiter could teleport
+-- it past DefenseDetection's X check. Flip `normal = false` here if a
+-- Studio profile of a 72-mob Horde shows server physics over budget.
+local SERVER_OWNED_TIERS = {
+	normal   = true,
+	elite    = true,
+	miniboss = true,
+	boss     = true,
+}
+
+--- Pin a mob's physics assembly to the server. Call right after the
+--- model is parented to workspace. No-op (and never errors) for
+--- anchored assemblies, unparented models or tiers not in the table.
+--- @param rootPart BasePart  the mob's HumanoidRootPart
+--- @param tier string|nil    MobTier ("normal" when nil)
+--- @return boolean           true if ownership was set to the server
+function MobSpawnHelper.PinServerOwnership(rootPart, tier)
+	-- §AGX/X45: unknown tiers default to server-owned (safe side).
+	local want = SERVER_OWNED_TIERS[tier or "normal"]
+	if want == false then return false end
+	if not rootPart or not rootPart:IsA("BasePart") then return false end
+	if not rootPart:IsDescendantOf(workspace) then return false end
+	-- §AGX/X45: SetNetworkOwner errors on anchored parts / assemblies
+	-- welded to anchored parts; CanSetNetworkOwnership covers both.
+	if rootPart.Anchored then return false end
+	local okCan, can = pcall(rootPart.CanSetNetworkOwnership, rootPart)
+	if not okCan or not can then return false end
+	local ok = pcall(rootPart.SetNetworkOwner, rootPart, nil)
+	return ok
+end
+
 return MobSpawnHelper

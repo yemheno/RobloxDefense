@@ -4,24 +4,52 @@ check_mesh_ids.py
 Queries the Roblox Open Cloud API for the mesh asset IDs that failed
 with 'MeshContentProvider could not fetch' and prints their status.
 """
-import os, json, re, time
+import argparse, os, json, re, time
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 from pathlib import Path
 
-WORKSPACE = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense")
+# §AGX/X49: repo root derived from this file (tools/ -> repo), overridable
+# with --workspace; the old hard-coded Windows path is used only if the
+# derived root doesn't look like the repo and that path exists.
+_LEGACY_WORKSPACE = Path(r"C:\Users\P_Guilleminot\Desktop\Developer\RobloxDefense")
+
+
+def resolve_workspace(cli_value=None):
+    if cli_value:
+        return Path(cli_value).expanduser().resolve()
+    repo = Path(__file__).resolve().parent.parent
+    if (repo / "src").is_dir():
+        return repo
+    if _LEGACY_WORKSPACE.exists():
+        return _LEGACY_WORKSPACE
+    return repo
+
+
+def get_api_key():
+    """§AGX/X49: ROBLOX_OPEN_CLOUD_KEY preferred, ROBLOX_API_KEY accepted.
+    Never print the returned value."""
+    return os.environ.get("ROBLOX_OPEN_CLOUD_KEY") or os.environ.get("ROBLOX_API_KEY", "")
+
+
+_ap = argparse.ArgumentParser(description="Check failing mesh asset IDs via Open Cloud.")
+_ap.add_argument("--workspace", help="Repo root (default: derived from this file)")
+_args = _ap.parse_args()
+
+WORKSPACE = resolve_workspace(_args.workspace)
 ENV_FILE = WORKSPACE / ".env"
 
-# Load .env
-for line in ENV_FILE.read_text().splitlines():
-    line = line.strip()
-    if line and not line.startswith("#") and "=" in line:
-        k, _, v = line.partition("=")
-        os.environ.setdefault(k.strip(), v.strip())
+# Load .env (optional: the key may come straight from the environment)
+if ENV_FILE.exists():
+    for line in ENV_FILE.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, _, v = line.partition("=")
+            os.environ.setdefault(k.strip(), v.strip())
 
-API_KEY = os.environ.get("ROBLOX_OPEN_CLOUD_KEY", "")
+API_KEY = get_api_key()
 if not API_KEY:
-    raise SystemExit("ROBLOX_OPEN_CLOUD_KEY not found in .env")
+    raise SystemExit("ROBLOX_OPEN_CLOUD_KEY (or ROBLOX_API_KEY) not set in the environment or .env")
 
 # All 42 failing IDs from the Studio log, annotated with their MeshMap entry
 FAILING = [
