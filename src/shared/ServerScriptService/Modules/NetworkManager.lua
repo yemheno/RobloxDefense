@@ -174,6 +174,10 @@ local EVENTS = {
     DefenseLineCombo       = { rateLimit = nil,  readyGated = false },
     PlayerDeath            = { rateLimit = nil,  readyGated = false },
     ComboEnded             = { rateLimit = nil,  readyGated = false },
+    -- §AGX/X28: CentralBoss encounter (server → client only; BossEncounter).
+    -- Late joiners get a snapshot via ReadyGate.OnReady, so not gated.
+    BossStateUpdate        = { rateLimit = nil,  readyGated = false },
+    BossPhaseChanged       = { rateLimit = nil,  readyGated = false },
 
     -- ── Scene / matchmaking / state ──────────────────────────────────
     SceneChanged           = { rateLimit = nil,  readyGated = false },

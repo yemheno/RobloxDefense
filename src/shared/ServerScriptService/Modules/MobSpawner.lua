@@ -74,6 +74,10 @@ local onAllWavesCompletedCallbacks = {}
 -- for it to complete.  LaneDefenseMain uses this to gate spawns on vote resolution.
 local preSpawnHook = nil
 
+-- §AGX/X28: places that never run lane waves (CentralBoss) set this so a
+-- client's RequestNextWave can't start WaveConfig waves mid-fight (X5).
+MobSpawner.ClientWaveRequestsDisabled = false
+
 -- Active difficulty tier name ("Normal" | "Hard" | "Nightmare")
 local activeDifficulty = nil
 local activeDifficultyOverrides = nil   -- cached { hpMult, damageMult, armorMult, speedBonus }
@@ -128,6 +132,7 @@ function MobSpawner.Init()
 	NetworkManager.GetEvent("RequestNextWave")
 
 	NetworkManager.OnClientEvent("RequestNextWave", function(_player)
+		if MobSpawner.ClientWaveRequestsDisabled then return end  -- §AGX/X28: off in CentralBoss (X5)
 		if waveState == "idle" then
 			MobSpawner.StartNextWave()
 		end
@@ -199,7 +204,7 @@ function MobSpawner.CacheTemplates()
 
 			if template then
 				mobTemplates[mobId] = template
-			else
+			elseif not mobData.placeholderRig then  -- §AGX/X28: runtime-rig mobs (boss) have no template yet; no boot warn
 				warn("[MobSpawner] Missing template for", mobId, ":", templateName,
 					"— not found in", mobsFolder:GetFullName())
 			end

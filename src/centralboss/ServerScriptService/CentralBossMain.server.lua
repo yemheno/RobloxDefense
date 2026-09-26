@@ -5,9 +5,12 @@
     Distinction from LaneDefense:
       • Mode identifier is "CentralBoss" (reported to TeleportDataReader).
       • No DefenseLine — single-arena boss fight.
-      • A "BossPoint" Part in Workspace is expected for character facing
-        targets. Map designers place it; the server doesn't enforce it.
-      • The boss fight itself is currently UNAUTHORED — see warn at bottom.
+      • A "BossPoint" Part in Workspace is the boss spawn and the players'
+        facing target. BossEncounter falls back (MobSpawn /
+        origin) and creates one if it is missing.
+      • §AGX/X28: the fight is run by Modules/BossEncounter (core: phases,
+        adds, HP bar, victory). Start button → Preparing → Defending →
+        boss spawns. No lane waves: suppressWaveStart + RequestNextWave off.
 
     Helpers (Load, RequireLoaded, IsAdmin) live in PlaceBootstrap.
     Common per-player lifecycle (OnPlayerReady) and ambient loops
@@ -126,6 +129,8 @@ if ctx.loaded["MobAssetLoader"] then ctx.loaded["MobAssetLoader"].Load() end
 ctx.Load(SharedModules, "MobAI")
 ctx.Load(SharedModules, "WaveConfig")
 ctx.Load(SharedModules, "MobSpawner")
+-- §AGX/X28: no lane waves in this place — block client RequestNextWave (X5).
+if ctx.loaded["MobSpawner"] then ctx.loaded["MobSpawner"].ClientWaveRequestsDisabled = true end
 
 -- ───────────────────────────────────────────────────────────
 -- COMBAT
@@ -161,12 +166,20 @@ end)
 
 ctx.Load(SharedModules, "ReturnTeleporter")
 
+-- §AGX/X28: boss fight controller (place-local modules).
+local BossModules = script.Parent:WaitForChild("Modules", 10)
+    or error("[CentralBossMain] CentralBoss.Modules missing after 10 s — place structure broken", 0)
+ctx.Load(BossModules, "BossEncounter")
+
 -- ───────────────────────────────────────────────────────────
 -- VALIDATE CRITICAL MODULES
--- (No boss/vote modules required here — place is currently unauthored.)
 -- ───────────────────────────────────────────────────────────
 ctx.RequireLoaded("PlayerDataManager")
 ctx.RequireLoaded("NetworkManager")
+ctx.RequireLoaded("MobAI")              -- §AGX/X28
+ctx.RequireLoaded("MobRegistry")        -- §AGX/X28
+ctx.RequireLoaded("MobSpawner")         -- §AGX/X28
+ctx.RequireLoaded("BossEncounter")      -- §AGX/X28
 ctx.RequireLoaded("StatsManager")
 ctx.RequireLoaded("CurrencyManager")
 ctx.RequireLoaded("GameStateManager")
@@ -176,6 +189,19 @@ ctx.RequireLoaded("SharedEventHandlers")
 -- LATE INIT
 -- ───────────────────────────────────────────────────────────
 ctx.loaded["GameStateManager"].LateInit()
+
+-- §AGX/X28: wire the fight into the Defending state (sets
+-- suppressWaveStart, arena targeting, state/lobby callbacks).
+ctx.loaded["BossEncounter"].Setup({
+    GameStateManager   = ctx.loaded["GameStateManager"],
+    MobAI              = ctx.loaded["MobAI"],
+    MobRegistry        = ctx.loaded["MobRegistry"],
+    MobSpawner         = ctx.loaded["MobSpawner"],
+    NetworkManager     = ctx.loaded["NetworkManager"],
+    TeleportDataReader = ctx.loaded["TeleportDataReader"],
+    PlayerDataManager  = ctx.loaded["PlayerDataManager"],
+    ReadyGate          = ctx.loaded["ReadyGate"],
+})
 
 -- ───────────────────────────────────────────────────────────
 -- SHORTCUTS
@@ -225,6 +251,10 @@ NetworkManager.OnClientEvent("DebugCommand", function(player, command, ...)
     elseif command == "addXP" then
         local amount = args[1] or 100
         DataManager.AddExperience(player, amount)
+    elseif command == "bossHP" then
+        -- §AGX/X28: jump phases while testing, e.g. bossHP 0.5 → phase 2.
+        local fraction = tonumber(args[1])
+        if fraction then ctx.loaded["BossEncounter"].DebugSetHpFraction(fraction) end
     end
 end)
 
@@ -248,12 +278,6 @@ print(string.format("[CentralBoss] Place ready — %d modules loaded", (function
     return n
 end)()))
 
--- §CB1: this place currently has NO authored boss fight. Bootstrap loads
--- shared modules and registers wave callbacks, but nothing calls
--- MobSpawner.Start() and no boss is spawned. A player teleporting here
--- will see an empty arena. We surface this loudly at boot so testers
--- (and the dev console) make it obvious instead of looking like a
--- network problem. Remove this warn once the boss fight is wired.
-warn("[CentralBoss] ⚠ Mode is UNAUTHORED — no boss will spawn. " ..
-    "This bootstrap is a placeholder. See docs/TODO.md → 'CentralBoss " ..
-    "authored content'.")
+-- §CB1 / §AGX/X28: the core boss fight is wired (BossEncounter). The mode
+-- stays hidden in the lobby (GameModeConfig / MainMenu `available = false`,
+-- X19) until Pablo tests it in Studio.
