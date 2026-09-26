@@ -400,6 +400,24 @@ function KillRewardManager.ProcessKill(player, mob, damageResult)
 			mobLevel = mobLevel,
 		})
 	end
+	-- §AGX/X28: boss kills credit the whole eligible party (achievements,
+	-- quests) — a healer should get boss_slayer too. Normal/miniboss kills
+	-- stay killing-blow only so per-kill counters aren't multiplied.
+	-- `assist = true` lets subscribers tell the two apart.
+	if mobTier == "boss" then
+		for _, member in ipairs(recipients) do
+			if member ~= player then
+				for _, cb in ipairs(killCallbacks) do
+					task.spawn(cb, member, {
+						mobId    = mobId,
+						mobTier  = mobTier,
+						mobLevel = mobLevel,
+						assist   = true,
+					})
+				end
+			end
+		end
+	end
 
 	-- ── 6. Client notification ─────────────────────────────────────────
 	-- §SCALE/S3: scoped to players near the death (the only live consumer
