@@ -18,6 +18,10 @@
     priority, key "matchmaking"); this component keeps the state machine
     and renders only the Cancel / Retry / Close controls, directly under
     Notify's banner slot.
+
+    §AGX/UI-P6: controls are Common/Button (Retry = the primary CTA) in
+    design px; Theme roles for the banner colours. Notify integration and
+    the state machine are unchanged.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -29,28 +33,29 @@ local NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 local Notify         = require(Players.LocalPlayer:WaitForChild("PlayerScripts")
 	:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("Notify"))  -- §AGX/UI-P4
 
--- ── Palette ───────────────────────────────────────────────
-local C = {
-	bg      = Color3.fromRGB( 18,  18,  24),
-	accent  = Color3.fromRGB(105, 190, 255),
-	green   = Color3.fromRGB( 50, 170,  80),
-	red     = Color3.fromRGB(170,  50,  50),
-	yellow  = Color3.fromRGB(255, 210,  60),
-	text    = Color3.fromRGB(220, 220, 230),
-	white   = Color3.fromRGB(255, 255, 255),
-}
+-- §AGX/UI-P6: Theme roles + Button (the private palette is gone).
+local Common      = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("Common")
+local Theme       = require(Common:WaitForChild("Theme"))
+local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
+local Button      = require(Common:WaitForChild("Button"))
+
+local e = React.createElement
+local R = Theme.Roles
 
 -- §AGX/X14: if the server never teleports us (TeleportInitFailed without
 -- a follow-up, lost Error packet, …) "Launching" used to stick forever.
 local LAUNCH_TIMEOUT = 20
 
+-- Banner colour per status (Notify.banner opts.color).
 local STATUS_COLORS = {
-	Queued     = C.accent,
-	Countdown  = C.yellow,
-	Launching  = C.green,
-	Cancelled  = C.red,
-	Error      = C.red,
+	Queued     = R.accent.secondary,
+	Countdown  = R.state.warning,
+	Launching  = R.state.success,
+	Cancelled  = R.state.danger,
+	Error      = R.state.danger,
 }
+
+local BTN_W = 112   -- design px
 
 -- ── Main Component ────────────────────────────────────────
 local function MatchmakingUI()
@@ -97,9 +102,11 @@ local function MatchmakingUI()
 
 	-- §AGX/UI-P4: controls go under Notify's banner slot (same maths).
 	local L = Notify.useLayout()
+	-- §AGX/UI-P6: L is SCREEN px (NotifyGui); this tree may be scaled.
+	local scale = UIScaleRoot.useUIScale()
 
 	local status  = mmState and mmState.status or "Queued"
-	local color   = STATUS_COLORS[status] or C.text
+	local color   = STATUS_COLORS[status] or R.text.primary
 	local message = ""
 
 	if not mmState then
@@ -148,63 +155,63 @@ local function MatchmakingUI()
 		return nil  -- §AGX/UI-P4: nothing to press; the banner says it all
 	end
 
-	-- §AGX/UI-P4: one row of controls centred under the banner slot, with
-	-- the same fonts / tap floor as Notify (L.body, L.dismiss >= 44 px).
-	local btnH = L.dismiss
-	local btnW = math.max(96, 5 * L.body)
-	local function controlBtn(order, text, bg, onActivated)
-		return React.createElement("TextButton", {
-			Size             = UDim2.fromOffset(btnW, btnH),
-			BackgroundColor3 = bg,
-			BorderSizePixel  = 0,
-			Text             = text,
-			TextColor3       = C.white,
-			Font             = Enum.Font.GothamBold,
-			TextSize         = L.body,
-			LayoutOrder      = order,
-			[React.Event.Activated] = onActivated,
-		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
+	-- §AGX/UI-P4: one row of controls centred under the banner slot.
+	-- §AGX/UI-P6: the row is placed from Notify's SCREEN px (converted to
+	-- this tree's units); the Buttons inside are design px (44 tall) under
+	-- UIScaleRoot.Local, so the row is 44 x uiScale tall like Notify's taps.
+	local applied = scale.applied
+	local rowH = Theme.Metrics.button.sm * scale.remaining
+	local function controlBtn(order, text, variant, onActivated)
+		return e(Button, {
+			name        = text .. "Btn",
+			variant     = variant,
+			size        = "sm",
+			width       = BTN_W,
+			label       = text,
+			layoutOrder = order,
+			onActivated = onActivated,
 		})
 	end
 
-	return React.createElement("Frame", {
+	return e("Frame", {
 		Name                   = "MatchmakingUI",
 		AnchorPoint            = Vector2.new(0.5, 0),
-		Position               = UDim2.new(0.5, 0, 0, L.bannerY + L.bannerH + 8),
-		Size                   = UDim2.fromOffset(L.bannerW, btnH),
+		Position               = UDim2.new(0.5, 0, 0, UIScaleRoot.toLocal(L.bannerY + L.bannerH + 8, applied)),
+		Size                   = UDim2.fromOffset(UIScaleRoot.toLocal(L.bannerW, applied), rowH),
 		BackgroundTransparency = 1,
 		ZIndex                 = 25,
 	}, {
-		layout = React.createElement("UIListLayout", {
-			FillDirection       = Enum.FillDirection.Horizontal,
-			HorizontalAlignment = Enum.HorizontalAlignment.Center,
-			VerticalAlignment   = Enum.VerticalAlignment.Center,
-			SortOrder           = Enum.SortOrder.LayoutOrder,
-			Padding             = UDim.new(0, 8),
+		scaled = e(UIScaleRoot.Local, { name = "Controls", zIndex = 25 }, {
+			layout = e("UIListLayout", {
+				FillDirection       = Enum.FillDirection.Horizontal,
+				HorizontalAlignment = Enum.HorizontalAlignment.Center,
+				VerticalAlignment   = Enum.VerticalAlignment.Center,
+				SortOrder           = Enum.SortOrder.LayoutOrder,
+				Padding             = UDim.new(0, Theme.Space.sm),
+			}),
+
+			-- Cancel button
+			cancelBtn = showCancel and controlBtn(1, "Cancel", "secondary", function()
+				NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
+			end) or nil,
+
+			-- §AGX/X14: Retry after a failed / timed-out launch. The server
+			-- re-validates everything (leader, level, IsQueued/launching).
+			retryBtn = showRetry and controlBtn(2, "Retry", "primary", function()
+				NetworkManager.FireServer("MatchmakingRequest", {
+					action     = "Queue",
+					mode       = mmState.mode,
+					difficulty = mmState.difficulty,
+				})
+			end) or nil,
+
+			-- §AGX/X14: Close dismisses the error banner (and clears any stale
+			-- queue entry server-side; Cancel is a no-op if there is none).
+			closeBtn = isError and controlBtn(3, "Close", "secondary", function()
+				NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
+				setMmState(nil)
+			end) or nil,
 		}),
-
-		-- Cancel button
-		cancelBtn = showCancel and controlBtn(1, "Cancel", C.red, function()
-			NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
-		end) or nil,
-
-		-- §AGX/X14: Retry after a failed / timed-out launch. The server
-		-- re-validates everything (leader, level, IsQueued/launching).
-		retryBtn = showRetry and controlBtn(2, "Retry", C.green, function()
-			NetworkManager.FireServer("MatchmakingRequest", {
-				action     = "Queue",
-				mode       = mmState.mode,
-				difficulty = mmState.difficulty,
-			})
-		end) or nil,
-
-		-- §AGX/X14: Close dismisses the error banner (and clears any stale
-		-- queue entry server-side; Cancel is a no-op if there is none).
-		closeBtn = isError and controlBtn(3, "Close", C.red, function()
-			NetworkManager.FireServer("MatchmakingRequest", { action = "Cancel" })
-			setMmState(nil)
-		end) or nil,
 	})
 end
 

@@ -10,32 +10,47 @@
 -- Network events fired:
 --   PartyRequest  { action = "AcceptInvite"  }
 --   PartyRequest  { action = "DeclineInvite" }
+--
+-- §AGX/UI-P6: Theme v2 re-skin. Panel surface, Text, a Bar countdown,
+-- Button Accept (the one primary CTA) / Decline, IconButton ✕; design px
+-- under UIScaleRoot.Local (T19: every target >= 44). The private palette
+-- and the hand-rolled buttons are gone. Same events, same timer.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
 local Players          = game:GetService("Players")
-local SharedModules    = Players.LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("Modules")
+local PlayerScripts    = Players.LocalPlayer:WaitForChild("PlayerScripts")
+local SharedModules    = PlayerScripts:WaitForChild("Modules")
 local NetworkManager   = require(SharedModules:WaitForChild("NetworkManager"))
+
+-- §AGX/UI-P6: shared components.
+local Common      = PlayerScripts:WaitForChild("UI"):WaitForChild("Common")
+local Theme       = require(Common:WaitForChild("Theme"))
+local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
+local Text        = require(Common:WaitForChild("Text"))
+local Button      = require(Common:WaitForChild("Button"))
+local IconButton  = require(Common:WaitForChild("IconButton"))
+local Panel       = require(Common:WaitForChild("Panel"))
+local Bar         = require(Common:WaitForChild("Bar"))
+
+local e  = React.createElement
+local SP = Theme.Space
 
 local INVITE_TIMEOUT = 30  -- seconds – matches PartyManager.INVITE_TIMEOUT
 
-local C = {
-	bg        = Color3.fromRGB( 22,  28,  44),
-	border    = Color3.fromRGB( 60, 100, 200),
-	text      = Color3.fromRGB(225, 225, 230),
-	text_dim  = Color3.fromRGB(140, 140, 160),
-	btn_green = Color3.fromRGB( 45, 175,  95),
-	btn_red   = Color3.fromRGB(185,  60,  60),
-	btn_x     = Color3.fromRGB( 60,  60,  80),
-	close_txt = Color3.fromRGB(180, 180, 200),
-}
+-- §AGX/UI-P6: design px.
+local TOAST_W  = 400
+local TAP      = Theme.Metrics.button.sm   -- 44
+local BTN_W    = 150
 
 local function PartyInviteToast()
 	-- nil = hidden; { inviterName, inviterUserId } = visible
 	local invite, setInvite = React.useState(nil)
 	-- countdown seconds remaining
 	local timeLeft, setTimeLeft = React.useState(INVITE_TIMEOUT)
+	-- §AGX/UI-P6: the countdown's full length (for the Bar).
+	local durationRef = React.useRef(INVITE_TIMEOUT)
 
 	-- Ref to cancel the auto-dismiss task
 	local timerThread = React.useRef(nil)
@@ -51,6 +66,7 @@ local function PartyInviteToast()
 
 	local function startTimer(duration)
 		duration = duration or INVITE_TIMEOUT
+		durationRef.current = duration
 		if timerThread.current then
 			task.cancel(timerThread.current)
 		end
@@ -89,126 +105,107 @@ local function PartyInviteToast()
 
 	-- Nothing to render when not visible
 	if not invite then
-		return React.createElement("Frame", {
+		return e("Frame", {
 			Size                   = UDim2.fromOffset(0, 0),
 			BackgroundTransparency = 1,
 		})
 	end
 
 	local inviterName = invite.from or invite.inviterName or "Someone"
+	local urgent = timeLeft <= 10
+	local z = Theme.Z.toast
 
-	return React.createElement("Frame", {
-		Name             = "PartyInviteToast",
-		AnchorPoint      = Vector2.new(0.5, 1),
-		Position         = UDim2.fromScale(0.5, 0.94),
-		Size             = UDim2.fromScale(0.34, 0.10),
-		BackgroundColor3 = C.bg,
-		BorderSizePixel  = 2,
-		ZIndex           = 20,
-	}, {
-		-- §AGX/UI-P1: T19: 0.34x0.10 is 287x39 on an iPhone, so the buttons
-		-- were 12 px tall. Pixel floor so the rows below fit 44 px buttons
-		-- (1080p: 653x108 -> 653x120, a 12 px taller toast).
-		minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(360, 120) }),
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0.12, 0) }),
-
-		-- Accent border stroke
-		stroke = React.createElement("UIStroke", {
-			Color     = C.border,
-			Thickness = 2,
-		}),
-
-		-- Invite message
-		msg = React.createElement("TextLabel", {
-			-- §AGX/UI-P1: rows re-split so the 44 px buttons don't overlap the text.
-			Position               = UDim2.fromScale(0.04, 0.04),
-			Size                   = UDim2.fromScale(0.82, 0.38),
-			BackgroundTransparency = 1,
-			Text                   = inviterName .. " invited you to their party!",
-			TextColor3             = C.text,
-			Font                   = Enum.Font.GothamBold,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-			TextWrapped            = true,
+	return e(UIScaleRoot.Local, { name = "PartyInviteToast", zIndex = z }, {
+		toast = e(Panel, {
+			name        = "Toast",
+			elevation   = "raised",
+			radius      = "lg",
+			padding     = "md",
+			layout      = "vertical",
+			gap         = "sm",
+			accent      = "border.focus",
+			autoSize    = "Y",
+			anchorPoint = Vector2.new(0.5, 1),
+			position    = UDim2.fromScale(0.5, 0.94),
+			size        = UDim2.new(0.92, 0, 0, 0),
+			zIndex      = z,
 		}, {
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
-		}),
-
-		-- Timer label
-		timerLabel = React.createElement("TextLabel", {
-			-- §AGX/UI-P1: was 0.46..0.72, which already overlapped the buttons (0.66..0.96).
-			Position               = UDim2.fromScale(0.04, 0.44),
-			Size                   = UDim2.fromScale(0.50, 0.14),
-			BackgroundTransparency = 1,
-			Text                   = string.format("Expires in %ds", timeLeft),
-			TextColor3             = (timeLeft <= 10) and Color3.fromRGB(255, 120, 80) or C.text_dim,
-			Font                   = Enum.Font.Gotham,
-			TextScaled             = true,
-			TextXAlignment         = Enum.TextXAlignment.Left,
-		}, {
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),  -- §AGX/UI-P1
-		}),
-
-		-- Accept button
-		acceptBtn = React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(0, 1),
-			Position         = UDim2.fromScale(0.04, 0.96),
-			Size             = UDim2.fromScale(0.38, 0.30),
-			BackgroundColor3 = C.btn_green,
-			BorderSizePixel  = 0,
-			Text             = "✔ Accept",
-			TextColor3       = Color3.fromRGB(255, 255, 255),
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = function()
-				NetworkManager.FireServer("PartyRequest", { action = "AcceptInvite" })
-				hideToast()
-			end,
-		}, {
-			-- §AGX/UI-P1: T19: 44 px tall tap floor (grows upward from the bottom anchor).
-			minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, 44) }),
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),
-			React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
-		}),
-
-		-- Decline button
-		declineBtn = React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(0, 1),
-			Position         = UDim2.fromScale(0.45, 0.96),
-			Size             = UDim2.fromScale(0.38, 0.30),
-			BackgroundColor3 = C.btn_red,
-			BorderSizePixel  = 0,
-			Text             = "✘ Decline",
-			TextColor3       = Color3.fromRGB(255, 255, 255),
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = function()
-				NetworkManager.FireServer("PartyRequest", { action = "DeclineInvite" })
-				hideToast()
-			end,
-		}, {
-			-- §AGX/UI-P1: T19: 44 px tall tap floor (grows upward from the bottom anchor).
-			minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(0, 44) }),
-			minText = React.createElement("UITextSizeConstraint", { MinTextSize = 12 }),
-			React.createElement("UICorner", { CornerRadius = UDim.new(0.3, 0) }),
-		}),
-
-		-- Dismiss (✕) button
-		dismissBtn = React.createElement("TextButton", {
-			AnchorPoint      = Vector2.new(1, 0),
-			Position         = UDim2.fromScale(0.97, 0.04),
-			Size             = UDim2.fromScale(0.10, 0.32),
-			BackgroundColor3 = C.btn_x,
-			BorderSizePixel  = 0,
-			Text             = "✕",
-			TextColor3       = C.close_txt,
-			Font             = Enum.Font.GothamBold,
-			TextScaled       = true,
-			[React.Event.Activated] = hideToast,
-		}, {
-			-- §AGX/UI-P1: 44x44 tap floor for the dismiss ✕.
-			minSize = React.createElement("UISizeConstraint", { MinSize = Vector2.new(44, 44) }),
-			React.createElement("UICorner", { CornerRadius = UDim.new(0.35, 0) }),
+			maxW = e("UISizeConstraint", { MaxSize = Vector2.new(TOAST_W, math.huge) }),
+			-- Row 1: message + ✕
+			head = e("Frame", {
+				LayoutOrder            = 1,
+				Size                   = UDim2.new(1, 0, 0, TAP),
+				BackgroundTransparency = 1,
+			}, {
+				msg = e(Text, {
+					style = "label",
+					text  = inviterName .. " invited you to their party!",
+					wrap  = false,
+					size  = UDim2.new(1, -(TAP + SP.sm), 1, 0),
+				}),
+				dismiss = e(IconButton, {
+					name        = "Dismiss",
+					icon        = "close",
+					variant     = "ghost",
+					size        = "sm",
+					anchorPoint = Vector2.new(1, 0.5),
+					position    = UDim2.fromScale(1, 0.5),
+					onActivated = hideToast,
+				}),
+			}),
+			-- Row 2: countdown
+			timer = e(Text, {
+				style       = "caption",
+				text        = string.format("Expires in %ds", timeLeft),
+				color       = urgent and "state.warning" or "text.secondary",
+				layoutOrder = 2,
+				size        = UDim2.new(1, 0, 0, 18),
+			}),
+			bar = e(Bar, {
+				value       = timeLeft,
+				max         = math.max(1, durationRef.current),
+				kind        = "progress",
+				height      = 6,
+				layoutOrder = 3,
+				size        = UDim2.new(1, 0, 0, 6),
+			}),
+			-- Row 3: actions
+			actions = e("Frame", {
+				LayoutOrder            = 4,
+				Size                   = UDim2.new(1, 0, 0, TAP),
+				BackgroundTransparency = 1,
+			}, {
+				layout = e("UIListLayout", {
+					FillDirection       = Enum.FillDirection.Horizontal,
+					HorizontalAlignment = Enum.HorizontalAlignment.Left,
+					SortOrder           = Enum.SortOrder.LayoutOrder,
+					Padding             = UDim.new(0, SP.sm),
+				}),
+				accept = e(Button, {
+					name        = "Accept",
+					variant     = "primary",
+					size        = "sm",
+					width       = BTN_W,
+					label       = Theme.Glyphs.check .. " Accept",
+					layoutOrder = 1,
+					onActivated = function()
+						NetworkManager.FireServer("PartyRequest", { action = "AcceptInvite" })
+						hideToast()
+					end,
+				}),
+				decline = e(Button, {
+					name        = "Decline",
+					variant     = "secondary",
+					size        = "sm",
+					width       = BTN_W,
+					label       = "Decline",
+					layoutOrder = 2,
+					onActivated = function()
+						NetworkManager.FireServer("PartyRequest", { action = "DeclineInvite" })
+						hideToast()
+					end,
+				}),
+			}),
 		}),
 	})
 end

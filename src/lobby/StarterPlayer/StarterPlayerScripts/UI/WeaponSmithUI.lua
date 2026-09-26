@@ -8,6 +8,12 @@
     Fires "NPCResponse" with the appropriate action string so the
     server-side WeaponSmithHandler can act.
     After each successful action, requests a Refresh to update displayed data.
+
+    §AGX/UI-P6: Theme v2 re-skin: AppWindow chrome, Panel columns, Button
+    actions, CurrencyPill costs, Text lines, design px under
+    UIScaleRoot.Local. The palette table and the hand-rolled backdrop /
+    panel / ✕ / ActionButton are gone. useExternal, useNpcDistanceClose,
+    closeSmith and every NPCResponse payload unchanged.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -32,79 +38,120 @@ do
 	end
 end
 
--- ── Palette ───────────────────────────────────────────────
-local C = {
-	overlay    = Color3.fromRGB(  0,   0,   0),
-	panel      = Color3.fromRGB( 22,  22,  30),
-	card       = Color3.fromRGB( 32,  32,  46),
-	accent     = Color3.fromRGB(105, 190, 255),
-	green      = Color3.fromRGB( 50, 170,  80),
-	red        = Color3.fromRGB(200,  60,  60),
-	yellow     = Color3.fromRGB(255, 210,  60),
-	orange     = Color3.fromRGB(230, 150,  40),
-	purple     = Color3.fromRGB(160, 100, 220),
-	text       = Color3.fromRGB(220, 220, 230),
-	text_dim   = Color3.fromRGB(140, 140, 160),
-	white      = Color3.fromRGB(255, 255, 255),
-}
+-- §AGX/UI-P6: shared components (the private palette is gone).
+local Common       = PlayerScripts_UI:WaitForChild("Common")
+local Theme        = require(Common:WaitForChild("Theme"))
+local AppWindow    = require(Common:WaitForChild("AppWindow"))
+local UIScaleRoot  = require(Common:WaitForChild("UIScaleRoot"))
+local Text         = require(Common:WaitForChild("Text"))
+local Button       = require(Common:WaitForChild("Button"))
+local Panel        = require(Common:WaitForChild("Panel"))
+local CurrencyPill = require(Common:WaitForChild("CurrencyPill"))
+
+local e  = React.createElement
+local R  = Theme.Roles
+local SP = Theme.Space
+
+local ROW_H    = 24     -- design px, one stat line
+local COST_H   = Theme.Metrics.pill.height
+local STATUS_H = 24
+
+-- Smith cost currency -> CurrencyPill key.
+local PILL_CURRENCY = { Merits = "merits", Essence = "essence" }
 
 -- ── Helpers ───────────────────────────────────────────────
 
+-- §AGX/UI-P6: label (secondary) left, value right; `color` is a role path.
 local function StatLine(props)
-	return React.createElement("TextLabel", {
-		Size = UDim2.fromScale(1, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
+	return e("Frame", {
+		Size                   = UDim2.new(1, 0, 0, ROW_H),
 		BackgroundTransparency = 1,
-		Text = (props.label or "") .. ": " .. tostring(props.value or "—"),
-		TextColor3 = props.color or C.text,
-		Font = Enum.Font.Gotham,
-		TextSize = 14,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		LayoutOrder = props.order or 0,
+		LayoutOrder            = props.order or 0,
+	}, {
+		label = e(Text, {
+			style = "caption", color = "text.secondary",
+			text  = props.label or "",
+			size  = UDim2.fromScale(0.5, 1),
+		}),
+		value = e(Text, {
+			style       = "body",
+			color       = props.color or "text.primary",
+			text        = tostring(props.value or "—"),
+			align       = "right",
+			anchorPoint = Vector2.new(1, 0),
+			position    = UDim2.fromScale(1, 0),
+			size        = UDim2.fromScale(0.5, 1),
+		}),
 	})
 end
 
-local function ActionButton(props)
-	return React.createElement("TextButton", {
-		Size = UDim2.new(1, 0, 0, 36),
-		BackgroundColor3 = props.color or C.green,
-		BorderSizePixel = 0,
-		Text = props.text or "Action",
-		TextColor3 = C.white,
-		Font = Enum.Font.GothamBold,
-		TextSize = 16,
-		LayoutOrder = props.order or 99,
-		[React.Event.Activated] = props.onActivated,
+-- §AGX/UI-P6: cost line = label + CurrencyPill (text fallback).
+local function CostLine(props)
+	local key = PILL_CURRENCY[props.currency or "Merits"]
+	return e("Frame", {
+		Size                   = UDim2.new(1, 0, 0, COST_H),
+		BackgroundTransparency = 1,
+		LayoutOrder            = props.order or 0,
 	}, {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 6) }),
+		label = e(Text, {
+			style = "caption", color = "text.secondary",
+			text  = props.label or "Cost",
+			size  = UDim2.fromScale(0.5, 1),
+		}),
+		pill = key and e(CurrencyPill, {
+			currency    = key,
+			value       = props.cost or 0,
+			cost        = true,
+			anchorPoint = Vector2.new(1, 0.5),
+			position    = UDim2.fromScale(1, 0.5),
+		}) or e(Text, {
+			style       = "numeric",
+			text        = tostring(props.cost or 0) .. " " .. tostring(props.currency),
+			align       = "right",
+			anchorPoint = Vector2.new(1, 0),
+			position    = UDim2.fromScale(1, 0),
+			size        = UDim2.fromScale(0.5, 1),
+		}),
+	})
+end
+
+-- §AGX/UI-P6: Button (was a hand-rolled 36 px ActionButton).
+local function ActionButton(props)
+	return e(Button, {
+		variant     = "secondary",
+		size        = "md",
+		width       = UDim.new(1, 0),
+		label       = props.text or "Action",
+		layoutOrder = props.order or 99,
+		onActivated = props.onActivated,
 	})
 end
 
 local function SectionHeader(props)
-	return React.createElement("TextLabel", {
-		Size = UDim2.new(1, 0, 0, 24),
-		BackgroundTransparency = 1,
-		Text = props.text or "",
-		TextColor3 = C.accent,
-		Font = Enum.Font.GothamBold,
-		TextSize = 16,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		LayoutOrder = props.order or 0,
+	return e(Text, {
+		style       = "heading",
+		text        = props.text or "",
+		size        = UDim2.new(1, 0, 0, 26),
+		layoutOrder = props.order or 0,
 	})
 end
 
 local function BonusRow(props)
 	local bonus = props.bonus
-	return React.createElement("TextLabel", {
-		Size = UDim2.fromScale(1, 0),
-		AutomaticSize = Enum.AutomaticSize.Y,
+	return e(Text, {
+		style       = "body",
+		color       = "rarity.epic",
+		text        = "  • " .. (bonus.stat or "?") .. " +" .. tostring(bonus.value or 0),
+		size        = UDim2.new(1, 0, 0, ROW_H),
+		layoutOrder = props.order or 0,
+	})
+end
+
+local function Spacer(order)
+	return e("Frame", {
+		Size = UDim2.new(1, 0, 0, SP.sm),
 		BackgroundTransparency = 1,
-		Text = "  • " .. (bonus.stat or "?") .. " +" .. tostring(bonus.value or 0),
-		TextColor3 = C.purple,
-		Font = Enum.Font.Gotham,
-		TextSize = 13,
-		TextXAlignment = Enum.TextXAlignment.Left,
-		LayoutOrder = props.order or 0,
+		LayoutOrder = order,
 	})
 end
 
@@ -132,46 +179,43 @@ local function EquipColumn(props)
 	end
 
 	-- Slot header
-	children["header"] = React.createElement(SectionHeader, {
+	children["header"] = e(SectionHeader, {
 		text  = slotLabel,
 		order = next(),
 	})
 
 	if not data then
-		children["empty"] = React.createElement("TextLabel", {
-			Size = UDim2.new(1, 0, 0, 24),
-			BackgroundTransparency = 1,
-			Text = "No " .. slotLabel:lower() .. " equipped",
-			TextColor3 = C.text_dim,
-			Font = Enum.Font.Gotham,
-			TextSize = 14,
-			TextXAlignment = Enum.TextXAlignment.Left,
-			LayoutOrder = next(),
+		children["empty"] = e(Text, {
+			style       = "body",
+			color       = "text.secondary",
+			text        = "No " .. slotLabel:lower() .. " equipped",
+			size        = UDim2.new(1, 0, 0, ROW_H),
+			layoutOrder = next(),
 		})
 	else
 		-- Name
-		children["name"] = React.createElement(StatLine, {
+		children["name"] = e(StatLine, {
 			label = "Name", value = data.name or data.weaponId or data.armorId,
-			color = C.yellow, order = next(),
+			color = "rarity.legendary", order = next(),
 		})
-		children["level"] = React.createElement(StatLine, {
+		children["level"] = e(StatLine, {
 			label = "Level", value = data.level, order = next(),
 		})
-		children["refLevel"] = React.createElement(StatLine, {
+		children["refLevel"] = e(StatLine, {
 			label = "Refinement", value = "+" .. tostring(data.refinement or 0), order = next(),
 		})
-		children["tierLevel"] = React.createElement(StatLine, {
+		children["tierLevel"] = e(StatLine, {
 			label = "Tier", value = data.tier or 1, order = next(),
 		})
 
 		-- Bonuses
 		if data.bonuses and #data.bonuses > 0 then
-			children["bonusHeader"] = React.createElement(StatLine, {
+			children["bonusHeader"] = e(StatLine, {
 				label = "Random Bonuses", value = "",
-				color = C.purple, order = next(),
+				color = "rarity.epic", order = next(),
 			})
 			for i, bonus in ipairs(data.bonuses) do
-				children["bonus_" .. i] = React.createElement(BonusRow, {
+				children["bonus_" .. i] = e(BonusRow, {
 					bonus = bonus, order = next(),
 				})
 			end
@@ -179,32 +223,26 @@ local function EquipColumn(props)
 
 		-- ── Refinement action ──────────────────────────────
 		if smithType == "Refinement" and refInfo then
-			children["refSpacer"] = React.createElement("Frame", {
-				Size = UDim2.new(1, 0, 0, 8),
-				BackgroundTransparency = 1,
-				LayoutOrder = next(),
-			})
-			children["refChance"] = React.createElement(StatLine, {
+			children["refSpacer"] = Spacer(next())
+			children["refChance"] = e(StatLine, {
 				label = "Success Chance",
 				value = string.format("%.0f%%", refInfo.successChance or 0),
-				color = (refInfo.successChance or 0) >= 50 and C.green or C.orange,
+				color = (refInfo.successChance or 0) >= 50 and "state.success" or "state.warning",
 				order = next(),
 			})
-			children["refCost"] = React.createElement(StatLine, {
-				label = "Cost",
-				value = tostring(refInfo.cost or 0) .. " " .. (refInfo.currency or "Merits"),
-				color = C.yellow, order = next(),
+			children["refCost"] = e(CostLine, {
+				label = "Cost", cost = refInfo.cost, currency = refInfo.currency or "Merits",
+				order = next(),
 			})
 				if refInfo.isMax then
-					children["refMax"] = React.createElement(StatLine, {
+					children["refMax"] = e(StatLine, {
 						label = "Status", value = "MAX refinement reached",
-					color = C.accent, order = next(),
+					color = "accent.secondary", order = next(),
 				})
 				else
 					local actionId = slotLabel == "Weapon" and "RefineWeapon" or "RefineArmor"
-					children["refBtn"] = React.createElement(ActionButton, {
+					children["refBtn"] = e(ActionButton, {
 					text = "Refine " .. slotLabel,
-					color = C.green,
 					order = next(),
 					onActivated = function()
 						setStatus("Refining…")
@@ -219,30 +257,24 @@ local function EquipColumn(props)
 
 		-- ── Tier Upgrade action ────────────────────────────
 		if smithType == "TierUpgrade" and tierInfo then
-			children["tierSpacer"] = React.createElement("Frame", {
-				Size = UDim2.new(1, 0, 0, 8),
-				BackgroundTransparency = 1,
-				LayoutOrder = next(),
-			})
-			children["tierSlots"] = React.createElement(StatLine, {
+			children["tierSpacer"] = Spacer(next())
+			children["tierSlots"] = e(StatLine, {
 				label = "Bonus Slots", value = tierInfo.currentSlots or "?",
 				order = next(),
 			})
-			children["tierCost"] = React.createElement(StatLine, {
-				label = "Cost",
-				value = tostring(tierInfo.cost or 0) .. " " .. (tierInfo.currency or "Merits"),
-				color = C.yellow, order = next(),
+			children["tierCost"] = e(CostLine, {
+				label = "Cost", cost = tierInfo.cost, currency = tierInfo.currency or "Merits",
+				order = next(),
 			})
 			if tierInfo.isMax then
-				children["tierMax"] = React.createElement(StatLine, {
+				children["tierMax"] = e(StatLine, {
 					label = "Status", value = "MAX tier reached",
-					color = C.accent, order = next(),
+					color = "accent.secondary", order = next(),
 				})
 			else
 				local actionId = slotLabel == "Weapon" and "TierWeapon" or "TierArmor"
-				children["tierBtn"] = React.createElement(ActionButton, {
+				children["tierBtn"] = e(ActionButton, {
 					text = "Upgrade " .. slotLabel .. " Tier",
-					color = C.orange,
 					order = next(),
 					onActivated = function()
 						setStatus("Upgrading tier…")
@@ -257,26 +289,20 @@ local function EquipColumn(props)
 
 		-- ── Bonus Reroll action ────────────────────────────
 		if smithType == "BonusReroll" and rerollInfo then
-			children["rerollSpacer"] = React.createElement("Frame", {
-				Size = UDim2.new(1, 0, 0, 8),
-				BackgroundTransparency = 1,
-				LayoutOrder = next(),
+			children["rerollSpacer"] = Spacer(next())
+			children["rerollCost"] = e(CostLine, {
+				label = "Reroll Cost", cost = rerollInfo.cost, currency = rerollInfo.currency or "Merits",
+				order = next(),
 			})
-			children["rerollCost"] = React.createElement(StatLine, {
-				label = "Reroll Cost",
-				value = tostring(rerollInfo.cost or 0) .. " " .. (rerollInfo.currency or "Merits"),
-				color = C.yellow, order = next(),
-			})
-			children["rerollCount"] = React.createElement(StatLine, {
+			children["rerollCount"] = e(StatLine, {
 				label = "Rerolls Used", value = rerollInfo.rerollCount or 0,
 				order = next(),
 			})
 			local hasBonuses = data.bonuses and #data.bonuses > 0
 			if hasBonuses then
 				local actionId = slotLabel == "Weapon" and "RerollWeapon" or "RerollArmor"
-				children["rerollBtn"] = React.createElement(ActionButton, {
+				children["rerollBtn"] = e(ActionButton, {
 					text = "Reroll " .. slotLabel .. " Bonuses",
-					color = C.purple,
 					order = next(),
 					onActivated = function()
 						setStatus("Rerolling…")
@@ -287,38 +313,42 @@ local function EquipColumn(props)
 					end,
 				})
 			else
-				children["noBonuses"] = React.createElement(StatLine, {
+				children["noBonuses"] = e(StatLine, {
 					label = "Info", value = "No bonuses to reroll yet",
-					color = C.text_dim, order = next(),
+					color = "text.secondary", order = next(),
 				})
 			end
 		end
 	end
 
-	children["layout"] = React.createElement("UIListLayout", {
+	children["layout"] = e("UIListLayout", {
 		SortOrder = Enum.SortOrder.LayoutOrder,
-		Padding   = UDim.new(0, 4),
+		Padding   = UDim.new(0, SP.xs),
 	})
 
-	return React.createElement("ScrollingFrame", {
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = C.card,
-		BorderSizePixel = 0,
-		ScrollBarThickness = 3,
-		CanvasSize = UDim2.fromScale(0, 0),
-		AutomaticCanvasSize = Enum.AutomaticSize.Y,
-		LayoutOrder = props.layoutOrder or 0,
+	-- §AGX/UI-P6: Panel surface around a scrolling column.
+	return e(Panel, {
+		name        = slotLabel .. "Column",
+		elevation   = "raised",
+		padding     = "md",
+		layoutOrder = props.layoutOrder or 0,
 	}, {
-		corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 8) }),
-		pad = React.createElement("UIPadding", {
-			PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10),
-			PaddingTop = UDim.new(0, 10), PaddingBottom = UDim.new(0, 10),
-		}),
-		content = React.createElement("Frame", {
-			Size = UDim2.fromScale(1, 0),
-			AutomaticSize = Enum.AutomaticSize.Y,
+		scroll = e("ScrollingFrame", {
+			Size                 = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
-		}, children),
+			BorderSizePixel      = 0,
+			ScrollBarThickness   = Theme.Metrics.scrollBar,
+			ScrollBarImageColor3 = R.text.secondary,
+			CanvasSize           = UDim2.fromScale(0, 0),
+			AutomaticCanvasSize  = Enum.AutomaticSize.Y,
+			ScrollingDirection   = Enum.ScrollingDirection.Y,
+		}, {
+			content = e("Frame", {
+				Size = UDim2.new(1, -(Theme.Metrics.scrollBar + SP.xs), 0, 0),
+				AutomaticSize = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, children),
+		}),
 	})
 end
 
@@ -461,112 +491,79 @@ local function WeaponSmithUI(props)
 	local title     = (smithData.npcName or "Smith") .. " — " .. (SMITH_TITLES[smithType] or smithType)
 	local npcId     = smithData.npcId
 
-	return React.createElement("Frame", {
-		Name = "WeaponSmithUI",
-		Size = UDim2.fromScale(1, 1),
-		BackgroundColor3 = C.overlay,
-		BackgroundTransparency = 0.40,
-		BorderSizePixel = 0,
-		ZIndex = 20,
-	}, {
-		panel = React.createElement("Frame", {
-			AnchorPoint = Vector2.new(0.5, 0.5),
-			Position = UDim2.fromScale(0.5, 0.5),
-			Size = UDim2.fromScale(0.55, 0.6),
-			BackgroundColor3 = C.panel,
-			BorderSizePixel = 0,
-			Active = true,   -- §AGX/UI-P3: no click-through on empty panel space (UX-14)
+	-- §AGX/UI-P6: status colour by outcome (was always green).
+	local statusColor = "state.success"
+	if statusMsg then
+		if string.sub(statusMsg, 1, #"✘") == "✘" then
+			statusColor = "state.danger"
+		elseif string.sub(statusMsg, -#"…") == "…" then
+			statusColor = "text.secondary"
+		end
+	end
+	local colsTop = statusMsg and (STATUS_H + SP.sm) or 0
+
+	local function column(slot, order)
+		local key = string.lower(slot)
+		return e("Frame", {
+			Size                   = UDim2.new(0.5, -SP.sm / 2, 1, 0),
+			BackgroundTransparency = 1,
+			LayoutOrder            = order,
 		}, {
-			corner = React.createElement("UICorner", { CornerRadius = UDim.new(0, 10) }),
-			pad = React.createElement("UIPadding", {
-				PaddingLeft = UDim.new(0, 16), PaddingRight = UDim.new(0, 16),
-				PaddingTop = UDim.new(0, 14), PaddingBottom = UDim.new(0, 14),
+			col = e(EquipColumn, {
+				data        = smithData[key],
+				refInfo     = smithData[key .. "RefInfo"],
+				tierInfo    = smithData[key .. "TierInfo"],
+				rerollInfo  = smithData[key .. "RerollInfo"],
+				slotLabel   = slot,
+				npcId       = npcId,
+				smithType   = smithType,
+				status      = statusMsg,
+				setStatus   = setStatusMsg,
+				layoutOrder = order,
 			}),
+		})
+	end
 
-			-- Header
-			header = React.createElement("TextLabel", {
-				Size = UDim2.fromScale(0.85, 0.08),
-				BackgroundTransparency = 1,
-				Text = title,
-				TextColor3 = C.accent,
-				Font = Enum.Font.GothamBold,
-				TextScaled = true,
-				TextXAlignment = Enum.TextXAlignment.Left,
+	-- §AGX/UI-P6: AppWindow chrome (auto: sheet on phone; the shell's
+	-- presentation wins). Its panel is Active (UX-14). ✕ = closeSmith.
+	local z = Theme.Z.windowOver
+	return e(AppWindow, {
+		variant = "auto",
+		title   = title,
+		icon    = "equipment",
+		onClose = function() closeSmith() end,
+		size    = UDim2.fromScale(0.58, 0.66),
+		minSize = Vector2.new(560, 400),
+		zIndex  = z,
+	}, {
+		scaled = e(UIScaleRoot.Local, { name = "SmithBody", zIndex = z + 2 }, {
+			pad = e("UIPadding", {
+				PaddingLeft = UDim.new(0, SP.lg), PaddingRight = UDim.new(0, SP.lg),
+				PaddingTop = UDim.new(0, SP.md), PaddingBottom = UDim.new(0, SP.lg),
 			}),
-
-			closeBtn = React.createElement("TextButton", {
-				AnchorPoint = Vector2.new(1, 0),
-				Position = UDim2.fromScale(1, 0),
-				Size = UDim2.fromScale(0.05, 0.07),
-				BackgroundTransparency = 1,
-				Text = "✕",
-				TextColor3 = C.text_dim,
-				Font = Enum.Font.GothamBold,
-				TextScaled = true,
-				[React.Event.Activated] = closeSmith,
-			}),
-
 			-- Status message
-			statusLabel = statusMsg and React.createElement("TextLabel", {
-				Position = UDim2.fromScale(0, 0.09),
-				Size = UDim2.fromScale(1, 0.06),
-				BackgroundTransparency = 1,
-				Text = statusMsg,
-				TextColor3 = C.green,
-				Font = Enum.Font.Gotham,
-				TextSize = 14,
-				TextXAlignment = Enum.TextXAlignment.Left,
+			statusLabel = statusMsg and e(Text, {
+				style  = "label",
+				text   = statusMsg,
+				color  = statusColor,
+				size   = UDim2.new(1, 0, 0, STATUS_H),
+				zIndex = z + 2,
 			}) or nil,
 
 			-- Two-column layout: Weapon | Armor
-			columns = React.createElement("Frame", {
-				Position = UDim2.fromScale(0, 0.17),
-				Size = UDim2.fromScale(1, 0.83),
+			columns = e("Frame", {
+				Position               = UDim2.fromOffset(0, colsTop),
+				Size                   = UDim2.new(1, 0, 1, -colsTop),
 				BackgroundTransparency = 1,
+				ZIndex                 = z + 2,
 			}, {
-				layout = React.createElement("UIListLayout", {
+				layout = e("UIListLayout", {
 					FillDirection = Enum.FillDirection.Horizontal,
 					SortOrder     = Enum.SortOrder.LayoutOrder,
-					Padding       = UDim.new(0, 12),
+					Padding       = UDim.new(0, SP.sm),
 				}),
-
-				weaponCol = React.createElement("Frame", {
-					Size = UDim2.new(0.48, 0, 1, 0),
-					BackgroundTransparency = 1,
-					LayoutOrder = 1,
-				}, {
-					col = React.createElement(EquipColumn, {
-						data        = smithData.weapon,
-						refInfo     = smithData.weaponRefInfo,
-						tierInfo    = smithData.weaponTierInfo,
-						rerollInfo  = smithData.weaponRerollInfo,
-						slotLabel   = "Weapon",
-						npcId       = npcId,
-						smithType   = smithType,
-						status      = statusMsg,
-						setStatus   = setStatusMsg,
-						layoutOrder = 1,
-					}),
-				}),
-
-				armorCol = React.createElement("Frame", {
-					Size = UDim2.new(0.48, 0, 1, 0),
-					BackgroundTransparency = 1,
-					LayoutOrder = 2,
-				}, {
-					col = React.createElement(EquipColumn, {
-						data        = smithData.armor,
-						refInfo     = smithData.armorRefInfo,
-						tierInfo    = smithData.armorTierInfo,
-						rerollInfo  = smithData.armorRerollInfo,
-						slotLabel   = "Armor",
-						npcId       = npcId,
-						smithType   = smithType,
-						status      = statusMsg,
-						setStatus   = setStatusMsg,
-						layoutOrder = 2,
-					}),
-				}),
+				weaponCol = column("Weapon", 1),
+				armorCol  = column("Armor", 2),
 			}),
 		}),
 	})
