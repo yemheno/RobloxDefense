@@ -6,6 +6,11 @@
 >
 > History of those source documents lives in git — search the dev branch
 > ancestry for `docs/SANITY_CHECK_REPORT*` etc.
+>
+> **Reconciled 2026-09-26** against the agency-checks session
+> (`0e6d15e..b0bdbee`): resolved items were moved to "Already-resolved",
+> partial ones carry a dated *(Partial …)* note, and the new follow-ups
+> are in §20.
 
 ---
 
@@ -53,6 +58,7 @@
 17. [Strategic / Post-alpha](#17-strategic--post-alpha)
 18. [Open Design Decisions](#18-open-design-decisions)
 19. [T0 Pass-2 follow-ups (§T0P2)](#19-t0-pass-2-follow-ups-t0p2)
+20. [Agency-checks follow-ups (§AGX)](#20-agency-checks-follow-ups-agx-2026-09-26)
 
 ---
 
@@ -98,8 +104,10 @@
 - `[??]` **Class Mastery XP source** — `AddClassMasteryXP` was previously
   fed by overflow XP at chapter cap (T0.2 §PDM-D5: removed, per design
   intent "at hard cap, player XP stops; mastery has its own earn path").
-  The function still exists in `PlayerLevelSystem.lua` granting bound
-  tokens on milestones, but nothing calls it. Decide the source: e.g.
+  *(2026-09-26 reconcile: stale. `AddClassMasteryXP` was DELETED by
+  §T0P2/X21, see `PlayerLevelSystem.lua:101-104`; the data fields and
+  `ClassMasteryConfig.lua` remain, tracked as §T0P2-MASTERY in §19.)*
+  Decide the source: e.g.
   (a) class-specific kill counters, (b) class quests completed at cap,
   (c) class-specific achievement progress. Wire when the class-mastery
   UX is designed.
@@ -148,6 +156,13 @@
     fires `MatchmakingRequest{ action="Queue" }` with the selected
     mode/difficulty. Reuses `PartyManager.EnsureParty` so solo players
     don't need to manually create a party first.
+  - *(Partial, 2026-09-26:)* the ReserveServer step exists for the
+    server-local queue: `TeleportManager.lua:218`
+    (`ShouldReserveServer = true`) and the public-server bounce in
+    `TeleportDataReader.lua:24-32` (2329bbd, §AGX/X4). The Lobby also has
+    a PLAY entry (MenuSheet, 52d7fb3) and one "Play <mode>" button in
+    MainMenu (582dff1). Still to do: the cross-server MemoryStore queue
+    itself.
 - ~~§EV6~~ **SUPERSEDED (§EASY sweep):** those subscriptions belong to
   the disabled LEGACY panel. The React SocialPanel already does what
   Pablo asked (friends sorted first via IsFriendsWith + Invite button
@@ -163,6 +178,15 @@
   - Are stock limits enforced server-side?
   - Does the shop refresh snap to a server clock so players can't dodge
     rotation by reconnecting?
+  - *(Partial, 2026-09-26:)* (1) is answered: there is a per-player
+    purchase lock (`ShopManager.lua:118-129`) and the spend happens before
+    the grant (`:183-189`, §Sh1). This session added server-side
+    `enabled` (§AGX/X34, `:148-149`, `:314-316`), unusable consumables
+    refused (§AGX/X10, `:233-239`) and raw-Merit refunds (§AGX/X32,
+    `:205`, `:279`) in 36cd218, and routed Robux through
+    `MonetizationService` (1c6e333). (2) and (3) have no code to review:
+    `ShopConfig` has no stock or rotation state (grep finds none), so
+    they belong to §DISC/D7. Still to do: re-review when D7 lands.
 
 ## 9. Inventory / Equipment / Cosmetics
 
@@ -181,7 +205,8 @@
   CharacterAdded connections wired per player (PlayerAdded handler +
   existing-players loop both fired for Init-window joiners). Single
   wire-per-player now. Verify 1× in the next live test, then delete
-  this entry.
+  this entry. *(Still unverified as of 2026-09-26; nothing has run in
+  Studio since. Check it during the §20 Studio pass.)*
 - `[🚀]` **Accessories — post-alpha polish** — equip pcall + rollback
   already landed in §2.5c. Deeper:
   - Per-slot rarity tiers and how they stack with the 2×Ring constraint.
@@ -192,7 +217,8 @@
   should drop a unique accessory so equipment stays relevant in late
   stages. Goal: each boss is independently meaningful, players grind
   bosses individually for their distinct accessory rewards. Wire after:
-  (a) CentralBoss authored content lands, (b) AccessoryConfig grows the
+  (a) CentralBoss authored content lands (partly done: Iron Warden
+  placeholder, b19cec8, see §17), (b) AccessoryConfig grows the
   full boss-drop set, (c) DropManager learns about per-boss accessory
   pools.
 - `[P2]` **§CFG-UI — Verify equipment UI after GearUpgradeConfig refactor**
@@ -202,15 +228,12 @@
   still feeds the same data to the client. UI should be unaffected, but
   smoke-test the WeaponSmith + EquipmentUI panels (refine attempt
   display, tier upgrade gate, reroll cost) after the next playtest just
-  to be sure no display field went stale.
-- `[P2]` **§RG-MIGRATION (cosmetics + equipment)** — push events still
-  bypass ReadyGate. Migrate (in order):
-  1. CosmeticManager — `WardrobeUpdate` push during PlayerAdded.
-  2. EquipmentHandler — `EquipmentInfo` reply.
-  3. WeaponManager.EnsureStarterWeapon — `WeaponEquipped` during
-     PlayerAdded; current symptom: "weapon icon not showing on first
-     spawn" intermittent.
-  4. ArmorManager.EnsureStarterArmor — `ArmorEquipped` same shape.
+  to be sure no display field went stale. *(2026-09-26: EquipmentUI and
+  WeaponSmithUI were re-skinned to Theme v2 in 05c1b9e and 582dff1, with
+  the same payloads. Still a smoke test; it is covered by
+  `docs/STUDIO_TEST_PLAN.md` §7.)*
+- ~~§RG-MIGRATION (cosmetics + equipment)~~ **Resolved:** moved to
+  "Already-resolved" (2026-09-26 reconcile).
 - *(§T1.1/D7 closed — `CharacterCreationRequired` now routes through
   ReadyGate. Was the suspected cause of "character creation panel
   intermittently fails to appear on first join.")*
@@ -252,17 +275,9 @@
 
 ## 10. Achievements / Leaderboard / Daily Login
 
-- `[P1]` **§AM4 — HordeMode never advances `wavesSurvived` /
-  `highestWave`** — AchievementManager hooks `MobSpawner.OnWaveCompleted`,
-  but HordeMode runs via `HordeModeSpawner` which has no equivalent
-  event. Either (a) emit synthesised `OnWaveCompleted` from
-  `HordeModeMain` whenever horde level increments
-  (`HordeModeSpawner.GetLevel()` exists), or (b) add explicit
-  `HordeModeSpawner.OnLevelUp(callback)` and rename the achievement
-  stat to `wavesOrLevelsSurvived`. Option (a) is the cheaper retrofit.
-- `[P2]` **§RG-MIGRATION (achievements)** — `AchievementManager.SendData`
-  is request-driven, low risk; the unlock-toast push isn't and should
-  migrate.
+- ~~§AM4~~ and ~~§RG-MIGRATION (achievements)~~ **Resolved:** moved to
+  "Already-resolved" (2026-09-26 reconcile). The Horde/Lane HighestWave
+  off-by-one that came out of the §AM4 fix is in §20.
 - `[📝]` **§AM5 — `OnKill` evaluates synchronously** — each kill calls
   `Evaluate` + `PersistNow` directly rather than going through
   `scheduleEvaluation`. Heavy waves do many writes per second.
@@ -270,10 +285,8 @@
 
 ## 11. Network / RemoteEvents
 
-- `[P2]` **§RG-MIGRATION — boot-race push events** — five callsites still
-  fire on PlayerAdded/CharacterAdded before client subscriptions exist.
-  Listed under §9/§10. ResourceManager initial `ResourceUpdate` is
-  already in `BYPASS_EVENTS` (fine).
+- ~~§RG-MIGRATION — boot-race push events~~ **Resolved:** moved to
+  "Already-resolved" (2026-09-26 reconcile).
 - `[📝]` **Per-remote rate-limit coverage audit** — V1 §3.7. NetworkManager
   has a 30/sec/event/player rate limiter; verify it's tuned
   appropriately for every legitimate spam-heavy event (combat hits, mob
@@ -286,7 +299,11 @@
   client just sits there. Add a threshold-based "Connection issue —
   retrying..." prompt + a retry button. Threshold needs UX care so we
   don't kick slow PCs/mobiles mid-load; suggested 30s as a starting
-  point with the prompt being non-modal.
+  point with the prompt being non-modal. *(Still open, 2026-09-26: the
+  client `StarterPlayerScripts/Modules/NetworkManager.lua` has no timeout
+  prompt. LoadingScreen's 25 s failsafe only dismisses the overlay. The
+  new `Notify` banner (dfefb37) is the obvious place for the non-modal
+  prompt.)*
 - ~~OnReady → loading-screen dismiss~~ **DONE (§T10/U1):** LoadingScreen
   shipped; dismissal rides the ReadyGate-routed ServerReady in each
   place client (equivalent hook, client-side), 25 s failsafe included.
@@ -294,13 +311,8 @@
 
 ## 12. Game State / Defense Line
 
-- `[P1]` **§G5 — Late joiner sees stale GameState** — a player who joins
-  during Victory/Defeat misses the `GameStateChanged` event (fired
-  before they connected). HUD shows IDLE but server is in
-  VICTORY/DEFEAT, so respawn / return-to-lobby UI is wrong. On
-  `Players.PlayerAdded`, fire `GameStateChanged` addressed only to the
-  new player with current state and elapsed time. Or: HUD client
-  `RequestState` on mount and server replies.
+- ~~§G5 — Late joiner sees stale GameState~~ **Resolved:** moved to
+  "Already-resolved" (2026-09-26 reconcile).
 - *(§HM3-followup closed by T0.3 §PB-D3 — HordeMode's `SetState("Defending")`
   now fires AFTER the `OnStateChanged` callback is registered, so the
   first entry of the run is observed correctly by the reset closure.)*
@@ -312,20 +324,22 @@
   cast is rejected with "Ultimate unlocks at level 10". (The old
   `ultimateLocked` flag never existed in the code — stale entry name.)
   `[P2/UI]` later: dim/lock the ultimate slot client-side pre-10.
+  *(Still open, 2026-09-26: the new `UI/Common/SkillPad.lua` and
+  `ActionBar.lua` (610f9ac) dim by cost and cooldown only, with no level
+  check.)*
 - `[P1]` **Quest & lore progress not persisted** — quest progress and
   lore flags (`TalkedTo_*`) live in player `Attributes` (lost on
-  rejoin). Migrate to `PlayerDataManager`.
+  rejoin). Migrate to `PlayerDataManager`. *(Partial, 2026-09-26
+  reconcile: quests ARE persisted in `data.Account.Quests`
+  (`NPCManager/QuestHandler.lua:21,65-76`, since d862558). Still to do:
+  lore only. `LoreHandler.lua:62` sets `TalkedTo_<id>` as an attribute,
+  and nothing in `src/` reads it, so there is no visible bug today.
+  Could drop to P2 until a lore reader exists.)*
 
 ## 14. Client UI
 
-- `[P2]` **§UI1 — DailyLogin / CreateParty optimistic button text** —
-  `Overlays.client.lua` (`ClaimBtn`) and `SocialPanel.client.lua`
-  (`CreatePartyBtn`) swap to "Claimed! ✓" / "Party Created! ✓"
-  immediately on click, before server confirms. A server-side rejection
-  leaves the success label up. Move the success label change into the
-  `DailyLoginResult{ ok=true }` / `PartyUpdated` handler; on
-  `{ ok=false }` re-enable the button with the original label and
-  display the reason.
+- ~~§UI1 — DailyLogin / CreateParty optimistic button text~~
+  **Resolved:** moved to "Already-resolved" (2026-09-26 reconcile).
 - ~~§UI2~~ **MOOT (§EASY sweep):** that wiring is the disabled LEGACY
   panel's. The React SocialPanel already renders Frame-per-player rows
   with Invite buttons, friends sorted first (Pablo's #5 confirmed
@@ -341,11 +355,8 @@
   "Are you sure? Allocate during combat?" confirmation prompt with a
   1-minute cooldown (after confirming, the prompt doesn't reappear for
   the next minute). Pure UI — server stays as-is.
-- `[P2]` **Class unlock toast** — `CheckAndUnlockEligibleClasses` fires
-  on level-up and silently inserts into `data.Account.UnlockedClasses`.
-  Player only sees the unlock when they open the class menu. Fire a
-  `ClassUnlocked` push event (ReadyGate route) so the client can show
-  a toast at the moment of unlock. Tier-10 UI work.
+- ~~Class unlock toast~~ **Resolved:** moved to "Already-resolved"
+  (2026-09-26 reconcile).
 - `[P1]` **"All players ready" gate before combat starts (§PB-D3)** — today
   HordeMode auto-transitions to `Defending` on bootstrap (so the HUD's
   manual "Start Game" button never appears). LaneDefense and CentralBoss
@@ -354,7 +365,12 @@
   events / animations. Wire a per-combat-mode gate: server waits for
   every party member to fire `ClientReady` (or an explicit
   `RequestStartGame`), THEN transitions to Defending. Affects all three
-  combat places.
+  combat places. *(Still open, checked 2026-09-26: Horde still calls
+  `GameStateManager.SetState("Defending")` at boot
+  (`HordeModeMain.server.lua:363`). Lane and CentralBoss start on any
+  single `RequestStartGame` (`GameStateManager.lua:71-72,216`).
+  CentralBoss's BossEncounter now starts on Defending (b19cec8), so the
+  gate applies there too.)*
 - `[??]` **Player progression measurement — Power vs. Engagement (design)**
    — Power Score (`GearRating.GetDisplayPower`) is the headline number
    players see (leaderstat, leaderboard ranking). Two design problems
@@ -390,7 +406,9 @@
   the new pipeline. Audit every `healMultiplier` in ClassSkills (and any
   card / consumable that produces healing) and reduce as needed to land
   back at intended target healing throughput. Bundle with the broader
-  balance audit before alpha.
+  balance audit before alpha. *(Still open, 2026-09-26: the §AGX/X41-X43
+  pass (78392c0) was economy only: Essence sources, the Merit:Essence
+  anchor and refine costs. It did not touch combat or heal numbers.)*
 - `[??]` **§T1.3-DQ1 — `FlatAttack` placement in the damage pipeline** —
   today `FlatAttack` enters via `DamageSystem.GetBaseDamage` and gets
   multiplied by both `actionMultiplier` (skill coefficient) and
@@ -420,7 +438,9 @@
   none of them do; current split is a balance carry-over from before the
   PRE-removed-from-crit redesign. Bundle with the broader balance audit
   before alpha. See ClassConfig.Classes[*].statDerivation, marked
-  `§T1.2/DQ2`.
+  `§T1.2/DQ2`. *(Still open, 2026-09-26: `ClassConfig.lua:108,199,244`
+  are `{}` and `:156` is `{ MAG = 0.001 }`. X41-X43 did not cover
+  combat.)*
 - `[🚀]` **§T1.2-MOD1 — Per-class module unification** — today a new
   class touches four files: `ClassConfig` (identity + scaling),
   `ClassBehaviors/<Name>Behavior.lua` (resource rules), 
@@ -464,6 +484,15 @@
   bookkeeping with a Janitor scoped to that owner. Each module gets
   its own commit. **Track in this section** as items get closed.
 
+  *(Partial, 2026-09-26 reconcile:)* `Janitor` is now required by
+  CharacterManager, AttackHandler, PlayerDataManager, WeaponManager and
+  the new `centralboss/.../BossEncounter.lua` (b19cec8). MobAI's per-mob
+  conns are tracked (§T3/W4). Still to do: CosmeticManager keeps the
+  duplicate pattern (`CosmeticManager/init.lua:115-132`: a PlayerAdded
+  handler plus an existing-players loop, each with an untracked
+  CharacterAdded conn), plus the rest of the list above. No §AGX commit
+  touched this item.
+
 - `[📝]` **§T1.1-JAN2 — Janitor leak-detection telemetry** — once the
   audit lands, add a debug print mode that snapshots active Janitor
   counts per system every 60s. A monotonically growing count is the
@@ -471,10 +500,9 @@
 
 ## 15. Persistence / Telemetry
 
-- `[P1]` **HitTracker.SaveLifetimeStats stub** — prints stats but does
-  not persist to DataStore. Wire the save path or remove the method.
-- `[📝]` **DataStore save reliability under disconnect** — never audited
-  end-to-end. Add a check-and-retry path with a session-end log.
+- ~~HitTracker.SaveLifetimeStats stub~~ and ~~DataStore save reliability
+  under disconnect~~ **Resolved:** moved to "Already-resolved" (2026-09-26
+  reconcile).
 - `[📝]` **Telemetry confirmation for first-50-tester data** — confirm
   `MonitoringSystem` is wired for at least: session length, wave
   reached, deaths, class picked, currency earned. We'll want this data
@@ -489,8 +517,12 @@
   Zombie as the sole weighted spawn across all 12 waves. Troll/Ogre
   only appear as guaranteed miniboss injections. Wave 7 is mechanically
   identical to wave 1, just with bigger numbers. Add 2-3 new mob types
-  with elemental variety.
-- `[P0]` **SoundManager — 28 entries pointing at `rbxassetid://0`** —
+  with elemental variety. *(Still open, 2026-09-26: `WaveConfig.lua:26-29`
+  unchanged. The only new mob is the CentralBoss-only `Mobs/IronWarden.lua`
+  boss (b19cec8, §AGX/X28), which adds no wave variety.)*
+- `[P0]` **SoundManager — 33 entries pointing at `rbxassetid://0`**
+  (was 28; recount 2026-09-26, in the client module
+  `StarterPlayerScripts/Modules/SoundManager.lua`) —
   needs at minimum 11 SFX (basic attack hit, skill cast, mob death,
   player damage, level up, vote start/end, currency pickup, UI open/
   close, button click, victory).
@@ -501,6 +533,15 @@
 - `[🚀]` **CentralBoss authored content** — place loads modules but has
   no authored boss fight. Pick a boss, author phases, wire telemetry +
   rewards. Post-alpha; HordeMode is the alpha headline mode.
+  *(Partial, 2026-09-26:)* the core fight exists. It is the Iron Warden
+  placeholder (`Mobs/IronWarden.lua`, `MobBehaviors/BossPhases`,
+  `centralboss/.../BossEncounter.lua`, BossHud), with party-wide kill
+  credit, in b19cec8 and 25c6784 (§AGX/X28). Still to do: (a) a real
+  `IronWarden` model to replace the runtime `PlaceholderRig`; (b) the
+  Studio test in `docs/STUDIO_TEST_PLAN.md` §4; (c) the two FLIP HERE
+  switches (`GameModeConfig.lua:49-51`, `lobby/.../MainMenu.lua:54-56`),
+  which stay `available = false` until then; (d) arena dressing and
+  telemetry.
 - `[🚀]` **Endless Horde mode** — see §4.
 - `[🚀]` **Multi-server matchmaking queue** — see §7.
 - `[🚀]` **Talent tree 300-node redesign** — see §3 + proposal doc.
@@ -541,6 +582,11 @@ tags in code).
   remote path entirely and replace with an admin module driven from the
   Studio runtime console (server-side function calls, no remotes).
   Includes removing the TestingUI client panel and the manifest entries.
+  *(Still open, 2026-09-26: `AdminTesting.lua`, `UI/TestingUI.lua` and
+  the manifest entries in `NetworkManager.lua` are all still present.
+  Note that `docs/STUDIO_TEST_PLAN.md` §4 now uses
+  `DebugCommand("bossHP", …)`, so the console-module replacement must
+  keep a boss-HP command.)*
 - `[P1]` **§T0P2-TPCLASS — Wire the TeleportClass consumer.**
   `TeleportDataReader.ApplyPlayerData` sets the `TeleportClass` player
   attribute (party-selected class) but nothing reads it yet. The new
@@ -550,15 +596,13 @@ tags in code).
   chain verified wired: RespecFragment final-card (10%/player/supply-
   vote, once per run — matches Pablo's spec exactly), fragments
   auto-combine 4→1 scroll (InventoryManager.tryAutoConvert), respec
-  consumes scroll, shop fallback (50 Essence). `[P2/Balance]` remaining:
+  consumes scroll, shop fallback (now 25 Essence, and the direct respec
+  is a flat 25 Essence, both since 78392c0 §AGX/X42;
+  `PlayerDataConfig.lua:374-381`). `[P2/Balance]` remaining:
   boss drop sources + project the acquisition curve (not too hard, not
   too easy).
-- `[P1/Monetization]` **§DISC/D3b — Wipe-revive: Robux product.** The
-  Essence-priced wipe-revive is LIVE (DeathSystem CONFIG:
-  WipeGraceSeconds=10, WipeReviveEssence=25 placeholder,
-  WipeInvulnSeconds=3). Later: a Developer Product purchase path that
-  calls the same DeathSystem.HandleWipeRevive resolution (skip the
-  essence spend, verify the receipt instead).
+- ~~§DISC/D3b — Wipe-revive: Robux product~~ **Superseded (won't do):**
+  moved to "Already-resolved" (2026-09-26 reconcile, X40 decision).
 - `[P2]` **§T0P2-MASTERY — Sweep the dead Class Mastery system.** Class
   XP was superseded by gear XP (WeaponXPSystem). `AddClassMasteryXP` is
   deleted (§T0P2/X21); still present: `ClassMasteryConfig.lua`, the
@@ -614,7 +658,10 @@ tags in code).
   controllers Disabled=true) — files kept for reference. `[P2]` archive
   the folder fully during final cleanup; §UI1/§UI2 above referenced the
   controller stack and are now MOOT for those files (re-check their
-  React equivalents: DailyLoginUI + SocialPanel components).
+  React equivalents: DailyLoginUI + SocialPanel components). *(2026-09-26:
+  the React equivalents were re-checked and §UI1 is resolved. The archive
+  is still open: `src/shared/StarterGui/AppGui/{AppRoot,Controllers}`
+  still exist.)*
 - **§T10/U1 — LoadingScreen** landed: pre-app imperative overlay
   (deliberately NOT React — it covers the React mount itself), shown
   from each place client's first Load, dismissed on ReadyGate-routed
@@ -643,6 +690,16 @@ tags in code).
   with DailyLoginUI and LeaderboardUI) + lobby: MainMenu, ShopUI,
   WeaponSmithUI, SocialPanel, MatchmakingUI, NPCDialog. (Toasts/wheels — EmoteWheel, PartyInviteToast, VoteUI,
   DeathUI, HUD, TeammateVitals — are NOT windows; leave as-is.)
+  *(Mostly done, 2026-09-26 reconcile:)* the §AGX/UI-P6 re-skin
+  (05c1b9e, 582dff1, 5718f59) put every screen in the REMAINING list on
+  AppWindow + Theme v2 with no `Color3.fromRGB` literals, **except
+  SocialPanel**. `lobby/.../UI/SocialPanel.lua` has no AppWindow, no Theme
+  require, a private palette at `:36` (22 `Color3.fromRGB` literals) and a
+  hand-rolled Scale-sized ✕ at `:701-711`. It is still reachable as the
+  shell's "party" entry (`UI/Shell/Registry.lua:245-247`). MatchmakingUI is
+  a banner and not a window, but it does use Theme/Button (582dff1).
+  CharacterCreation's 12 literals are skin swatches (`:51-54`), not
+  chrome. Still to do: SocialPanel only.
 - `[Done]` **§PERF/BP — Boot profiler (2026-07-16).** Shared
   `ReplicatedStorage/Shared/BootProfiler` (Mark/Begin spans). Hooks:
   PlaceBootstrap.Load (every require + Init, all 5 places),
@@ -654,7 +711,8 @@ tags in code).
   PlayerGui.BootProfile_CLIENT). Flags: ⚠ SLOW ≥100 ms,
   ⚠ gap ≥350 ms silence, ⚠ UNFINISHED = span never closed (race/hang
   evidence). `[P1]` set `ENABLED = false` in BootProfiler before
-  release (alpha keeps it on).
+  release (alpha keeps it on). *(Still `true`, checked 2026-09-26 at
+  `Shared/BootProfiler.lua:41`.)*
 
 - `[P1/Art]` **§T10/ICONS — Icon set (anime / speed): ART DELIVERED,
   ids pending.** Claude Design produced the full 27-asset drop
@@ -665,16 +723,18 @@ tags in code).
   REMAINING: Studio → Asset Manager → Bulk Import `assets/ui/`, then
   paste ids into `Theme.Icons` (16) and the new `Theme.Images` (11,
   slice rects pre-filled). All UI falls back gracefully until then.
+  *(Still open, 2026-09-26: every id is still `rbxassetid://0` in
+  `UI/Common/Theme.lua:351-376` and `:409-424`; `assets/ui/` holds all 27
+  files. **Plus 4 missing icons** with no art delivered: `play`, `leave`,
+  `emote` and `menu` (`Theme.lua:370-376`, §AGX/UI-P3; for now they render
+  as glyphs from `Theme.Glyphs`). Also `appearance` (§AGX/X18b) has only a
+  glyph and no `Theme.Icons` slot. Add all of them to
+  `docs/CLAUDE_DESIGN_BRIEF.md`. Only Pablo can do the import.)*
 
-- `[P1/UI]` **§AGX/UI-P3/P5 W6 — Shell + HUD regions Studio pass
-  (Pablo).** Code landed (agents A/B/C + Wave 2 integrator; spec
-  `docs/ui_audit/shell-spec.md` §5): every App is `Shell{place}`,
-  PanelStack owns what's open, the rail / ☰ MenuSheet / console radial
-  replaced the ☰ + ⋮ drawer (LegacyNav deleted) and the Plaza
-  AppearanceBar (HUD quick buttons). Untested: run the W6 checklist in
-  the Device Emulator (iPhone 844×390, Android 800×360, tablet
-  1024×768, 1080p) and with a gamepad. P7 no longer moves Dash off B
-  (context gating: B = Dash in Combat, Back in UI).
+- ~~§AGX/UI-P3/P5 W6 — Shell + HUD regions Studio pass~~ **Folded** into
+  the §20 "Studio test pending" item. The W6 checklist is now
+  `docs/STUDIO_TEST_PLAN.md` §5-§8, which also covers P6/P7 and the
+  UI-FIX rounds (90e5985, e1524b9).
 
 ### Discussion-batch outcomes (§DISC, 2026-06-12)
 
@@ -694,6 +754,14 @@ tags in code).
   ClassConfig.unlockRequirements with `requiredAchievement` and teach
   PlayerClassSystem.CheckUnlockRequirements to read
   AchievementManager's unlocked set. Core element per Pablo.
+  *(Still open, 2026-09-26: no `requiredAchievement` anywhere in `src/`,
+  and the "achievement" BonusManager source is only reserved
+  (`BonusManager.lua:27`). Change since then: a boss-tier mob exists
+  (Iron Warden, b19cec8), so the 9 boss achievements can be earned once
+  CentralBoss is enabled (AGENCY_CHECKS X28). Do not land gate (a) while
+  CentralBoss is still `available = false`, or progression blocks at
+  level 50. The one-shot `veteran` achievement (b0bdbee, §AGX/X18b) is
+  the first reward that is not a stat.)*
 - **§DISC/D6 — REVISED round 2, BUILT.** Pablo: folding more cap/gate
   features is common, worth the seam. New shared
   `Modules/PartyRequirements.lua` (MaxLevelGap/FitsLevelGap/CheckLevels)
@@ -719,7 +787,100 @@ tags in code).
   `ArmorRefinementResult`, `ArmorTierUp`, `WeaponRefinementResult`,
   `WeaponTierUp` (check at T6 — refine/tier flows may be missing their
   result pushes), `HealNumber` (check at T2 — heals may ride
-  DamageNumber). Delete or wire.
+  DamageNumber). Delete or wire. *(Partial, 2026-09-26 reconcile: the
+  four equipment events are NOT orphans. They are fired by name through
+  `eventName` in `EquipmentRefinement.lua:48,54` and
+  `EquipmentTierSystem.lua:54,62`. Still to do: `HealNumber` only. The
+  server sends only `HealNumberBatch` (`SkillEffects.lua:107-108`), while
+  the single-event listener in `DamageNumbers.lua:289-290` and the
+  manifest entry (`NetworkManager.lua:154`) are dead.)*
+
+## 20. Agency-checks follow-ups (§AGX, 2026-09-26)
+
+New open items created by the agency-checks session (`git log
+0e6d15e..b0bdbee`; findings in `AGENCY_CHECKS.md`, UI plan in
+`docs/UI_REVAMP.md`). Nothing from that session has run in Studio.
+
+- `[P0]` **§AGX/STUDIO — Studio test pending for the whole round.** All 47
+  commits since `0e6d15e` were only checked statically (luau-compile /
+  luau-analyze, agent review, headless layout math). Run
+  `docs/STUDIO_TEST_PLAN.md` top to bottom: §0 boot smoke (X16 now fails
+  boot **hard** on a critical Init error), §1 session-locked saves
+  (X2/X3/X3r/X8), §2 gameplay regressions, §4 CentralBoss, and §5-§8
+  shell, mobile, Theme v2 and gamepad. §5-§8 replace the old W6
+  checklist. Include the §9 VEM-DEDUPE 1× check and the X45 physics
+  profile (flip `MobSpawnHelper.lua:135` `SERVER_OWNED_TIERS.normal` if
+  a 72-mob Horde is over budget).
+- `[P1]` **§AGX/X4-LIVE — Reserved-server live test (published build).**
+  Studio cannot create reserved servers. After publishing, check that a
+  match lands on a new reserved server per party and that joining a
+  public combat server bounces you to the Lobby
+  (`TeleportDataReader.lua:24-32,127-129`), plus the X14 TeleportInitFailed
+  retry. See `STUDIO_TEST_PLAN.md` §3 "Live test".
+- `[P1/Monetization]` **§AGX/X40-BUNDLES — Robux-exclusive cosmetics
+  before the bundles can be enabled.** The three class bundles
+  (`ShopConfig.lua` Premium, 99 R$ each, e.g. `mask_hunter` +
+  `forest_ranger` at `:262-266`) contain items that are also sold for
+  Merits/Essence. `MonetizationService` registers them but refuses to
+  prompt them (`MonetizationService.lua:12-13`; BALANCE_NUMBERS §48).
+  Author cosmetics that are only sold for Robux, then point the bundles
+  at them. Also: create the real DevProducts and the GamePass, and paste
+  their ids, because every Premium entry is still `enabled = false` with
+  id `0`.
+- `[P2]` **§AGX/UI-P2-REFUND — Single-talent refund not implemented on
+  the server.** `TalentTreeUI.lua:132` has `INDIVIDUAL_REFUND_ENABLED =
+  false`, so Refund renders disabled with the reason. `TalentClient.lua:139-141`
+  `RefundNode` is a `warn` stub, and `TalentManager` only handles
+  `AllocateTalent` and `RespecTalents` (`TalentManager.lua:216,235`).
+  Needs: a remote plus manifest entry, a server refund (leaf-only, or
+  dependency-checked), a cost decision (free, Essence, or part of a
+  respec), then flip the flag. It pairs with §T0P2-DEALLOC.
+- `[P2]` **§AGX/X27-OBO — Horde and Lane HighestWave differ by one.**
+  Lane records the wave number **completed**
+  (`LaneDefenseMain.server.lua:321-323`, `MobSpawner.OnWaveCompleted`).
+  Horde records the level **reached** (`HordeModeMain.server.lua:326-337`:
+  `lastLevel` after the increment, i.e. the level that just started). A
+  run that dies in wave/level 5 records 4 on Lane and 5 on Horde, and
+  both feed the same `Account.HighestWaveReached`, the HighestWave board
+  and GearRating prestige. The same number feeds the `wavesSurvived` /
+  `highestWave` achievements from Horde. Decide one meaning (probably
+  "completed") and record `lastLevel - 1` on Horde, or keep separate
+  per-mode stats.
+- `[P1]` **§AGX/X11-RULES — 15 talent keystones say "(coming soon)".**
+  Their penalties were neutralised (36cd218), but no rule is implemented:
+  `TalentTreeConfig.IMPLEMENTED_RULES = {}` (`TalentTreeConfig.lua:735`,
+  tagging at `:741-751`). Implement the rules one at a time and add each
+  name to the set. Belongs with the talent pass (§3).
+- `[P1]` **§AGX/X10-CONSUMABLES — only the respec scroll can be used.**
+  Consumables with no server use handler are unbuyable and show "Coming
+  soon" (`ConsumableConfig.lua:13,174-176`; `ShopManager.lua:233-239`).
+  Write the use handlers (potions, buffs), then set `usable = true` per
+  item.
+- `[P2]` **§AGX/X4-REASON — the return reason is never shown.**
+  `ReturnTeleporter.lua:86-105` sends `returnReason` in TeleportData on a
+  public-server bounce or a failure, but nothing in the Lobby reads it.
+  Show it as a Notify toast on Lobby arrival.
+- `[P2]` **§AGX/X40-VIP — the VIP GamePass has no effect.** It sets a
+  `VIP` player attribute that nothing reads (`ShopConfig.lua:268-271`).
+  Add the nameplate/chat tag before enabling the pass. Social perks only.
+- `[📝]` **§AGX/X46-GUARD — the PolicyService tripwire.** Before
+  anything bought with Robux can roll a random result or be
+  traded/auctioned, add `ArePaidRandomItemsRestricted` /
+  `IsPaidItemTradingAllowed` and reopen X46. The code gate is
+  `ALLOWED_GRANTS` in `MonetizationService.lua:54-58`. Never make
+  `Account.Monetization.robuxSpent` public.
+- `[🚀]` **§AGX/X48 — Onboarding.** Parked by Pablo until all modes are
+  final. There is no tutorial or first-run flag, and nothing points new
+  players to Commander Vex (AGENCY_CHECKS X48).
+- `[P1/Ops]` **G20 — Rotate the Open Cloud key.** Still open. Only Pablo
+  can do it. The tools now read `ROBLOX_OPEN_CLOUD_KEY` from the
+  environment (668316b, §AGX/X49).
+- `[P2]` **Repo hygiene leftovers (AUDIT_FINDINGS G16/G18/G24).**
+  Checked 2026-09-26: `foreman.exe` (5.8 MB), `Leg.obj` and `Leg.mesh`
+  are **still tracked** (`git ls-files`), which contradicts Audit_4.7
+  §13.2 "Heavy binaries untracked". `.gitignore` still has no `.venv/`
+  line. `sourcemap.json` is untracked (G17 done). This must be done from
+  Pablo's terminal (Audit_4.7 §10).
 
 ---
 
@@ -753,3 +914,56 @@ v0.5 — listed only in case future work intersects them:
 
 Lineage of these resolutions lives in the v0.5 commit message and in
 git history of the deleted audit reports.
+
+### Reconciled 2026-09-26 (after the agency-checks session, `0e6d15e..b0bdbee`)
+
+Each entry below was checked against the current code (file:line), not
+only against commit messages. "Pending Studio" means the code is in place
+but has not run yet (see §20 §AGX/STUDIO).
+
+- **§AM4 HordeMode `wavesSurvived` / `highestWave`** (was `[P1]`, §10):
+  option (a) landed. The Horde level watcher feeds
+  `AchievementManager.OnWaveCompleted` for each level
+  (`HordeModeMain.server.lua:316-339`, 28e7fd7 §EASY/E4), and since
+  cc776f2 §AGX/X27 it also records `HighestWaveReached`. The off-by-one
+  against Lane is in §20.
+- **§RG-MIGRATION (cosmetics + equipment + achievements + boot-race
+  umbrella)** (was three `[P2]` items, §9/§10/§11): `WeaponEquipped` and
+  `ArmorEquipped` go through ReadyGate (`WeaponManager/init.lua:14-33`,
+  `ArmorManager/init.lua:27-43`, §NM-D2, 66503b4). `AchievementUnlocked`
+  goes through ReadyGate (`AchievementManager.lua:78-97`, 66503b4).
+  `WardrobeUpdate` and `EquipmentInfo` are pure request/response, and the
+  client subscribes before it asks (`NetworkManager.lua:101-104,215-217`;
+  `CosmeticManager/init.lua:78-86`; `EquipmentHandler.lua:38-40`), so
+  there is no boot race. The entries were stale before this session.
+- **§G5 late joiner sees stale GameState** (was `[P1]`, §12): the
+  "client asks on mount" option landed. The `RequestGameState` reply is
+  at `GameStateManager.lua:75-93` (0c93026 §AGX/UX-02), and
+  `UI/HUD/RunState.lua:177` fires it once per client session (moved there
+  from HUD.lua in 8871472 §AGX/UI-P5). Horde late-joiners also get a
+  ReadyGate-routed push (`HordeModeMain.server.lua:508`, §T0P2/X9).
+  Pending Studio (`STUDIO_TEST_PLAN.md` §5 "UX-02").
+- **§UI1 DailyLogin / CreateParty optimistic text** (was `[P2]`, §14):
+  DailyLogin claim goes through `useRequest` and shows pending, ok,
+  timeout or error inline (`UI/DailyLoginUI.lua:32,64-76`; dfefb37 and
+  74b7ac8 §AGX/UI-P4). The React SocialPanel draws "+ Create Party" from
+  party state and has no optimistic label (`SocialPanel.lua:443-459`).
+- **Class unlock toast** (was `[P2]`, §14): `PlayerClassSystem.lua:140-151`
+  fires an `AchievementUnlocked`-shaped "Class Unlocked!" toast
+  (28e7fd7 §EASY/E6). Since b38a8a3 §AGX/UI-P4 it shows as a Notify banner.
+  *Nit:* it uses a direct `FireClient`, not ReadyGate, so an unlock found
+  during the login scan could arrive before the client subscribes.
+- **HitTracker.SaveLifetimeStats stub** (was `[P1]`, §15): the method and
+  its session stat block are gone (§T1.4/Y5, b291a39; see
+  `HitTracker.lua:277-288`). Lifetime data lives in achievement and
+  gear-XP tables.
+- **DataStore save reliability under disconnect** (was `[📝]`, §15):
+  landed as session-locked `UpdateAsync` saves, a BindToClose drain,
+  retry on the final save, and a 60 s autosave (09e4a5a §AGX/X2/X3), then
+  hardened r1-r12 (8fd1301 §AGX/X3r). Pending Studio (§1 of the test plan).
+- **§DISC/D3b wipe-revive Robux product** (was `[P1/Monetization]`, §19):
+  **superseded, won't do.** Pablo's X40 decision (cdba264, 1c6e333):
+  Robux never buys revives or currency (BALANCE_NUMBERS §48 "Not allowed"
+  table). `MonetizationService.lua:54-58` `ALLOWED_GRANTS` only allows
+  AppearanceChange, Cosmetics and GamePass. The revive is now 3/2/1 free
+  by difficulty, then one paid in Essence (3b4d39d §AGX/X40).

@@ -80,8 +80,8 @@ The audit walks every subsystem tier-by-tier. Each tier produces:
 | T7   | Lobby (PartyManager, MatchmakingManager, SceneManager, TeleportManager) | ✅ Closed | **T5-T9 sweep (§T7/G4 retry, §T5-T9/S3), next commit** |
 | T8   | Progression (PlayerLevelSystem, talent system, achievement, daily login) | ✅ Closed | **T5-T9 sweep (§T5-T9/S4-S5), next commit** |
 | T9   | Shop / NPC (ShopManager, NPC handlers, quest, lore) | ✅ Closed | **T5-T9 sweep (verified safe; F-notes in T5-T9_SWEEP.md), next commit** |
-| T10  | UI (every client React component, CombatApp, Lobby app, panels) | ⏭ Pending | |
-| T11  | Cross-cutting follow-ups (Janitor leak audit, balance audit, hang-recovery UI) | ⏭ Pending | |
+| T10  | UI (every client React component, CombatApp, Lobby app, panels) | ✅ Closed | **UI revamp P0-P7 + two review-fix rounds, commits 0c93026…e1524b9 (§AGX/UX-0n, §AGX/UI-P1…P7, §AGX/UI-FIX); see `docs/UI_REVAMP.md`. Studio pass pending (`docs/STUDIO_TEST_PLAN.md` §5-§8); SocialPanel re-skin left over (TODO §T10/U3)** |
+| T11  | Cross-cutting follow-ups (Janitor leak audit, balance audit, hang-recovery UI) | ⏭ Pending | see §6.10 (refreshed 2026-09-26) |
 
 After T1, commit T1 as a single "T1 — Player state systems" upgrade once
 Pablo signs off. Then re-evaluate priority for T2 vs T6 (Pablo may want
@@ -697,15 +697,33 @@ ready gate, player progression measurement, etc.).
 
 ### 6.10 T11 — Cross-cutting follow-ups
 
-- **§T1.1-JAN1 — Janitor leak audit** (P0). Sweep every remaining
-  module on TODO §14b's candidate list. CosmeticManager first (it has
-  the same duplicate-PlayerAdded pattern we already fixed in
-  CharacterManager).
+*Refreshed 2026-09-26 against the code after the agency-checks session.*
+
+- **§T1.1-JAN1 — Janitor leak audit** (P0). Still the main T11 item.
+  Janitor is now used in CharacterManager, AttackHandler,
+  PlayerDataManager, WeaponManager and BossEncounter. CosmeticManager is
+  still first in line (`CosmeticManager/init.lua:115-132`, the duplicate
+  PlayerAdded pattern). Then the rest of TODO §14b.
 - **§T1.1-JAN2** — telemetry: snapshot Janitor counts per system every
-  60s, debug-only.
-- Balance audit — bundles §T1.2-BAL1, §T1.3-BAL1, all `[??]` items.
-- §NM-D6 — hang-recovery UI when client WaitForChild stalls.
-- §RG-MIGRATION cosmetics + equipment push events.
+  60s, debug-only (after JAN1).
+- **Balance audit:** the **economy** half is largely done by
+  §AGX/X41-X43 (78392c0): Essence sources, one Merit:Essence anchor
+  (1 : 250), respec and scroll at 25 Essence, and softer +11..+15
+  refining, all documented in BALANCE_NUMBERS. What remains is the
+  **combat** half, which that pass did not touch: §T1.3-BAL1 heal
+  multipliers, §T1.2-BAL1 crit-damage scaling (`ClassConfig.lua:108,156,199,244`),
+  the `[??]` crit/vulnerability/armor caps (TODO §1/§18), §T1P2-STACKS
+  `maxStacks`, and the new Horde/Lane HighestWave off-by-one (TODO §20
+  §AGX/X27-OBO).
+- **§NM-D6** — hang-recovery UI when client WaitForChild stalls. Still
+  open. Build it on the new Notify banner.
+- ~~§RG-MIGRATION cosmetics + equipment push events~~ — resolved (stale):
+  Weapon/Armor are ReadyGate-routed, and Wardrobe/Equipment are pure
+  request/response (TODO "Already-resolved", 2026-09-26).
+- **New cross-cutting items from the session** (TODO §20): the Studio
+  test of all 47 commits (P0), the reserved-server live test, BootProfiler
+  `ENABLED=false` before release, and the G16/G18/G24 repo-hygiene
+  leftovers.
 
 ---
 
@@ -1026,6 +1044,36 @@ place-managed BY DESIGN — do not re-flag untracked rbxmx). Heavy
 binaries untracked. Remaining backlog lives in docs/TODO.md (§19 +
 §DISC + §T10 sections). Next work is implementation, not audit:
 menu conversions, icon art (§T10/ICONS brief), §16 alpha-blockers.
+
+---
+
+## 14. Addendum: Agency-checks session (2026-09-26)
+
+- **Scope:** 47 commits `0e6d15e..b0bdbee`, from a multi-agent audit that
+  produced findings X1–X50. Findings, decisions and the per-item status
+  table are in **`AGENCY_CHECKS.md`**. Code tags are `§AGX/X<n>`.
+- **Landed:** every X item except X46 (PolicyService, not needed while no
+  Robux purchase is random or tradable) and X48 (onboarding, parked). The
+  headline fixes: Horde spawning nothing (X1), a paid revive that
+  soft-locked the run (X50), session-locked saves plus a shutdown drain
+  (X2/X3, hardened r1-r12), reserved match servers and trusted teleport
+  data (X4/X6/X14/X15), personal party drops (X44), the economy pass
+  (X41-X43), and the Iron Warden placeholder boss (X28).
+- **Decision (X40):** Robux never buys gameplay currency, revives or
+  power. Only cosmetics, appearance changes and a VIP pass. It is
+  enforced by `MonetizationService.ALLOWED_GRANTS`; see BALANCE_NUMBERS §48.
+- **T10 closed:** the UI revamp P0-P7 (Theme v2, the Shell/PanelStack,
+  HUD regions, Notify, touch/PC/gamepad controls) plus two review-fix
+  rounds. See **`docs/UI_REVAMP.md`**.
+- **Nothing has run in Studio.** The ordered checklist is in
+  **`docs/STUDIO_TEST_PLAN.md`**. X16 makes boot fail hard on a critical
+  Init error, so run §0 first.
+- **Backlog:** reconciled in `docs/TODO.md` (dated notes, the
+  "Already-resolved" list and the new §20). `AUDIT_FINDINGS.md` G-items
+  now carry status lines.
+- **Correction to §13.2:** "Heavy binaries untracked" is not true.
+  `foreman.exe`, `Leg.obj` and `Leg.mesh` are still in `git ls-files`
+  (TODO §20).
 
 ---
 
