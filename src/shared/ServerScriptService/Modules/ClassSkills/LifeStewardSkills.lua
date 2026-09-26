@@ -68,7 +68,11 @@ LifeStewardSkills.Skills = {
 		canBeInterrupted = false,
 
 		-- Healing
-		healMultiplier = 2.2,     -- §31: 2.1x-2.3x
+		-- §AGX/BAL (§T1.3-BAL1): 2.2 → 2.1. Heals now use the shared multi-crit
+		-- pipeline (cap 1.80×, 2 procs) instead of the old single-proc 1.50× cap;
+		-- that lifted realised healing +3.4% at the L60 reference build and
+		-- +7.3% at L100. 2.1 lands L60 back on target (see BALANCE_NUMBERS §Combat).
+		healMultiplier = 2.1,     -- §31: 2.1x-2.3x
 		canCrit        = true,
 
 		-- Target finding
@@ -110,7 +114,10 @@ LifeStewardSkills.Skills = {
 		canBeInterrupted = false,
 
 		-- Healing (initial burst)
-		healMultiplier = 1.3,      -- §31: 1.2x-1.4x
+		-- §AGX/BAL (§T1.3-BAL1): 1.3 → 1.25 for the same crit-pipeline lift;
+		-- the HoT below now also gets HealingPercent/HealingPower, so the
+		-- whole Verdant Bloom package lands at or above its old throughput.
+		healMultiplier = 1.25,     -- §31: 1.2x-1.4x
 		canCrit        = true,
 
 		-- AoE
@@ -120,7 +127,7 @@ LifeStewardSkills.Skills = {
 		hotHealing = {
 			type          = "HealOverTime",
 			id            = "VerdantBloom_HoT",
-			healPerTick   = 0.08,  -- ×0.08 of healer's Damage per tick
+			healPerTick   = 0.08,  -- ×0.08 of healing power per tick (§AGX/BAL: via the heal pipeline, no crit)
 			tickInterval  = 1,
 			duration      = 6,
 			maxStacks     = 2,
@@ -318,6 +325,8 @@ function LifeStewardSkills.MendingTouchExec(player, skill, inputData)
 		healMultiplier = skill.healMultiplier or 2.5,
 		canCrit = skill.canCrit ~= false,
 	})
+	-- §AGX/X11: Clarity Surge (a crit heal restores Life Energy).
+	if StatsManager.KeystoneRules then StatsManager.KeystoneRules.OnHealCast(player, healResult) end
 
 	-- Apply heal via SkillEffects
 	if Effects then
@@ -359,6 +368,8 @@ function LifeStewardSkills.VerdantBloomExec(player, skill, inputData)
 		healMultiplier = skill.healMultiplier or 1.5,
 		canCrit = skill.canCrit ~= false,
 	})
+	-- §AGX/X11: Clarity Surge (one crit roll per cast → at most +8 per cast).
+	if StatsManager.KeystoneRules then StatsManager.KeystoneRules.OnHealCast(player, healResult) end
 
 	-- Apply heal to all allies (uses SkillEffects.GetAlliesInRange which includes self)
 	if Effects then
@@ -500,11 +511,15 @@ function LifeStewardSkills.GenesisExec(player, skill, inputData)
 		local maxHP = targetHum.MaxHealth
 		local missingHP = maxHP - targetHum.Health
 		if missingHP > 0 then
-			targetHum.Health = maxHP
-
+			-- §AGX/X11: heal THROUGH HealPlayer. The old code set Health = max
+			-- first, so HealPlayer then saw 0 missing HP and returned early:
+			-- Genesis showed no heal number and granted no heal weapon XP or
+			-- healing achievement progress (and would read as a full overheal
+			-- to Shared Grace). HealPlayer caps at MaxHealth itself.
 			if Effects then
-				-- Notify via heal visual
-				Effects.HealPlayer(target, math.floor(missingHP), player, false, 0)
+				Effects.HealPlayer(target, math.ceil(missingHP), player, false, 0)
+			else
+				targetHum.Health = maxHP
 			end
 		end
 

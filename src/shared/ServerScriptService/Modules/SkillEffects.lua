@@ -909,6 +909,9 @@ function SkillEffects.ApplyHeal(healer, effect, origin)
 		healMultiplier = effect.healMultiplier or 1.0,
 		canCrit = effect.canCrit ~= false,
 	})
+	-- §AGX/X11: Clarity Surge (a crit heal restores Life Energy).
+	local KR = SkillEffects.StatsManager.KeystoneRules
+	if KR then KR.OnHealCast(healer, healResult) end
 
 	for _, target in ipairs(allies) do
 		SkillEffects.HealPlayer(target, healResult.heal, healer, healResult.wasCrit, healResult.critProcs)
@@ -923,6 +926,15 @@ function SkillEffects.HealPlayer(target, amount, healer, wasCrit, critProcs)
 	if not humanoid or humanoid.Health <= 0 then return end
 
 	local actualHeal = math.min(amount, humanoid.MaxHealth - humanoid.Health)
+
+	-- §AGX/X11: Shared Grace — part of the overheal returns as a HoT.
+	-- Checked before the early-out so a heal on a full-HP ally counts.
+	if healer and amount > actualHeal then
+		local sm = SkillEffects.StatsManager
+		local KR = sm and sm.KeystoneRules
+		if KR then KR.OnOverheal(healer, target, amount - math.max(actualHeal, 0)) end
+	end
+
 	if actualHeal <= 0 then return end
 
 	humanoid.Health = humanoid.Health + actualHeal
@@ -1013,6 +1025,44 @@ function SkillEffects.ApplyHoTToPlayer(healer, target, effect)
 	end
 end
 
+--- §AGX/X11: HoT that restores a FIXED total (not a Damage coefficient),
+--- evenly over `duration` seconds at 1 tick/s. Used by Shared Grace. A
+--- re-application adds its total to what is still pending and restarts the
+--- window, so rapid overheals pool instead of overwriting each other. Its
+--- ticks never trigger Shared Grace again (TickHoT doesn't call HealPlayer).
+function SkillEffects.ApplyFlatHoT(healer, target, total, duration, id)
+	if not target or not target.Parent or total <= 0 then return end
+	duration = math.max(1, math.floor(duration or 4))
+	local key = "HealOverTime_" .. (id or "flat")
+	local effects = activePlayerEffects[target]
+	if not effects then
+		effects = {}
+		activePlayerEffects[target] = effects
+	end
+	local now = os.clock()
+	local entry = effects[key]
+	if entry and entry.flatRemaining then
+		entry.flatRemaining = entry.flatRemaining + total
+		entry.flatTicksLeft = duration
+		entry.endTime       = now + duration * 2 + 1
+		entry.healer        = healer
+	else
+		effects[key] = {
+			type          = "HealOverTime",
+			stacks        = 1,
+			maxStacks     = 1,
+			-- Generous: ticks drift up to 0.5 s each on the 0.5 s loop; the
+			-- entry ends itself after its last tick (flatTicksLeft → 0).
+			endTime       = now + duration * 2 + 1,
+			healer        = healer,
+			effectData    = { tickInterval = 1 },
+			tickNext      = now + 1,
+			flatRemaining = total,
+			flatTicksLeft = duration,
+		}
+	end
+end
+
 -- ═══════════════════════════════════════════════════════════
 -- PLAYER EFFECT TICK LOOP (HoT, etc.)
 -- ═══════════════════════════════════════════════════════════
@@ -1068,13 +1118,34 @@ function SkillEffects.TickHoT(target, entry)
 	local healCoef  = entry.effectData.healPerTick or 0.1
 	local stacks    = entry.stacks or 1
 
-	-- Scale from healer's damage (mirrors DoT scaling)
-	local baseHeal = 10
-	if healer and SkillEffects.StatsManager then
-		baseHeal = SkillEffects.StatsManager.GetTotalDamage(healer) or 10
+	local tickHeal
+	if entry.flatRemaining then
+		-- §AGX/X11: fixed-total HoT (Shared Grace).
+		local ticksLeft = math.max(entry.flatTicksLeft or 1, 1)
+		tickHeal = entry.flatRemaining / ticksLeft
+		entry.flatRemaining = entry.flatRemaining - tickHeal
+		entry.flatTicksLeft = ticksLeft - 1
+		if entry.flatTicksLeft <= 0 then entry.endTime = 0 end
+		tickHeal = math.floor(tickHeal + 0.5)
+	elseif healer and SkillEffects.StatsManager and SkillEffects.StatsManager.CalculateHeal then
+		-- §AGX/BAL (§T1.3-BAL1): HoT ticks go through the heal pipeline
+		-- (Damage + flat HealingPower, × HealingPercent) like every other
+		-- heal. They used to read raw Damage only, so LifeSteward's innate
+		-- +15% HealingPercent and all HealingPower gear skipped the HoT.
+		-- Still no crit on ticks (unchanged).
+		local r = SkillEffects.StatsManager.CalculateHeal(healer, {
+			healMultiplier = healCoef,
+			canCrit        = false,
+		})
+		tickHeal = math.floor((r and r.heal or 0) * stacks)
+	else
+		-- Scale from healer's damage (mirrors DoT scaling) — fallback
+		local baseHeal = 10
+		if healer and SkillEffects.StatsManager then
+			baseHeal = SkillEffects.StatsManager.GetTotalDamage(healer) or 10
+		end
+		tickHeal = math.floor(baseHeal * healCoef * stacks)
 	end
-
-	local tickHeal = math.floor(baseHeal * healCoef * stacks)
 	local actualHeal = math.min(tickHeal, humanoid.MaxHealth - humanoid.Health)
 	if actualHeal <= 0 then return end
 

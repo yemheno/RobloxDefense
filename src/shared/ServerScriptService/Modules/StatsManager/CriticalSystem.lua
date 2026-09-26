@@ -29,6 +29,9 @@ local Modules = script.Parent.Parent
 local DataManager = require(Modules:WaitForChild("PlayerDataManager"))
 local Config      = require(Modules:WaitForChild("PlayerDataConfig"))
 
+-- §AGX/X11: keystone hooks (Perfect Form), set by StatsManager.
+CriticalSystem.KeystoneRules = nil
+
 -- ═══════════════════════════════════════════════════════════
 -- CAPS
 -- ═══════════════════════════════════════════════════════════
@@ -58,9 +61,18 @@ end
 -- APPLY CRIT  (Multi-Crit per §40)
 -- Geometric procs; CritChance & CritDamage caps come from StatCaps.
 -- ═══════════════════════════════════════════════════════════
-function CriticalSystem.ApplyCrit(player, baseValue)
-    local critChance     = CriticalSystem.GetCritChance(player)
+-- §AGX/X11: optional `bonusChance` = per-target crit chance from the caller
+-- (Relentless Quarry). Perfect Form is folded in here so heals get it too.
+-- Keystone bonuses are added BEFORE the caps, like any other source.
+function CriticalSystem.ApplyCrit(player, baseValue, bonusChance)
+    local critChance     = CriticalSystem.GetCritChance(player) + (bonusChance or 0)
     local critMultiplier = CriticalSystem.GetCritDamage(player)
+    local KR = CriticalSystem.KeystoneRules
+    if KR then
+        local extraChance, extraDamage = KR.CritBonus(player)
+        critChance     = critChance + extraChance
+        critMultiplier = critMultiplier + extraDamage
+    end
 
     local clampedCritChance = math.min(critChance,     getCritChanceCap())
     critMultiplier          = math.min(critMultiplier, getCritDamageCap())

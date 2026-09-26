@@ -13,11 +13,19 @@ local DamageSystem = require(script:WaitForChild("DamageSystem"))
 local ArmorSystem   = require(script:WaitForChild("ArmorSystem"))
 local CriticalSystem = require(script:WaitForChild("CriticalSystem"))
 local HealingSystem  = require(script:WaitForChild("HealingSystem"))
+-- §AGX/X11: keystone rule hooks (DamageSystem / CriticalSystem call into it).
+local KeystoneRules  = require(script:WaitForChild("KeystoneRules"))
 
 -- Wire sub-systems together
 DamageSystem.ArmorSystem    = ArmorSystem
 DamageSystem.CriticalSystem = CriticalSystem
 HealingSystem.CriticalSystem = CriticalSystem
+-- §AGX/X11: keystone hooks. Exposed on StatsManager too so DamageHandler,
+-- SkillEffects and the class skill modules reach it without a new require.
+DamageSystem.KeystoneRules   = KeystoneRules
+CriticalSystem.KeystoneRules = KeystoneRules
+StatsManager.KeystoneRules   = KeystoneRules
+KeystoneRules.Start()
 
 -- §2.3b: hard-assert that every sub-system is actually wired. A nil
 -- CriticalSystem silently disables crits everywhere and is very hard to

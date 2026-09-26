@@ -9,6 +9,10 @@ local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local StatsManager = require(Modules:WaitForChild("StatsManager"))
 local MobRegistry = require(Modules:WaitForChild("MobRegistry"))  -- CHANGED from MobConfig
 local ElementalSystem = require(Modules:WaitForChild("ElementalSystem"))
+local PlayerDataConfig = require(Modules:WaitForChild("PlayerDataConfig"))
+
+-- §AGX/BAL: StatCaps.Lifesteal (25) was declared but never enforced here.
+local LIFESTEAL_CAP = (PlayerDataConfig.StatCaps.Lifesteal and PlayerDataConfig.StatCaps.Lifesteal.max) or 25
 
 -- HitTracker reference (set after it's created)
 DamageHandler.HitTracker = nil
@@ -110,7 +114,17 @@ function DamageHandler.DamageMob(mob, player, options)
 	humanoid:TakeDamage(finalDamage)
 
 	-- Lifesteal: heal attacker for a percentage of damage dealt
-	local lifesteal = StatsManager.GetBonus(player, "Lifesteal") or 0
+	local lifesteal = (StatsManager.GetBonus(player, "Lifesteal") or 0) + (damageResult.bonusLifesteal or 0)
+	-- §AGX/X11: Clarity Surge (→0) / Shared Grace (×0.5); then the stat cap.
+	local KR = StatsManager.KeystoneRules
+	if KR then
+		lifesteal = KR.ModifyLifesteal(player, lifesteal)
+		-- Clarity Surge: a critical SKILL hit (sourceSkill set by BaseSkills) restores Aether.
+		if damageResult.wasCrit and options.sourceSkill then
+			KR.OnCritSkillHit(player)
+		end
+	end
+	lifesteal = math.min(lifesteal, LIFESTEAL_CAP)  -- §AGX/BAL
 	if lifesteal > 0 and player.Character then
 		local playerHumanoid = player.Character:FindFirstChild("Humanoid")
 		if playerHumanoid and playerHumanoid.Health > 0 then

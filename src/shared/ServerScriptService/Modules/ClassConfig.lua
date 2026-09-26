@@ -68,6 +68,16 @@ end
       innateBonuses     table    — flat BonusManager entries applied at class-active
       statDerivation    table    — derived = base + Σ((PrimaryBase+allocated) × coeff)
 
+    §AGX/BAL (§T1.2-BAL1) — CritDamage rule: NO class scales CritDamage from a
+    primary stat. The only headroom is 1.50× base → 1.80× cap (+0.30×), and
+    gear rolls, accessories (up to +0.5 on one piece), talents (+0.28 total)
+    and Hunter's innate +0.15 already fill it by mid-game, so primary-stat
+    scaling only ever competed for that sliver and double-dipped the stat
+    that already drives Damage (Arcanist MAG ×4) or CritChance (Hunter PRE
+    ×0.65). Arcanist's MAG ×0.001 was worth +0.04× at L60 = +0.5% DPS.
+    Class crit identity lives in CritChance coefficients + innateBonuses
+    (Hunter +10% CritChance, +0.15× CritDamage). Numbers: BALANCE_NUMBERS §Combat.
+
     Projectile shapes — for `ranged = true` classes:
       type = "Pierce"  goes through targets
          maxHits, damageReduction, minDamageFraction, speed, lifetime
@@ -105,7 +115,7 @@ ClassConfig.Classes = {
             Armor             = { MIG = 1.0  },
             Penetration       = { MIG = 0.25 },
             CritChance        = { PRE = 0.22 },
-            CritDamage        = {},                       -- §T1.2/DQ2 — class-base only; balance audit pending
+            CritDamage        = {},                       -- §AGX/BAL: none for every class (T1.2-BAL1, see header)
             CooldownReduction = { RSV = 0.45 },
             StatusResistance  = { RSV = 1.0  },
             ResourceMax       = { RSV = 1.5  },
@@ -153,7 +163,7 @@ ClassConfig.Classes = {
             Armor             = { MIG = 0.3  },
             Penetration       = { MAG = 0.45 },
             CritChance        = { PRE = 0.18 },
-            CritDamage        = { MAG = 0.001 },          -- §T1.2/DQ2 — only caster with crit scaling; balance audit pending
+            CritDamage        = {},                       -- §AGX/BAL: was { MAG = 0.001 } (≈ −0.5% DPS removed, T1.2-BAL1)
             CastTimeReduction = { PRE = 0.35 },           -- §T1.2/DQ1 — caster-only, by design (optional in DerivedStats)
             CooldownReduction = { RSV = 0.55 },
             StatusResistance  = { RSV = 0.8  },
@@ -196,7 +206,7 @@ ClassConfig.Classes = {
             Armor             = { MIG = 0.5  },
             Penetration       = { PRE = 0.4  },
             CritChance        = { PRE = 0.65 },
-            CritDamage        = {},                       -- §T1.2/DQ2 — class-base only; balance audit pending
+            CritDamage        = {},                       -- §AGX/BAL: none for every class (T1.2-BAL1, see header)
             CooldownReduction = { RSV = 0.45 },
             StatusResistance  = { RSV = 0.7  },
             ResourceMax       = { RSV = 1.5  },
@@ -241,7 +251,7 @@ ClassConfig.Classes = {
             Armor             = { MIG = 0.5  },
             Penetration       = { MAG = 0.25 },
             CritChance        = { PRE = 0.18 },
-            CritDamage        = {},                       -- §T1.2/DQ2 — class-base only; balance audit pending
+            CritDamage        = {},                       -- §AGX/BAL: none for every class (T1.2-BAL1, see header)
             CastTimeReduction = { PRE = 0.25 },           -- §T1.2/DQ1 — caster-only (LifeSteward casts heals/cleanses)
             CooldownReduction = { RSV = 0.65 },
             StatusResistance  = { RSV = 1.0  },

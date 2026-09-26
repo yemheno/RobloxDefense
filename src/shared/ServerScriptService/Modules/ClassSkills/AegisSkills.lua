@@ -408,6 +408,11 @@ function AegisSkills.Taunt(player, skill, inputData)
 	local tauntDurationBonus = 0
 	if BaseSkills.StatsManager then
 		tauntDurationBonus = BaseSkills.StatsManager.GetBonus(player, "TauntDuration") or 0
+		-- §AGX/X11: Last Bastion +20% while Determination > 70% (pre-cost value).
+		local KR = BaseSkills.StatsManager.KeystoneRules
+		if KR then
+			tauntDurationBonus = tauntDurationBonus + KR.TauntDurationBonus(player, skill.resourceCost or 0)
+		end
 	end
 	local scaledEffects = skill.effects
 	if tauntDurationBonus ~= 0 then

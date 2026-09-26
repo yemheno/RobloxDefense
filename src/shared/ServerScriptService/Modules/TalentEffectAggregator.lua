@@ -4,7 +4,9 @@
     into BonusManager under the "talent" source.
 
     Keystone rules are stored separately and can be queried by other
-    systems (e.g. DamageSystem checking "DeadeyePassive").
+    systems. §AGX/X11: StatsManager/KeystoneRules is the single caller of
+    HasRule (it caches the function ref, Audit_4.7 §5.4) and holds the rule
+    gameplay; TalentTreeConfig.IMPLEMENTED_RULES lists the live ones.
 
     API
     ═══
@@ -44,7 +46,7 @@ end
 
 -- ── §AGX/X11: unimplemented keystone penalties ─────────────
 -- IMPLEMENTED_RULES is the set of keystone rule names with gameplay code
--- behind them. It is empty today. The canonical table lives in
+-- behind them (§AGX/X11: 9 of 15 as of X11-RULES). The canonical table lives in
 -- TalentTreeConfig (shared, so the "(coming soon)" UI tag derives from
 -- the same set); this is the same table, not a copy — add rule names
 -- there. A node whose rule is NOT implemented has its negative `value`

@@ -147,7 +147,9 @@ N("lb_5_1","Barbed Blood","notable",-3,-28,1,{"lifeblood"},{{stat="Thorns",value
 N("lb_5_2","Natural Plate","notable",-1,-28,1,{"lifeblood"},{{stat="Armor",value=5},{stat="HealthPercent",value=1}},"+5 Armor, +1% Health"),
 N("lb_5_3","Last Supper",  "notable", 1,-28,1,{"lifeblood"},{{primary="VIT",value=2},{stat="HpRegen",value=0.2},{stat="BonusHealth",value=8}},"+2 VIT, +0.2% HP Regen/s, +8 Health"),
 N("lb_5_4","Second Heart", "keystone", 3,-28,1,{"lifeblood"},
-  {{stat="SecondHeart",rule=true},{stat="DamagePercent",value=-12}},
+  -- §AGX/X11: the −12% Damage applies only "while active" (the 4 s regen), so it
+  -- lives in the rule (KeystoneRules), not as a permanent DamagePercent value.
+  {{stat="SecondHeart",rule=true}},
   "Once every 45s, dropping below 35% HP triggers regeneration equal to 8% max HP over 4s. While active, Damage -12%."),
 
 -- ════════════════════════════════════════════════════════════
@@ -499,7 +501,9 @@ N("gr_5_1","Walking Chapel",     "notable",50,-3,1,{"grace"},{{stat="MovementSpe
 N("gr_5_2","Restoration Theory","notable",50,-1,1,{"grace"},{{primary="MAG",value=1},{primary="PRE",value=1},{stat="HealingPower",value=5}},"+1 MAG, +1 PRE, +5 Healing Power"),
 N("gr_5_3","Kindled Hope",      "notable",50, 1,1,{"grace"},{{stat="FlatHpRegen",value=1},{stat="HealingPercent",value=3},{stat="LifeEnergy",value=6}},"+1 HP Regen/s, +3% Healing, +6 Life Energy"),
 N("gr_5_4","Shared Grace",      "keystone",50, 3,1,{"grace"},
-  {{stat="SharedGrace",rule=true},{stat="Lifesteal",value=-50}},
+  -- §AGX/X11: "reduced by 50%" is multiplicative (×0.5, in KeystoneRules). The
+  -- old flat Lifesteal −50 would have zeroed any lifesteal under the 25% cap.
+  {{stat="SharedGrace",rule=true}},
   "Overhealing a target grants 20% of the excess as a 4s heal-over-time. Your Lifesteal is reduced by 50%."),
 
 -- ════════════════════════════════════════════════════════════
@@ -719,9 +723,9 @@ TalentTreeConfig.StartNodeId = "start"
 -- ═══════════════════════════════════════════════════════════
 -- §AGX/X11: KEYSTONE RULE IMPLEMENTATION STATUS
 -- ═══════════════════════════════════════════════════════════
--- No `rule=true` keystone effect has code behind it yet
--- (TalentEffectAggregator.HasRule has no callers), but the keystones'
--- stat PENALTIES were still applied, so 7 of 15 keystones were pure nerfs.
+-- Rule code lives in StatsManager/KeystoneRules (server), the only caller of
+-- TalentEffectAggregator.HasRule. Before 36cd218 the keystones' stat
+-- PENALTIES applied with no rule behind them (7 of 15 were pure nerfs).
 -- Balance call (delegated): until a rule is implemented, its node's
 -- negative `value` effects are skipped by TalentEffectAggregator, and the
 -- node is tagged `unimplemented = true` with a "(coming soon)" suffix on
@@ -732,7 +736,26 @@ TalentTreeConfig.StartNodeId = "start"
 --   IMPLEMENTED_RULES = { Overwhelm = true }
 -- and its penalties + normal description come back automatically.
 -- Shared (client + server) so the UI tag and the server skip can't drift.
-TalentTreeConfig.IMPLEMENTED_RULES = {}
+-- §AGX/X11: (X11-RULES) 9 of 15 implemented. Still "(coming soon)":
+--   ArcSaturation, EyeOfTheStorm — need an AoESize consumer (none exists)
+--   CalmUnderFire — CDR / StatusResistance / AttackSpeed have no consumer
+--   SpellRhythm   — description contradicts itself (attack speed "on the next hit")
+--   PatronSaint, FortuneFavors — need a party-aura (stat sharing) system
+-- Penalty stats restored with their rule: Overwhelm AttackSpeed −6 and
+-- Unyielding Advance MovementSpeed −8. NOTE both stats have no consumer yet
+-- (same for Last Bastion's low-Determination slow), so those prices are
+-- inert until AttackSpeed / MovementSpeed bonuses are wired.
+TalentTreeConfig.IMPLEMENTED_RULES = {
+	Overwhelm         = true,
+	SecondHeart       = true,
+	PerfectForm       = true,
+	UnyieldingAdvance = true,
+	CullTheWeak       = true,
+	ClaritySurge      = true,
+	LastBastion       = true,
+	RelentlessQuarry  = true,
+	SharedGrace       = true,
+}
 
 --- §AGX/X11: true when the node carries a keystone rule with no code yet.
 function TalentTreeConfig.HasUnimplementedRule(node)

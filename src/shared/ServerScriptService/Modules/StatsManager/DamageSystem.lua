@@ -10,6 +10,20 @@ local ElementalSystem = require(Modules:WaitForChild("ElementalSystem"))
 -- SUB-SYSTEM REFERENCES (set by StatsManager)
 DamageSystem.ArmorSystem    = nil
 DamageSystem.CriticalSystem = nil
+DamageSystem.KeystoneRules  = nil  -- §AGX/X11: keystone hooks (set by StatsManager)
+
+-- §AGX/BAL: combat guard caps, resolved once. Penetration (60) was declared in
+-- StatCaps but never enforced; the other two answer TODO §1 [??] items.
+local PENETRATION_CAP      = (Config.StatCaps.Penetration and Config.StatCaps.Penetration.max) or 60
+-- Vulnerability never stacks (strongest application wins, §T2/Z9); the
+-- strongest source is Meteorite at 1.25×. 2.0 leaves 60% headroom for
+-- talents/new skills and bounds the worst hit at 3.24 (crit) × 1.25
+-- (element) × 2.0 = 8.1× instead of 12.2× at the interim 3.0.
+local VULNERABILITY_CAP    = 2.0
+-- ArmorReduction peaks at 25% today (Sundering 5 stacks × 5%). Capping at
+-- 50% (2× headroom) means shred alone can never zero a mob's armor;
+-- Penetration (capped at 60) is the stat that strips the rest.
+local ARMOR_REDUCTION_CAP  = 50
 
 -- §T1.3/B10: single lazy getter. Same shape as ClassManager's per-module
 -- lazy getters; replaces the two divergent inline implementations that
@@ -87,6 +101,14 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 	-- Pipeline per §42.1:
 	-- BaseAttack → ActionMultiplier → PercentDmg → Armor (division) → Crit → Element → Vulnerability → floor
 
+	-- §AGX/X11: keystone modifiers for this hit (Overwhelm, Cull the Weak,
+	-- Second Heart, Relentless Quarry). One call; zeros when none apply.
+	local ksDmgPct, ksPen, ksCrit, ksLifesteal = 0, 0, 0, 0
+	local KR = DamageSystem.KeystoneRules
+	if KR then
+		ksDmgPct, ksPen, ksCrit, ksLifesteal = KR.OutgoingHit(player, targetMob)
+	end
+
 	-- Step 1: Base Attack
 	local baseAttack = DamageSystem.GetBaseDamage(player)
 
@@ -100,14 +122,15 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 	local damage = baseAttack * actionMultiplier
 
 	-- Step 3: Percent Damage bonus
-	local percentDamage = DataManager.GetBonus(player, "DamagePercent") or 0
-	damage = damage * (1 + percentDamage / 100)
+	local percentDamage = (DataManager.GetBonus(player, "DamagePercent") or 0) + ksDmgPct  -- §AGX/X11
+	damage = damage * math.max(0, 1 + percentDamage / 100)
 
 	-- Step 4: Armor Mitigation (division-based)
 	local playerPenetration = 0
 	local isPenetrating = false
 	if DamageSystem.ArmorSystem then
-		playerPenetration = DamageSystem.ArmorSystem.GetPenetration(player)
+		-- §AGX/BAL: StatCaps.Penetration enforced (keystone bonus included).
+		playerPenetration = math.min(DamageSystem.ArmorSystem.GetPenetration(player) + ksPen, PENETRATION_CAP)
 		isPenetrating = playerPenetration > 0
 	end
 
@@ -119,7 +142,8 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 	-- ArmorReduction is now percentage-based (e.g. 30 = 30% reduction)
 	local armorReductionPct = 0
 	if targetMob then
-		armorReductionPct = targetMob:GetAttribute("ArmorReduction") or 0
+		-- §AGX/BAL: TODO §1 [??] ArmorReduction floor → capped (see top).
+		armorReductionPct = math.clamp(targetMob:GetAttribute("ArmorReduction") or 0, 0, ARMOR_REDUCTION_CAP)
 	end
 
 	local effectiveMobArmor = math.max(0, mobArmor * (1 - armorReductionPct / 100) - playerPenetration)
@@ -130,7 +154,7 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 	local wasCrit = false
 	local critProcs = 0
 	if DamageSystem.CriticalSystem then
-		damage, wasCrit, critProcs = DamageSystem.CriticalSystem.ApplyCrit(player, damage)
+		damage, wasCrit, critProcs = DamageSystem.CriticalSystem.ApplyCrit(player, damage, ksCrit)  -- §AGX/X11
 	end
 
 	-- Step 6: Elemental Multiplier
@@ -144,14 +168,12 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 	damage = damage * elementMult
 
 	-- Step 7: Vulnerability multiplier (applied by skill debuffs, e.g. Meteorite)
-	-- §T1P2/Y2: interim runaway clamp. The full max-stacks system (TODO
-	-- §T1P2-STACKS) lands at T2 with the mob-debuff rework; until then this
-	-- ceiling stops a stacking bug or a mis-tuned skill from multiplying
-	-- damage without bound. Current skills set ~1.25×; 3.0 leaves headroom.
+	-- §T1P2/Y2: runaway clamp. §AGX/BAL: 3.0 → VULNERABILITY_CAP (2.0),
+	-- answering TODO §1 [??] "Vulnerability stacking cap" (see top).
 	if targetMob then
 		local vulnerability = targetMob:GetAttribute("Vulnerability") or 0
 		if vulnerability > 0 then
-			damage = damage * math.min(vulnerability, 3.0)
+			damage = damage * math.min(vulnerability, VULNERABILITY_CAP)
 		end
 	end
 
@@ -167,6 +189,7 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 		defenderElement = defenderElement,
 		elementMult     = elementMult,
 		elementLabel    = elementLabel,
+		bonusLifesteal  = ksLifesteal,  -- §AGX/X11: Cull the Weak (read by DamageHandler)
 	}
 end
 
@@ -194,6 +217,11 @@ function DamageSystem.CalculateIncomingDamage(player, incomingDamage, attackerPe
 	-- Step 2: Damage Reduction (percentage)
 	-- Path A: regular DR — capped by StatCaps (max 75%)
 	local damageReduction = DataManager.GetBonus(player, "DamageReduction") or 0
+	-- §AGX/X11: Unyielding Advance / Last Bastion add regular (capped) DR.
+	local KR = DamageSystem.KeystoneRules
+	if KR then
+		damageReduction = damageReduction + KR.IncomingDR(player)
+	end
 	local caps = Config.StatCaps.DamageReduction
 	if caps then
 		damageReduction = math.clamp(damageReduction, caps.min, caps.max)
@@ -209,7 +237,13 @@ function DamageSystem.CalculateIncomingDamage(player, incomingDamage, attackerPe
 	finalDamage = finalDamage * (1 - effectiveDR / 100)
 
 	-- Minimum 1 damage, floored
-	return math.max(1, math.floor(finalDamage))
+	finalDamage = math.max(1, math.floor(finalDamage))
+
+	-- §AGX/X11: Second Heart watches the HP this hit leaves behind.
+	if KR then
+		KR.AfterIncomingDamage(player, finalDamage)
+	end
+	return finalDamage
 end
 
 return DamageSystem

@@ -133,7 +133,10 @@ function PlayerBonusSystem.ApplyWeaponBonuses(player)
 		for _, bonus in ipairs(weaponInstance.bonuses) do
 			local statName = BONUS_STAT_MAPPING[bonus.stat]
 			if statName then
-				weaponBonuses[statName] = (weaponBonuses[statName] or 0) + bonus.value
+				-- §AGX/BAL: gear critDamage rolls are percent (5–40); CritDamage is a
+				-- multiplier (base 1.5, cap 1.8), so one raw roll used to pin the cap.
+				local v = (statName == "CritDamage") and bonus.value / 100 or bonus.value
+				weaponBonuses[statName] = (weaponBonuses[statName] or 0) + v
 			end
 		end
 	end
@@ -176,7 +179,10 @@ function PlayerBonusSystem.ApplyArmorBonuses(player)
 		for _, bonus in ipairs(stats.bonuses) do
 			local statName = BONUS_STAT_MAPPING[bonus.stat]
 			if statName then
-				armorBonuses[statName] = (armorBonuses[statName] or 0) + bonus.value
+				-- §AGX/BAL: gear critDamage rolls are percent (5–40); CritDamage is a
+				-- multiplier (base 1.5, cap 1.8), so one raw roll used to pin the cap.
+				local v = (statName == "CritDamage") and bonus.value / 100 or bonus.value
+				armorBonuses[statName] = (armorBonuses[statName] or 0) + v
 			end
 		end
 	end
