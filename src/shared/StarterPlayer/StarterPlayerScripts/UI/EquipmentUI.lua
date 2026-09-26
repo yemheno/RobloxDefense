@@ -60,6 +60,12 @@ local STAT_LABELS = {
 	bonusHealth      = "Bonus HP",
 	thorns           = "Thorns",
 	statusResistance = "Status Res.",
+	-- §AGX/D-FIX2: rolls that now map to real stats (were shown as raw keys)
+	healingPower     = "Healing Power",
+	healingPercent   = "Healing %",
+	lifeEnergy       = "Life Energy",
+	mana             = "Aether",
+	focus            = "Killer Instinct",
 }
 
 local function StatLabel(stat)

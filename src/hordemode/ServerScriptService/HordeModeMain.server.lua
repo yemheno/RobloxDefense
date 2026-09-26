@@ -248,6 +248,16 @@ GameStateManager.OnReturnToLobby(function()
     if ReturnTeleporter then ReturnTeleporter.TeleportAllToLobby() end
 end)
 
+-- §AGX/D-FIX2: end the run flag on ANY run end, not just the run timer.
+-- A team-wipe TriggerDefeat left hordeRunActive true, so the vote loop
+-- could open a vote and Pause/Resume the horde over the DEFEAT screen
+-- during the ReturnToLobbyDelay. (Not a re-arm — see §T0P2/X13 above.)
+GameStateManager.OnStateChanged(function(newState)
+    if newState == "Defeat" or newState == "Victory" then
+        hordeRunActive = false
+    end
+end)
+
 -- MobSpawner is loaded for shared callbacks but HordeMode uses
 -- HordeModeSpawner instead. Guard against accidental wave events.
 MobSpawner.OnWaveStarted(function(waveNumber)
@@ -462,13 +472,15 @@ local function startHordeLoops()
             voteIndex = voteIndex + 1
             local voteType = (voteIndex % 2 == 1) and "supply" or "threat"
 
-            if VoteManager and not VoteManager.IsVoteActive() then
+            -- §AGX/D-FIX2: only open votes while actually Defending.
+            if VoteManager and not VoteManager.IsVoteActive()
+                and GameStateManager.GetState() == "Defending" then
                 -- ① 2 s heads-up before the freeze
                 NetworkManager.FireAllClients("VotePending", { voteType = voteType, countdown = 2 })
                 task.wait(2)
                 -- §AGX/SEC: the run can end during the heads-up; don't pause
                 -- the horde and open a vote on top of the victory screen.
-                if not hordeRunActive then break end
+                if not hordeRunActive or GameStateManager.GetState() ~= "Defending" then break end  -- §AGX/D-FIX2
 
                 -- ② Pause + start vote
                 pauseStartedAt = os.clock()

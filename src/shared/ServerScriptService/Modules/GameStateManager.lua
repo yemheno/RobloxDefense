@@ -125,6 +125,30 @@ local function getTeleportDataReader()
 	return _TeleportDataReader or nil
 end
 
+-- §AGX/D-FIX2: lazy PlayerDataManager (combat places load it before this
+-- module's gate runs; resolved on first use to avoid a require cycle).
+local _PlayerDataManager
+local function getPlayerDataManager()
+	if _PlayerDataManager == nil then
+		local mod = Modules:FindFirstChild("PlayerDataManager")
+		local ok, result = false, nil
+		if mod then ok, result = pcall(require, mod) end
+		_PlayerDataManager = (ok and type(result) == "table" and result.GetData) and result or false
+	end
+	return _PlayerDataManager or nil
+end
+
+-- §AGX/D-FIX2: a ClientReady that beats the DataStore load used to count
+-- as ready — Horde then opened with no difficulty/level/party class
+-- applied (and ApplyTeleportClass refused once IsInGame()). Ready now
+-- means ReadyGate.IsReady AND the player's data is loaded.
+-- No PlayerDataManager in this place → ReadyGate alone (old behaviour).
+local function isDataReady(player)
+	local pdm = getPlayerDataManager()
+	if not pdm then return true end
+	return pdm.GetData(player) ~= nil
+end
+
 --- (readyCount, expectedCount, missingNames) for the current gate inputs.
 local function gateCounts()
 	local rg = getReadyGate()
@@ -139,7 +163,7 @@ local function gateCounts()
 	for name in pairs(expected) do
 		total += 1
 		local p = Players:FindFirstChild(name)
-		if p and p:IsA("Player") and rg and rg.IsReady(p) then
+		if p and p:IsA("Player") and rg and rg.IsReady(p) and isDataReady(p) then  -- §AGX/D-FIX2
 			ready += 1
 		else
 			table.insert(missing, name)
@@ -183,13 +207,11 @@ end
 local evaluateGate  -- forward-declared: the timeout closure calls it
 
 -- §AGX/D-FIX: S2 — true if any in-server player has loaded data (lazy require: PlayerDataManager is required lazily elsewhere in this file too).
+-- §AGX/D-FIX2: via the shared lazy getter / isDataReady.
 local function anyPresentPlayerDataReady()
-	local mod = Modules:FindFirstChild("PlayerDataManager")
-	if not mod then return false end
-	local ok, pdm = pcall(require, mod)
-	if not ok or not pdm or not pdm.GetAccountData then return false end
+	if not getPlayerDataManager() then return false end
 	for _, p in ipairs(Players:GetPlayers()) do
-		if pdm.GetAccountData(p) ~= nil then return true end
+		if isDataReady(p) then return true end
 	end
 	return false
 end
@@ -597,6 +619,18 @@ function GameStateManager.EnableStartGate(opts)
 	rg.OnReady(function()
 		evaluateGate()
 	end)
+	-- §AGX/D-FIX2: data finishing AFTER ClientReady must re-open the check.
+	-- Deferred so the place's own data-ready chain (PlaceLifecycle extras:
+	-- TeleportDataReader difficulty/party class, Horde level anchor) runs
+	-- before a gate-open can flip the state to Defending.
+	local pdm = getPlayerDataManager()
+	if pdm and pdm.OnPlayerDataReady then
+		pdm.OnPlayerDataReady(function()
+			task.defer(evaluateGate)
+		end)
+	else
+		warn("[GameStateManager] §PB-D3 PlayerDataManager.OnPlayerDataReady missing — gate can't see data-ready")
+	end
 
 	for _, player in ipairs(Players:GetPlayers()) do
 		addRosterFrom(player)

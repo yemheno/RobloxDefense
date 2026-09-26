@@ -140,7 +140,8 @@ ShopConfig.Consumables = {
     -- Buff items
     -- §AGX/X10b: potions, crystals and buffs are sold again — `enabled` is
     -- derived from ConsumableConfig.usable (bottom of file), now true for
-    -- all but swiftness_elixir (no move-speed system yet; stays hidden).
+    -- all of them. §AGX/D-FIX2: swiftness_elixir included — MovementSpeed
+    -- has a reader now (§AGX/STATS), so it's live, not hidden.
     {
         itemId   = "power_scroll",
         tab      = "Consumables",
@@ -280,8 +281,9 @@ ShopConfig.Premium = {
     },
     -- VIP GamePass: social / cosmetic perks only. No XP, drop, Merit,
     -- Essence, revive or stat bonus, ever. The perks are exposed as a
-    -- player attribute ("VIP") for the nameplate / chat tag to read;
-    -- nothing consumes it yet.
+    -- player attribute ("VIP") for the nameplate / chat tag to read.
+    -- §AGX/D-FIX2: consumed by the client VipTag module (chat_tag live;
+    -- nameplate_tag waits on a custom nameplate).
     {
         itemId       = "premium_vip",
         tab          = "Premium",

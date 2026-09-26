@@ -59,7 +59,7 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Normal weapon/armor reroll and refinement still work. (Optional: inject an `error()` mid-reroll; the next reroll is not stuck on "already in progress".)
 
 ## 2e. Keystones and combat balance (`§AGX/X11`, `§AGX/BAL`)
-- [ ] All 5 places boot with KeystoneRules loaded. The Talent UI shows "(coming soon)" on exactly 6 keystones.
+- [ ] All 5 places boot with KeystoneRules loaded. The Talent UI shows "(coming soon)" on exactly 3 keystones (Arc Saturation, Eye of the Storm, Calm Under Fire).
 - [ ] Overwhelm / Cull the Weak: damage differs on full-HP, <70% and <25% mobs; Cull's lifesteal heals.
 - [ ] Second Heart: drop under 35% → 4 heal ticks and lower outgoing damage for 4 s; not again within 45 s.
 - [ ] Perfect Form: stand still 2 s → more crits; one step removes it for 2 s.
@@ -89,6 +89,17 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Cast-time reduction shortens the cast bar and the effect lands when it ends. AoESize gear hits mobs just outside the base radius.
 - [ ] High Status Resistance: GroundSlam stun is visibly shorter (the client stun visual may still run the full length).
 - [ ] Arrive in a run with a party-picked class: switching class right away is allowed (no 30 s cooldown).
+
+## 2h. Second review fixes (`§AGX/D-FIX`, `§AGX/D-FIX2`)
+- [ ] **Paid wipe revive** now actually charges and revives (a getter always returned nil before 7f3e503). Knockdown clears mob slows. Run difficulty follows TeleportData (Nightmare → 1 free revive).
+- [ ] **Healer gear:** a Life Steward weapon with Healing Power / Healing % rolls raises heal numbers; the Equipment screen shows "Healing Power", not a raw key.
+- [ ] **Resource pools:** a Life Energy / Aether / Killer Instinct / Determination roll or talent (e.g. Focused Aether +5) raises the bar's max at once; unequipping lowers it and caps the current value. Check that the bigger bars (up to ~140) feel right.
+- [ ] Horde: wipe just before the 45 s vote → no vote or pause over the DEFEAT screen; Victory → no vote either.
+- [ ] Slow DataStore: the gate waits ("Waiting for party (0/1)…") until data loads; then mobs spawn at the right level and the party class is applied.
+- [ ] Lobby, 2 players in one party, one with Patron Saint: the other gets the aura within 30 studs; players outside a party get nothing.
+- [ ] Keystone penalties now apply: Overwhelm −6% attack speed, Unyielding Advance −8% move speed, Last Bastion's low-Determination slow, Eagle Eye −30% attack speed.
+- [ ] Clarity Surge: an AoE skill crit on a pack gives +4 Aether once per cast.
+- [ ] Inventory Use buttons are blue (secondary), not orange.
 
 ## 3. Teleports and matchmaking (`X4`, `X6`, `X14`, `X15`)
 Studio can't test reserved servers. Check what it can:

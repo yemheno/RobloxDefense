@@ -103,7 +103,7 @@ local function consumableRow(i, item, consDef, useReq)
 			size        = UDim2.fromOffset(ACTION_W, 24),
 		}) or nil,
 		useBtn = canUse and e(Button, {
-			variant     = "primary",
+			variant     = "secondary",  -- §AGX/D-FIX2: D1 — orange is CTA-only; row actions match Equip
 			label       = "Use",
 			width       = ACTION_W,
 			loading     = useReq.pending,

@@ -490,7 +490,7 @@ function ShopManager.PurchaseConsumable(player, itemId, quantity)
         end
         -- §AGX/X10: only consumables with a server-side use handler are
         -- sold (§AGX/X10b: 8 potions/buffs via ConsumableEffects, plus
-        -- respec_scroll; swiftness is still off). ShopConfig derives `enabled` from
+        -- respec_scroll; §AGX/D-FIX2: swiftness is live too). ShopConfig derives `enabled` from
         -- ConsumableConfig.usable; both are checked so a hand-set
         -- `enabled = true` on an unusable item still can't be bought. This
         -- covers the global shop AND the NPC ShopHandler path, which both
@@ -675,8 +675,8 @@ function ShopManager.Init()
 
     -- §AGX/D7: paid rotation refresh. Reply = NotifyService.Inline (the
     -- client's useRequest("ShopRefresh")), then fresh state either way so
-    -- a stale client catches up. Manifest line is added by the orchestrator;
-    -- GetEvent creates the remote here regardless.
+    -- a stale client catches up. (§AGX/D-FIX2: declared in NetworkManager's
+    -- manifest.) GetEvent creates the remote here regardless.
     net.GetEvent("ShopRefresh")
     net.OnClientEvent("ShopRefresh", function(player, payload)
         if type(payload) ~= "table" or type(payload.tab) ~= "string" then return end

@@ -111,7 +111,12 @@ end
 local _PartyManager = nil
 local function getPartyManager()
 	if _PartyManager then return _PartyManager end
-	local mod = Modules:FindFirstChild("PartyManager")
+	-- §AGX/D-FIX2: PartyManager lives in ServerScriptService.Lobby.Modules
+	-- (lobby.project.json / LobbyMain), not the shared Modules folder, so
+	-- the old lookup never found it and the Lobby branch was dead.
+	local lobby = game:GetService("ServerScriptService"):FindFirstChild("Lobby")
+	local lobbyModules = lobby and lobby:FindFirstChild("Modules")
+	local mod = lobbyModules and lobbyModules:FindFirstChild("PartyManager")
 	if not mod then return nil end
 	local ok, pm = pcall(require, mod)
 	if ok and pm and pm.GetPartyId then _PartyManager = pm end

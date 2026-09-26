@@ -56,7 +56,7 @@ HunterArmor.Armors = {
 			{ stat = "lifesteal",        min = 1, max = 4 },
 
 			-- Tier X
-			{ stat = "determination",    min = 3, max = 10 },
+			{ stat = "focus",            min = 3, max = 10 },  -- §AGX/D-FIX2: was determination (Aegis-only resource; dead on Hunter)
 
 			-- Tier XI
 			{ stat = "aoeSize",          min = 2, max = 8 },
@@ -115,7 +115,7 @@ HunterArmor.Armors = {
 			{ stat = "damageReduction",  min = 1, max = 4 },
 
 			-- Tier X
-			{ stat = "determination",    min = 2, max = 8 },
+			{ stat = "focus",            min = 2, max = 8 },   -- §AGX/D-FIX2: was determination
 
 			-- Tier XI
 			{ stat = "aoeSize",          min = 2, max = 8 },

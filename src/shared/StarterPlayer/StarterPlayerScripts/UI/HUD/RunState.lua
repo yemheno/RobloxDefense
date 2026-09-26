@@ -32,6 +32,7 @@ local Players = game:GetService("Players")
 local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
 local NetworkManager = require(PlayerScripts:WaitForChild("Modules"):WaitForChild("NetworkManager"))
 local Notify         = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("Notify"))
+local Theme          = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Common"):WaitForChild("Theme"))  -- §AGX/D-FIX2
 local Store          = require(script.Parent:WaitForChild("Store"))
 
 local RunState = {}
@@ -65,7 +66,7 @@ local function refreshGate()
 	if waiting then
 		Notify.banner(string.format("Waiting for party (%d/%d)…", tonumber(g.ready) or 0, tonumber(g.expected) or 0), {
 			key = "partyGate", priority = "runState", sticky = true,
-			color = Color3.fromRGB(255, 200, 90),
+			color = Theme.Roles.state.warning,  -- §AGX/D-FIX2: D1 — Theme role, not a literal amber
 		})
 	else
 		Notify.clearBanner("partyGate")

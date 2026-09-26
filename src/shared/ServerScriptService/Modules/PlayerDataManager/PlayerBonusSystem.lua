@@ -102,11 +102,24 @@ local BONUS_STAT_MAPPING = {
 	lifesteal = "Lifesteal",
 	cooldownReduction = "CooldownReduction",
 	determination = "Determination",
-	-- §T0P2/X23: rage/mana/focus rows deleted — pre-rework resource
-	-- names with no matching key in PlayerDataConfig.BonusStats (the
-	-- current resources are Determination/Aether/KillerInstinct/
-	-- LifeEnergy). No registry rolls them; if one ever had, BonusManager
-	-- would have warn-rejected the write at runtime.
+	-- §T0P2/X23: rage row deleted (pre-rework resource name).
+	-- §AGX/D-FIX2: the X23 note claimed no registry rolls mana/focus — the
+	-- Arcanist/Hunter weapon pools do, and LifeSteward gear rolls
+	-- lifeEnergy, so those rolls were silently dropped. Pre-rework names
+	-- map onto the current class resource (all flat max-pool points,
+	-- same unit as the "+N Aether/Killer Instinct" talent nodes);
+	-- ResourceManager adds the class's own key to its effective max.
+	mana       = "Aether",          -- Arcanist weapon ("Bonus Mana")
+	focus      = "KillerInstinct",  -- Hunter weapon ("Bonus Focus")
+	lifeEnergy = "LifeEnergy",      -- LifeSteward weapon + armor
+	-- §AGX/D-FIX2: healer + resist rolls had no row, so LifeSteward's top
+	-- weapon/armor stats did nothing. Units already match the readers:
+	-- HealingPower flat (HealingSystem.GetBaseHealing), HealingPercent
+	-- percent points (/100 in CalculateHeal), StatusResistance percent
+	-- points (StatCaps 0–60, MobAI reads GetTotalStat).
+	healingPower     = "HealingPower",
+	healingPercent   = "HealingPercent",
+	statusResistance = "StatusResistance",
 	tauntDuration = "TauntDuration",
 	bonusHealth = "BonusHealth",
 	damageReduction = "DamageReduction",

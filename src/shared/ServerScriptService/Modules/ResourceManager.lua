@@ -73,19 +73,45 @@ local ClassBehaviors = {}   -- { [className] = behaviorModule }
 
 -- Lazy reference for bonus stats (avoids circular require at load)
 local _PlayerDataManager = nil
-local function getResourceMaxBonus(player)
+
+-- §AGX/D-FIX2: per-class resource bonus key in PlayerDataConfig.BonusStats
+-- (Determination / Aether / KillerInstinct / LifeEnergy). Talent nodes
+-- ("+5 Aether") and gear rolls write these, but nothing read them, so
+-- every "+N <resource>" was void. Derived from the behavior's
+-- CONFIG.ResourceName minus spaces ("Life Energy" → "LifeEnergy"),
+-- cached per class. Unknown keys just read 0 via GetBonus.
+local _resourceBonusKey = {}  -- { [className] = bonusKey | false }
+local function resourceBonusKey(className)
+	if not className then return false end
+	local key = _resourceBonusKey[className]
+	if key == nil then
+		local behavior = ClassBehaviors[className]
+		if not behavior then return false end  -- not loaded yet: don't cache
+		local name = behavior.CONFIG and behavior.CONFIG.ResourceName
+		key = (type(name) == "string") and (name:gsub("%s", "")) or false
+		_resourceBonusKey[className] = key
+	end
+	return key
+end
+
+local function getResourceMaxBonus(player, className)
 	if not _PlayerDataManager then
 		local mod = Modules:FindFirstChild("PlayerDataManager")
 		if mod then _PlayerDataManager = require(mod) end
 	end
 	if _PlayerDataManager then
-		return _PlayerDataManager.GetBonus(player, "ResourceMax") or 0
+		local bonus = _PlayerDataManager.GetBonus(player, "ResourceMax") or 0
+		local key = resourceBonusKey(className)
+		if key then
+			bonus += _PlayerDataManager.GetBonus(player, key) or 0
+		end
+		return bonus
 	end
 	return 0
 end
 
 local function getEffectiveMax(player, data)
-	return data.max + getResourceMaxBonus(player)
+	return data.max + getResourceMaxBonus(player, data.className)
 end
 
 -- §T1.4/Y4: zero-regen fallback for a behavior that fails to load. Keeps
@@ -173,6 +199,24 @@ function ResourceManager.Init()
 				ResourceManager.OnHitReceived(player, hitData)
 			end)
 		end
+	end
+
+	-- §AGX/D-FIX2: equipping gear / allocating a "+N <resource>" talent
+	-- changes the effective max; push it now (and clamp current down) so a
+	-- full, zero-regen pool doesn't show a stale max until the next hit.
+	local bmMod = Modules:FindFirstChild("BonusManager")
+	local okBM, BonusManager = false, nil
+	if bmMod then okBM, BonusManager = pcall(require, bmMod) end
+	if okBM and BonusManager and BonusManager.OnChanged then
+		BonusManager.OnChanged(function(player, changed)
+			local data = playerResources[player]
+			if not data then return end
+			local key = resourceBonusKey(data.className)
+			if changed.ResourceMax == nil and not (key and changed[key] ~= nil) then return end
+			local effectiveMax = getEffectiveMax(player, data)
+			if data.current > effectiveMax then data.current = effectiveMax end
+			ResourceManager.NotifyClient(player)
+		end)
 	end
 
 	-- §2.7a: fixed-tick regen scheduler.

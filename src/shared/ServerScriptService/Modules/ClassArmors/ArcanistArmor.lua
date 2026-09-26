@@ -50,7 +50,7 @@ ArcanistArmor.Armors = {
 			{ stat = "flatAttack",        min = 3, max = 12 },
 
 			-- Tier VIII
-			{ stat = "determination",     min = 3, max = 10 },
+			{ stat = "mana",              min = 3, max = 10 },  -- §AGX/D-FIX2: was determination (Aegis-only resource; dead on Arcanist)
 
 			-- Tier IX
 			{ stat = "aoeSize",           min = 3, max = 12 },
@@ -115,7 +115,7 @@ ArcanistArmor.Armors = {
 			{ stat = "lifesteal",         min = 2, max = 6 },
 
 			-- Tier X
-			{ stat = "determination",     min = 4, max = 12 },
+			{ stat = "mana",              min = 4, max = 12 },  -- §AGX/D-FIX2: was determination
 
 			-- Tier XI
 			{ stat = "thorns",            min = 2, max = 8 },
