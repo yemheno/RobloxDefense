@@ -474,7 +474,7 @@ Source: `ClassSkills/<Class>Skills.lua` (verified at `24c4d7e`). Ultimates (slot
 | 1 | Shield Boomerang | 8 res | 6s | 0s | 1.0× out / 0.7× return | Rect 25×6 | Travel 0.4s, return delay 0.1s |
 | 2 | Taunt | 20 res | 12s | 0.5s | 0.45× | Circle r=12 | Pull (str=20, r=12) + Taunt (r=25, 5s) |
 | 3 | Sundering Strikes | 16 res | 6s | 0.3s | 0.35× | Cone r=10, 120° | DoT: 0.1× dmg/tick, 1s interval, 6s, max 5 stacks. ArmorReduction: -5%/stack, 6s, max 5 |
-| 4 | **Battle Beast** ★ | ALL (min **100**) | 75s | 1.0s | 0 | — | DR% = R/(R+100)×100. Allies get 70% of self DR. 6s. Ally cone: r=20, 120°. Unlock lv30 |
+| 4 | **Battle Beast** ★ | ALL (min **100**) | 75s | 1.0s | 0 | — | DR% = R/(R+100)×100. Allies in the cone get **100% DR** in code (70% of self DR is the documented intent; open question §AEGIS-BB-ALLY). 6s. Ally cone: r=20, 120°. Unlock lv30 |
 | 5 | Rush (Dash) | 8 res | 5s | 0s | — | — | Distance=18, duration=0.25s, unstoppable=true |
 
 #### Arcanist Skills
@@ -482,9 +482,9 @@ Source: `ClassSkills/<Class>Skills.lua` (verified at `24c4d7e`). Ultimates (slot
 | Slot | Skill | Cost | CD | Cast | Damage Mult | Shape | Notes |
 |---|---|---|---|---|---|---|---|
 | 1 | Arcane Beam | 12 res | 4s | 0.3s | 1.2× | Rect 40×4 | Line/laser |
-| 2 | Frost Bind | 20 res | 12s | 0.6s | 0.5× | Circle r=14 | Mouse-targeted (maxRange=40). Slow -50% 3s. DoT 0.15×/tick 1s for 3s. Element: Water |
+| 2 | Frost Bind | 20 res | 12s | 0.6s | 0.5× | Circle r=14 | Forward cast (lands ahead of the caster, §LD-SK1). Slow -50% 3s. DoT 0.15×/tick 1s for 3s. Element: Water |
 | 3 | Arcane Surge | 30 res | 16s | 2.0s | 3.0× | Cone r=30, 90° | Knockback str=30. Element: Fire. Full channel required |
-| 4 | **Meteorite** ★ | ALL (min **100**) | 75s | 1.5s | base 1.0× | Circle r=20 | Mouse-targeted (maxRange=50). Two hits (Fire+Earth). hitMult = base × (1 + R/100). Vulnerability 1.25× for 3s. Unlock lv30 |
+| 4 | **Meteorite** ★ | ALL (min **100**) | 75s | 1.5s | base 1.0× | Circle r=20 | Forward cast (§LD-SK1). Two hits (Fire+Earth). hitMult = base × (1 + R/100). Vulnerability 1.25× for 3s. Unlock lv30 |
 | 5 | Space Jump (Dash) | 10 res | 6s | 0s | — | — | Distance=25, duration=0.15s, unstoppable=false |
 
 #### Hunter Skills
@@ -493,7 +493,7 @@ Source: `ClassSkills/<Class>Skills.lua` (verified at `24c4d7e`). Ultimates (slot
 |---|---|---|---|---|---|---|---|
 | 1 | Swift Arrow | 8 res | 3s | 0s | 1.2× | Pierce maxHits=3, -20%/target | Instant |
 | 2 | Barrage | 16 res | 8s | 0s | 0.5× per arrow | Rect 50×3 | 5 arrows, 0.12s delay. Successive hit scaling: +0.25× per hit (1.0→1.25→1.50→1.75→2.0) |
-| 3 | Rain of Arrows | 22 res | 14s | 1.2s | 0.8× per wave | Rect 30×12 | Mouse-targeted (maxRange=50). 2 waves, 0.25s delay. Element: Wood |
+| 3 | Rain of Arrows | 22 res | 14s | 1.2s | 0.8× per wave | Rect 30×12 | Forward cast (§LD-SK1). 2 waves, 0.25s delay. Element: Wood |
 | 4 | **Eagle Eye** ★ | ALL (min **100**) | 75s | 0s | 0 | — | CritChance bonus = R × 0.5. -30% AttackSpeed. 6s. Unlock lv30 |
 | 5 | Fast Steps (Dash) | 8 res | 5s | 0s | — | — | Distance=22, duration=0.2s, unstoppable=false |
 

@@ -372,7 +372,7 @@ function HunterSkills.BarrageExec(player, skill, inputData)
 
 	local arrowCount = skill.arrowCount or 5
 	local arrowDelay = skill.arrowDelay or 0.12
-	local scaling    = skill.successiveHitScaling or 0.3
+	local scaling    = skill.successiveHitScaling or 0.25  -- §AGX/DOCS: fallback matches config
 
 	-- Track how many times each mob has been hit (for scaling)
 	local hitTracker = {}   -- { [mob] = hitsSoFar }
@@ -470,7 +470,7 @@ function HunterSkills.EagleEyeExec(player, skill, inputData)
 	local resourceUsed = (inputData and inputData.resourceUsed) or skill.minimumResource
 
 	local critBonus    = resourceUsed * (skill.critPerResource or 0.5)
-	local atkPenalty   = skill.attackSpeedPenalty or 40
+	local atkPenalty   = skill.attackSpeedPenalty or 30  -- §AGX/DOCS: fallback matches config
 	local dur          = skill.buffDuration or 6
 
 	-- §T2/Z6: no telemetry print (log spam).
