@@ -93,6 +93,7 @@ local EVENTS = {
     GetStats               = { rateLimit = nil,  readyGated = false },
     RequestCharacterStatus = { rateLimit = nil,  readyGated = false },
     CharacterCreationComplete  = { rateLimit = nil, readyGated = false },
+    UseAppearanceChange    = { rateLimit = 1,    readyGated = false }, -- §AGX/X18b: menu "Change appearance"; one tap spends a free token
     RequestClassSwitch     = { rateLimit = nil,  readyGated = false },
     AllocateStat           = { rateLimit = nil,  readyGated = false },
 

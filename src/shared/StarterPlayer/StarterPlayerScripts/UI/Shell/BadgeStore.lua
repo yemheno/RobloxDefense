@@ -25,6 +25,9 @@
         achievements AchievementClient.OnUnlocked -> +1; cleared when the
                      achievements entry opens (Registry clearBadgeOnOpen)
         party        PartyInvite (Lobby) -> 1; PartyUpdate or 30 s -> 0
+        appearance   §AGX/X18b: LocalPlayer attribute AppearanceChangesAvailable
+                     (server: free Veteran token + paid banked + unused grant);
+                     not in Combat, where the entry is locked
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -184,6 +187,16 @@ function BadgeStore.init(place)
 			end)
 		end
 	end)
+
+	-- appearance (§AGX/X18b): the server keeps the attribute current
+	if place ~= "Combat" then
+		local lp = Players.LocalPlayer
+		local function syncAppearance()
+			BadgeStore.set("appearance", tonumber(lp:GetAttribute("AppearanceChangesAvailable")) or 0)
+		end
+		syncAppearance()
+		lp:GetAttributeChangedSignal("AppearanceChangesAvailable"):Connect(syncAppearance)
+	end
 
 	-- clear-on-open (achievements)
 	local stackMod = script.Parent:FindFirstChild("PanelStack")

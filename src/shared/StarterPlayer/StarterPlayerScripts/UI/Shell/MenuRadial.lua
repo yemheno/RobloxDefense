@@ -4,7 +4,7 @@
     shell-spec §4.5, B6). Opened by MenuSurface: open("menuRadial", { place }).
 
     Stage 1: the 6 groups clockwise from 12 o'clock (Registry.Groups order).
-    Stage 2: the chosen group's entries (up to 6). A group with ONE entry
+    Stage 2: the chosen group's entries (up to 7, §AGX/X18b). A group with ONE entry
              (Play/Exit, Store, System) runs it straight from stage 1.
     Geometry: EmoteWheel.wheelMetrics(viewport, { shortFrac 0.62, min 320,
               max 560 }) in SCREEN px (like the emote wheel), converted to
@@ -139,7 +139,7 @@ local function MenuRadial(props)
 	local getBadge = Badge.useBadges()
 	local entryCtx = Model.useEntry()
 	local place = Model.resolvePlace(props.place, entryCtx)
-	local groups = React.useMemo(function() return Model.groups(place) end, { place })
+	local groups = Model.useGroups(place)  -- §AGX/X18b: re-reads on gate changes
 	local stage, setStage = React.useState(nil)   -- nil = groups, else a group id
 	local hi, setHi = React.useState(1)
 
@@ -153,7 +153,9 @@ local function MenuRadial(props)
 	local wedges = {}
 	if stageGroup then
 		for _, it in ipairs(stageGroup.items) do
-			if #wedges >= 6 then break end
+			-- §AGX/X18b: 7 (Character gained "Change appearance"); the ring
+			-- geometry below spaces any count, 7 x btn (26 % of the wheel) fits.
+			if #wedges >= 7 then break end
 			wedges[#wedges + 1] = {
 				id = it.id, label = it.label, icon = it.icon, glyph = it.glyph,
 				locked = not it.available,

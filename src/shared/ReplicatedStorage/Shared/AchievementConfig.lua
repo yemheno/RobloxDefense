@@ -5,6 +5,9 @@
     and client (AchievementsUI) can require it.
 
     TIERED FORMAT — each achievement has exactly 10 unlock tiers.
+    §AGX/X18b exception: a ONE-SHOT achievement lists a single tier
+    (tiers = { N }, one reward list). Manager and UI both use #ach.tiers,
+    so it shows "Lv 0 / 1" → "MAX" and counts as 1 in TotalTiers.
 
     Achievement table fields:
       id        string   Unique snake_case identifier
@@ -16,8 +19,12 @@
       stat      string?  Key in the stats table to check (e.g. "totalKills")
       statFn    fn?      function(stats) → number  (for nested / computed stats)
       tiers     {number} Threshold per tier level; always exactly 10 entries
+                          (one-shot achievements: exactly 1 entry, §AGX/X18b)
       rewards   {{type,amount}[]}  One reward list per tier.
-                Supported types: "Merits", "Essence", "RespecToken"
+                Supported types: "Merits", "Essence", "RespecToken",
+                "AppearanceChange" (§AGX/X18b: stores N free appearance
+                changes in CharacterData.freeAppearanceTokens; spent from
+                the menu, never auto-opens the creation screen)
 
     Exactly ONE of `stat` or `statFn` must be provided.
 
@@ -33,6 +40,7 @@
       weaponLevelMax
       talentNodesAllocated
       capMasteryKills { cap50, cap100, cap150, cap200 }
+      accountLevel    (§AGX/X18b: player account level; set on load + level-up)
 
     Boss medal mob IDs (update when bosses are added to MobRegistry):
       "iron_warden"        — Tier 1 boss, designed for ~level 50 players
@@ -459,6 +467,22 @@ AchievementConfig.Achievements = {
 			{ {"Merits", 22000},  {"Essence", 25} },
 			{ {"Merits", 50000},  {"Essence", 50},  {"RespecToken", 1} },
 			{ {"Merits", 100000}, {"Essence", 90},  {"RespecToken", 1} },
+		},
+	},
+
+	--[[  ACCOUNT LEVEL 50  (§AGX/X18b: one-shot, single tier)  ]]
+	-- Pablo: the first appearance change after creation is earned here;
+	-- every later change is paid (MonetizationService, BALANCE_NUMBERS §48).
+	{
+		id       = "veteran",
+		name     = "Veteran",
+		desc     = "Reach account level 50. Earns one free appearance change.",
+		icon     = "🎖",
+		category = "Dedication",
+		stat     = "accountLevel",
+		tiers    = { 50 },
+		rewards  = {
+			{ {"AppearanceChange", 1} },
 		},
 	},
 

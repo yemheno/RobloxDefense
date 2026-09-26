@@ -14,6 +14,12 @@
       • AchievementManager.OnWeaponLevelUp(player, newLevel)  ← WeaponXPSystem
       • AchievementManager.OnTalentAllocated(player)          ← TalentManager
 
+    Attribute hook (§AGX/X18b):
+      • player "Level" attribute → stats.accountLevel (+ Evaluate). Every
+        level write goes through PlayerDataManager.SetAccountData, which
+        sets that attribute, so natural level-ups and admin SetLevel both
+        land here without touching PlayerDataManager.
+
     Stats are merged into player save data under:
       data.Account.Achievements = { stats = {...}, unlocked = {...} }
 
@@ -45,6 +51,21 @@ local function getCurrencyManager()
     end
     return CurrencyManager
 end
+
+-- §AGX/X18b: lazy CharacterManager ref for the "AppearanceChange" reward.
+local _CharacterManager = nil
+local function getCharacterManager()
+    if _CharacterManager == nil then
+        local mod = Modules:FindFirstChild("CharacterManager")
+        local ok, cm = false, nil
+        if mod then ok, cm = pcall(require, mod) end
+        _CharacterManager = (ok and type(cm) == "table") and cm or false
+    end
+    return _CharacterManager or nil
+end
+
+-- §AGX/X18b: per-player "Level" attribute connection (accountLevel stat).
+local levelConns = {} -- [player] = RBXScriptConnection
 
 local _InventoryManager = nil
 local function getInventoryManager()
@@ -120,6 +141,8 @@ local function DefaultStats()
         talentNodesAllocated = 0,
         -- Cap mastery kills (gated by player level at time of boss kill)
         capMasteryKills   = { cap50 = 0, cap100 = 0, cap150 = 0, cap200 = 0 },
+        -- §AGX/X18b: account level mirror (set on load + every level-up)
+        accountLevel      = 0,
     }
 end
 
@@ -315,6 +338,15 @@ function AchievementManager.SetupPlayer(player)
             unlocked = saved and (saved.unlocked or {}) or {},
         }
 
+        -- §AGX/X18b: account level → stats.accountLevel, now and on every
+        -- level-up. Players already at/above a threshold (e.g. Veteran, 50)
+        -- unlock via the Evaluate at the end of this setup.
+        playerCache[player].stats.accountLevel = tonumber(account.Level) or 0
+        if levelConns[player] then levelConns[player]:Disconnect() end
+        levelConns[player] = player:GetAttributeChangedSignal("Level"):Connect(function()
+            AchievementManager.OnAccountLevelChanged(player, player:GetAttribute("Level"))
+        end)
+
         -- ── Migrate legacy unlocked format ─────────────────────────────
         -- Old: unlocked[id] = timestamp (>=1_700_000_000) or true
         -- New: unlocked[id] = tierNumber (1..10)
@@ -329,6 +361,10 @@ function AchievementManager.SetupPlayer(player)
             AchievementManager.PersistNow(player)
         end
 
+        -- §AGX/X18b: login catch-up (accountLevel is only known here).
+        AchievementManager.Evaluate(player)
+        AchievementManager.PersistNow(player)
+
         print("[AchievementManager] Loaded data for", player.Name,
             "| Kills:", playerCache[player].stats.totalKills,
             "| Unlocked:", (function()
@@ -340,6 +376,10 @@ function AchievementManager.SetupPlayer(player)
 end
 
 function AchievementManager.SaveAndCleanup(player)
+    if levelConns[player] then  -- §AGX/X18b
+        levelConns[player]:Disconnect()
+        levelConns[player] = nil
+    end
     local pdata = playerCache[player]
     if not pdata then return end
     if dirtyPlayers[player] then
@@ -509,6 +549,24 @@ function AchievementManager.OnWeaponLevelUp(player, newLevel)
     end
 end
 
+-- ═══════════════════════════════════════════════════════════
+-- EVENT HOOKS — ACCOUNT LEVEL  (§AGX/X18b)
+-- ═══════════════════════════════════════════════════════════
+
+--- Fired by the player's "Level" attribute (set by
+--- PlayerDataManager.SetAccountData on every level write). Keeps the
+--- highest level seen, so an admin level-down never lowers the stat.
+function AchievementManager.OnAccountLevelChanged(player, newLevel)
+    local pdata = playerCache[player]
+    newLevel = tonumber(newLevel)
+    if not pdata or not newLevel then return end
+    if newLevel > (pdata.stats.accountLevel or 0) then
+        pdata.stats.accountLevel = newLevel
+        AchievementManager.Evaluate(player)
+        AchievementManager.PersistNow(player)
+    end
+end
+
 --- Called by TalentManager.AllocateNode after each successful allocation.
 function AchievementManager.OnTalentAllocated(player)
     local pdata = playerCache[player]
@@ -572,6 +630,27 @@ function AchievementManager.Unlock(player, ach, tier)
                 -- inventory items instead.
                 getInventoryManager().AddItem(player, "respec_scroll", amount)
                 table.insert(rewardSummary, amount .. " Respec Scroll" .. (amount > 1 and "s" or ""))
+            elseif rtype == "AppearanceChange" then
+                -- §AGX/X18b: STORE a free token (CharacterData.freeAppearanceTokens);
+                -- never auto-open the creation screen. Spent from the menu.
+                local cm = getCharacterManager()
+                local stored = false
+                if cm and cm.AddFreeAppearanceToken then
+                    stored = cm.AddFreeAppearanceToken(player, amount, "achievement:" .. ach.id) == true
+                end
+                if not stored and data and type(data.Account) == "table" then
+                    local cd = data.Account.CharacterData
+                    if type(cd) ~= "table" then
+                        cd = { isCreated = false }
+                        data.Account.CharacterData = cd
+                    end
+                    local cur = type(cd.freeAppearanceTokens) == "number" and cd.freeAppearanceTokens or 0
+                    cd.freeAppearanceTokens = cur + amount
+                    stored = true
+                end
+                if stored then
+                    table.insert(rewardSummary, amount .. " Free Appearance Change" .. (amount > 1 and "s" or ""))
+                end
             end
         end
     end
@@ -587,7 +666,7 @@ function AchievementManager.Unlock(player, ach, tier)
         rewards  = rewardSummary,
     })
 
-    print("[AchievementManager]", player.Name, "→", ach.name, "Tier", tier .. "/10",
+    print("[AchievementManager]", player.Name, "→", ach.name, "Tier", tier .. "/" .. #ach.tiers,  -- §AGX/X18b
         #rewardSummary > 0 and ("Rewards: " .. table.concat(rewardSummary, ", ")) or "")
 
     isUnlocking[player] = nil

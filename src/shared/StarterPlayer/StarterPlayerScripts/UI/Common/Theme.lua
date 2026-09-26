@@ -392,6 +392,7 @@ Theme.Glyphs = {
 	wardrobe = "👕", inventory = "🎒", achievements = "🏆", dailyLogin = "🎁",
 	leaderboard = "🏅", social = "👥", shop = "🛒", settings = "⚙️",
 	play = "▶", leave = "🚪", emote = "👋",
+	appearance = "🪞",  -- §AGX/X18b: menu "Change appearance"
 }
 
 --- Convenience: icon id or nil when still a placeholder (lets callers

@@ -117,7 +117,7 @@ local function MenuSurface(props)
 	local state = Model.useStack()
 	local getBadge = Badge.useBadges()
 	local place = Model.resolvePlace(props.place, nil)
-	local groups = React.useMemo(function() return Model.groups(place) end, { place })
+	local groups = Model.useGroups(place)  -- §AGX/X18b: re-reads on gate changes
 
 	-- MenuToggle (M / DPadDown), bound while mounted.
 	local placeRef = React.useRef(place)

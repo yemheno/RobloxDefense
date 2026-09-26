@@ -1367,6 +1367,7 @@ All nodes cost **1** point. Start node costs **0** (auto-allocated).
 |---|---|---|
 | Relentless | 100 / 1K / 10K / 100K / 500K | hitsDelivered |
 | Punching Bag | 200 / 1K / 5K / 25K / 100K | hitsReceived |
+| Veteran (one-shot, §AGX/X18b) | 50 | accountLevel — reward: 1 free appearance change (§48) |
 
 Rewards range from 25 Merits (low tiers) to 100K Merits + 500-600 Essence + 2 RespecTokens (max tiers).
 
@@ -2094,7 +2095,7 @@ by any hot code path.
 Gameplay currency (Merits, Essence) is **never sold for Robux**, and nothing bought with Robux may turn into currency or power. Refine, reroll and tier-up stay earn-only, and so are not paid random items. Robux buys only:
 
 - cosmetics (no stats),
-- appearance changes (`CharacterManager.GrantAppearanceChange`, §AGX/X18),
+- appearance changes (`CharacterManager.GrantAppearanceChange`, §AGX/X18) — but only **after** the one free change earned at level 50 (see below, §AGX/X18b),
 - non-power convenience or social perks.
 
 Things that are **not** allowed for Robux, even though they look like convenience:
@@ -2115,13 +2116,26 @@ Every entry is `enabled = false`, with `devProductId = 0` / `gamePassId = 0`, un
 
 | itemId | Kind | Robux | Grants | Purchase guard |
 |---|---|---|---|---|
-| `premium_appearance_change` | DevProduct | **49** | 1 appearance change (banked, then applied via `GrantAppearanceChange`) | Character must exist; no unused change (flag or banked token) |
+| `premium_appearance_change` | DevProduct | **49** | 1 appearance change (banked, then applied via `GrantAppearanceChange`) | Character must exist; no unused change (flag, banked token or free Veteran token, §AGX/X18b) |
 | `premium_bundle_vanguard` | DevProduct | **99** | `helm_aegis` + `dark_knight` | Not all items owned. **Blocked today:** both are in the Merit/Essence Cosmetics tab |
 | `premium_bundle_arcanum` | DevProduct | **99** | `circlet_arcanist` + `shadow_robes` | Same, blocked for the same reason |
 | `premium_bundle_wildwood` | DevProduct | **99** | `mask_hunter` + `forest_ranger` | Same, blocked for the same reason |
 | `premium_vip` | GamePass | **199** | `VIP` player attribute (nameplate + chat tag; nothing reads it yet) | Not already owned |
 
 The bundles reference the only non-starter cosmetics that exist (all §DISC/D7 placeholders). Before enabling them, either replace them with Robux-exclusive cosmetics or take those items out of the Merit/Essence Cosmetics tab.
+
+### Appearance changes: one free at level 50, then paid (§AGX/X18b)
+
+Pablo: *"You can create some random character at the beginning, but the second change is definitely a decision. One cosmetic change at level 50 with an achievement, then paid."*
+
+| Step | Rule | Code |
+|---|---|---|
+| Creation | Free, once (first login) | `CharacterManager` / `CharacterCreation` |
+| 1st change | **Free**: one-shot achievement **Veteran** (`veteran`, Dedication) at **account level 50** rewards `AppearanceChange ×1` | `AchievementConfig` (single tier `{ 50 }`), `AchievementManager` (`accountLevel` stat from the `Level` attribute; players already ≥ 50 get it on next login) |
+| Storage | The free change is **stored**, not auto-opened: `Account.CharacterData.freeAppearanceTokens` (number, missing = 0) | `CharacterManager.AddFreeAppearanceToken` |
+| Spending | Menu → Character → **Change appearance** fires `UseAppearanceChange` (1/s): an unused unlocked change reopens the screen for free; else one free token → `GrantAppearanceChange` → creation screen; the §AGX/X18 submit consumes it | `CharacterManager.UseAppearanceChange` |
+| Later changes | **Paid** (`premium_appearance_change`, 49 R$). Can't be bought while a free token is unspent | `MonetizationService.canBuy` |
+| Client | Attribute `AppearanceChangesAvailable` = free + paid banked + 1 if a granted change is still unused. Menu entry badge = that count; locked "Unlocks at level 50" below 50, else "No changes left". Not available in Combat | `Registry` `appearance`, `BadgeStore` `appearance` |
 
 ### Receipts
 

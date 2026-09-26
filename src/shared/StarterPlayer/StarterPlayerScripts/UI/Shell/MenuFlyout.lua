@@ -45,7 +45,7 @@ local function MenuFlyout(props)
 	local getBadge = Badge.useBadges()
 	local entryCtx = Model.useEntry()
 	local place = Model.resolvePlace(props.place, entryCtx)
-	local groups = React.useMemo(function() return Model.groups(place) end, { place })
+	local groups = Model.useGroups(place)  -- §AGX/X18b: re-reads on gate changes
 	local layer, setLayer = React.useState(nil)   -- { pos, size } of the root, GUI px
 	local firstRef = React.useRef(nil)
 

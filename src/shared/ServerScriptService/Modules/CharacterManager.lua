@@ -470,6 +470,7 @@ local function SaveCharacterCreation(player, payload)
         cd.appearanceChangeUnlocked = nil  -- §AGX/X18: grant consumed
     end
     lastCreationSubmit[player] = now
+    CharacterManager.RefreshAppearanceAttribute(player)  -- §AGX/X18b: menu count
 
     -- §T1.4/Y12: character-created info print removed.
     -- Response to client→server submit; client already has a listener for
@@ -519,6 +520,9 @@ local function SetupPlayer(player)
 
     local data = PlayerDataManager.GetData(player)
     if not data then return end
+
+    -- §AGX/X18b: expose the usable appearance-change count on load.
+    CharacterManager.RefreshAppearanceAttribute(player)
 
     local cd = data.Account.CharacterData
     if not cd or not cd.isCreated then
@@ -571,10 +575,17 @@ function CharacterManager.Init()
     NetworkManager.GetEvent("CharacterCreationSaved")
     NetworkManager.GetEvent("CharacterCreationComplete")
     NetworkManager.GetEvent("RequestCharacterStatus")
+    NetworkManager.GetEvent("UseAppearanceChange")  -- §AGX/X18b
 
     -- §AGX/X18: forget the submit cooldown on leave.
     Players.PlayerRemoving:Connect(function(player)
         lastCreationSubmit[player] = nil
+    end)
+
+    -- §AGX/X18b: menu "Change appearance" → spend one free token (or
+    -- reopen a change that is already unlocked but was never submitted).
+    NetworkManager.OnClientEvent("UseAppearanceChange", function(player)
+        CharacterManager.UseAppearanceChange(player)
     end)
 
     -- Client submits its creation form.
@@ -689,6 +700,7 @@ function CharacterManager.GrantAppearanceChange(player, source)
     end
     cd.appearanceChangeUnlocked = true
     print("[CharacterManager] Appearance change granted to", player.Name, "via", tostring(source))
+    CharacterManager.RefreshAppearanceAttribute(player)  -- §AGX/X18b
     sendCreationRequired(player)
     return true
 end
@@ -697,6 +709,108 @@ function CharacterManager.HasAppearanceChange(player)
     local data = PlayerDataManager.GetData(player)
     local cd = data and data.Account and data.Account.CharacterData
     return cd ~= nil and cd.appearanceChangeUnlocked == true
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- FREE APPEARANCE CHANGE TOKENS  (§AGX/X18b)
+-- ═══════════════════════════════════════════════════════════
+-- §AGX/X18b (Pablo): the first re-customization is earned, not bought —
+-- the "Veteran" achievement (account level 50) stores ONE free token in
+-- `CharacterData.freeAppearanceTokens` (number; missing = 0). It does NOT
+-- open the creation screen: the player spends it from the menu
+-- ("Change appearance" → UseAppearanceChange). Later changes are paid
+-- (MonetizationService, banked in Account.Monetization.appearanceTokens).
+
+local APPEARANCE_ATTR = "AppearanceChangesAvailable"
+
+local function toast(player, kind, text)
+    local mod = Modules:FindFirstChild("NotifyService")
+    if not mod then return end
+    local ok, NotifyService = pcall(require, mod)
+    if ok and type(NotifyService) == "table" and NotifyService.Toast then
+        NotifyService.Toast(player, kind, text)
+    end
+end
+
+--- Free (achievement) tokens not yet spent. Missing/garbage field = 0.
+function CharacterManager.GetFreeAppearanceTokens(player)
+    local cd = CharacterManager.GetCharacterData(player)
+    local n = cd and cd.freeAppearanceTokens
+    if type(n) ~= "number" or n ~= n or n < 0 then return 0 end
+    return math.floor(n)
+end
+
+--- Store `amount` free tokens (default 1). Never opens the creation screen.
+--- Returns true when stored. `source` is a free-form log tag.
+function CharacterManager.AddFreeAppearanceToken(player, amount, source)
+    local data = PlayerDataManager.GetData(player)
+    if not data or type(data.Account) ~= "table" then return false end
+    local cd = data.Account.CharacterData
+    if type(cd) ~= "table" then
+        cd = { isCreated = false }
+        data.Account.CharacterData = cd
+    end
+    amount = math.max(1, math.floor(tonumber(amount) or 1))
+    cd.freeAppearanceTokens = CharacterManager.GetFreeAppearanceTokens(player) + amount
+    print("[CharacterManager] Free appearance change stored for", player.Name, "via", tostring(source))
+    CharacterManager.RefreshAppearanceAttribute(player)
+    return true
+end
+
+--- Player attribute AppearanceChangesAvailable = free tokens + paid banked
+--- tokens + 1 while a granted change is still unused (e.g. the player left
+--- mid-screen). The client menu reads it for the badge and the lock.
+function CharacterManager.RefreshAppearanceAttribute(player)
+    if not player or not player.Parent then return end
+    local data = PlayerDataManager.GetData(player)
+    if not data or type(data.Account) ~= "table" then return end
+    local count = CharacterManager.GetFreeAppearanceTokens(player)
+    local mon = data.Account.Monetization
+    if type(mon) == "table" and type(mon.appearanceTokens) == "number" and mon.appearanceTokens > 0 then
+        count += math.floor(mon.appearanceTokens)
+    end
+    local cd = data.Account.CharacterData
+    if type(cd) == "table" and cd.isCreated and cd.appearanceChangeUnlocked then
+        count += 1
+    end
+    player:SetAttribute(APPEARANCE_ATTR, count)
+end
+
+--- Client → server "UseAppearanceChange". Order:
+---   1. a change already unlocked (paid, or free spent earlier) but never
+---      submitted → just reopen the screen, spend nothing;
+---   2. a free token → decrement, then GrantAppearanceChange (opens the
+---      screen; the §AGX/X18 submit consumes the unlock);
+---   3. otherwise refuse with a toast.
+--- Returns true when the creation screen was (re)opened.
+function CharacterManager.UseAppearanceChange(player)
+    local data = PlayerDataManager.GetData(player)
+    local cd = data and data.Account and data.Account.CharacterData
+    if type(cd) ~= "table" or not cd.isCreated then
+        toast(player, "warning", "Create your character first.")
+        return false
+    end
+    if cd.appearanceChangeUnlocked then
+        sendCreationRequired(player)
+        return true
+    end
+    local free = CharacterManager.GetFreeAppearanceTokens(player)
+    if free <= 0 then
+        toast(player, "warning", "No appearance changes left.")
+        CharacterManager.RefreshAppearanceAttribute(player)
+        return false
+    end
+    -- Decrement first: token and flag change together in memory and are
+    -- saved together by the next save (same pattern as applyBankedAppearance).
+    cd.freeAppearanceTokens = free - 1
+    local ok, granted = pcall(CharacterManager.GrantAppearanceChange, player, "achievement:veteran")
+    if not ok or not granted then
+        cd.freeAppearanceTokens = free
+        CharacterManager.RefreshAppearanceAttribute(player)
+        warn("[CharacterManager] UseAppearanceChange failed for", player.Name, ok and "" or granted)
+        return false
+    end
+    return true
 end
 
 return CharacterManager

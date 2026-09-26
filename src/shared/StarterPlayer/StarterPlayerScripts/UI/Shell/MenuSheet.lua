@@ -280,7 +280,7 @@ local function MenuSheet(props)
 
 	local entryCtx = Model.useEntry()
 	local place = Model.resolvePlace(props.place, entryCtx)
-	local groups = React.useMemo(function() return Model.groups(place) end, { place })
+	local groups = Model.useGroups(place)  -- §AGX/X18b: re-reads on gate changes
 
 	local playGroup, sections = nil, {}
 	for _, g in ipairs(groups) do

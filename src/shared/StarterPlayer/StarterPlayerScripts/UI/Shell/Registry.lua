@@ -29,6 +29,11 @@
         dim         transparency of a non-dismissing scrim PanelHost draws
                     behind entries that have no backdrop of their own
         run(ctx)    kind="action": ctx = { PanelStack, place }
+        gate(place) -> available, lockedReason?   §AGX/X18b: runtime lock on
+                    top of `places` (e.g. "has an appearance change"); read
+                    from LocalPlayer attributes, never yields
+        gateAttributes { attrName... }  LocalPlayer attributes `gate` reads;
+                    menus re-read the model when one changes (subscribeGates)
 
     API
         Registry.Groups                   ordered array of { id, icon, glyph, label }
@@ -43,6 +48,8 @@
             call it from a task, never from render. PanelHost preloads every
             entry of its place on mount.
         Registry.isAvailable(entry, place) -> bool, lockedReason?
+        Registry.subscribeGates(cb) -> unsub   §AGX/X18b: cb() when any
+            entry's gateAttributes changes (MenuIcon.Model.useGroups)
 ]]
 
 local Players = game:GetService("Players")
@@ -170,6 +177,40 @@ E.inventory = {
 	module = { folder = "UI", name = "InventoryUI" },   -- §AGX/UI-P3 (W4)
 	places = ALL,
 	class = "panel", presentation = "windowed", phone = "sheet",
+}
+
+-- §AGX/X18b: spend an appearance change (free one from the Veteran
+-- achievement at level 50; paid ones are auto-applied on purchase). No
+-- panel of its own: the server answers UseAppearanceChange with
+-- CharacterCreationRequired and ServerOpen opens `characterCreation`.
+-- Not in Combat: the creation screen is a full-screen modal.
+local APPEARANCE_LEVEL = 50  -- = AchievementConfig "veteran" tier
+E.appearance = {
+	id = "appearance", kind = "action", group = "character", order = 7,
+	label = "nav_appearance", icon = "appearance", glyph = "LOOK",
+	places = { Lobby = true, Plaza = true },
+	lockedReason = { Combat = "nav_locked_battle" },
+	badge = "appearance",
+	gateAttributes = { "AppearanceChangesAvailable", "Level" },
+	gate = function()
+		local lp = Players.LocalPlayer
+		if (tonumber(lp:GetAttribute("AppearanceChangesAvailable")) or 0) > 0 then
+			return true, nil
+		end
+		if (tonumber(lp:GetAttribute("Level")) or 0) < APPEARANCE_LEVEL then
+			return false, "nav_locked_appearance_level"
+		end
+		return false, "nav_locked_appearance_none"
+	end,
+	run = function()
+		local ok, NetworkManager = pcall(function()
+			return require(Players.LocalPlayer:WaitForChild("PlayerScripts")
+				:WaitForChild("Modules"):WaitForChild("NetworkManager"))
+		end)
+		if ok and type(NetworkManager) == "table" and NetworkManager.FireServer then
+			NetworkManager.FireServer("UseAppearanceChange")
+		end
+	end,
 }
 
 -- ── progress (flyout) ────────────────────────────────────
@@ -345,9 +386,39 @@ end
 --- available?, lockedReason (Locale key)
 function Registry.isAvailable(entry, place)
 	if not entry then return false, "nav_locked" end
-	if entry.places and entry.places[place] then return true, nil end
+	if entry.places and entry.places[place] then
+		-- §AGX/X18b: runtime gate (only where the place allows the entry).
+		if type(entry.gate) == "function" then
+			local ok, avail, reason = pcall(entry.gate, place)
+			if not ok then return false, "nav_locked" end
+			if not avail then return false, reason or "nav_locked" end
+		end
+		return true, nil
+	end
 	local reason = entry.lockedReason and entry.lockedReason[place]
 	return false, reason or "nav_locked"
+end
+
+--- §AGX/X18b: cb() whenever a LocalPlayer attribute some entry's `gate`
+--- reads changes. Returns an unsubscribe function.
+function Registry.subscribeGates(cb)
+	local lp = Players.LocalPlayer
+	if not lp then return function() end end
+	local seen, conns = {}, {}
+	for _, entry in pairs(E) do
+		for _, attr in ipairs(entry.gateAttributes or {}) do
+			if not seen[attr] then
+				seen[attr] = true
+				table.insert(conns, lp:GetAttributeChangedSignal(attr):Connect(function()
+					task.spawn(cb)
+				end))
+			end
+		end
+	end
+	return function()
+		for _, c in ipairs(conns) do c:Disconnect() end
+		table.clear(conns)
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════

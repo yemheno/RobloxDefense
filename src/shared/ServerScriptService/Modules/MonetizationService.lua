@@ -254,9 +254,14 @@ local function applyBankedAppearance(player)
     if not data or not data.Account then return end
     local mon = data.Account.Monetization
     if type(mon) ~= "table" or type(mon.appearanceTokens) ~= "number" or mon.appearanceTokens <= 0 then return end
+    local cm = getCharacterManager()
+    -- §AGX/X18b: keep the menu's AppearanceChangesAvailable count in step
+    -- even when the banked change can't be applied yet (flag still unused).
+    if cm and type(cm.RefreshAppearanceAttribute) == "function" then
+        pcall(cm.RefreshAppearanceAttribute, player)
+    end
     local cd = data.Account.CharacterData
     if not cd or not cd.isCreated or cd.appearanceChangeUnlocked then return end
-    local cm = getCharacterManager()
     if not cm or type(cm.GrantAppearanceChange) ~= "function" then return end
     -- Decrement first: flag and counter change together in memory and are
     -- saved together by the next save.
@@ -264,6 +269,9 @@ local function applyBankedAppearance(player)
     local ok, granted = pcall(cm.GrantAppearanceChange, player, "robux:premium_appearance_change")
     if not ok or not granted then
         mon.appearanceTokens += 1
+        if type(cm.RefreshAppearanceAttribute) == "function" then
+            pcall(cm.RefreshAppearanceAttribute, player)  -- §AGX/X18b
+        end
     end
 end
 
@@ -403,7 +411,10 @@ local function canBuy(player, entry)
         if not cd or not cd.isCreated then return false, "Create your character first." end
         local mon = data.Account.Monetization
         local banked = type(mon) == "table" and type(mon.appearanceTokens) == "number" and mon.appearanceTokens > 0
-        if cd.appearanceChangeUnlocked or banked then
+        -- §AGX/X18b: an unspent free (Veteran achievement) change also blocks
+        -- buying one, so nobody pays while a free change is waiting.
+        local free = type(cd.freeAppearanceTokens) == "number" and cd.freeAppearanceTokens > 0
+        if cd.appearanceChangeUnlocked or banked or free then
             return false, "You already have an unused appearance change."
         end
     elseif gtype == "Cosmetics" then

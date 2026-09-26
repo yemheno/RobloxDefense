@@ -69,6 +69,7 @@ local LANG = {
 		nav_equipment       = "Equipment",
 		nav_wardrobe        = "Wardrobe",
 		nav_inventory       = "Inventory",
+		nav_appearance      = "Change appearance",   -- §AGX/X18b
 		nav_achievements    = "Achievements",
 		nav_daily           = "Daily Reward",
 		nav_leaderboard     = "Leaderboard",
@@ -102,6 +103,11 @@ local LANG = {
 		nav_locked_generic       = "Locked",
 		nav_locked_generic_long  = "Not available here",
 		nav_blocked              = "Finish what's open first",
+		-- §AGX/X18b: "Change appearance" (Veteran achievement, level 50)
+		nav_locked_appearance_level      = "Unlocks at level 50",
+		nav_locked_appearance_level_long = "Unlocks at level 50 (Veteran achievement)",
+		nav_locked_appearance_none       = "No changes left",
+		nav_locked_appearance_none_long  = "No appearance changes left. More are in the Shop.",
 
 		-- Leave / exit confirmation (ConfirmDialog, `leave` action).
 		nav_leave_confirm_title        = "Return to Lobby?",

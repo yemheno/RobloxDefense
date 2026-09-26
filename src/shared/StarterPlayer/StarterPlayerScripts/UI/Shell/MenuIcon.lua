@@ -21,6 +21,8 @@
 
     MenuIcon.Model
         .placeFromScripts()        "Lobby" | "Plaza" | "Combat" (folder probe)
+        .useGroups(place)          React: groups(place), refreshed on Registry
+                                   gate changes (§AGX/X18b)
         .groups(place)             normalized Registry.forPlace:
             { { id, label, icon, glyph, flyout, items = { item... } } }
             item = { id, entry, kind, label, icon, glyph, available,
@@ -242,6 +244,21 @@ function Model.groups(place)
 		end
 	end
 	return out
+end
+
+--- §AGX/X18b: Model.groups(place), memoized per place and re-read when a
+--- Registry `gate` attribute changes (e.g. AppearanceChangesAvailable), so
+--- a runtime-locked entry unlocks without a remount.
+function Model.useGroups(place)
+	local ver, setVer = React.useState(0)
+	React.useEffect(function()
+		local reg = Model.Registry()
+		if not reg or type(reg.subscribeGates) ~= "function" then return nil end
+		return reg.subscribeGates(function()
+			setVer(function(n) return n + 1 end)
+		end)
+	end, {})
+	return React.useMemo(function() return Model.groups(place) end, { place, ver })
 end
 
 function Model.availableCount(group)

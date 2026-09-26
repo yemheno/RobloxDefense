@@ -100,6 +100,15 @@ Studio can't test reserved servers. Check what it can:
 - [ ] On a phone or console with no keyboard, Settings → Controls key badges show as locked (rebinding needs a keyboard).
 
 ## 9. Economy and monetization spot-checks
+- [ ] **Veteran free appearance change** (`§AGX/X18b`):
+  - At level 49, "Change appearance" is locked ("Unlocks at level 50").
+  - Reach level 50 → Veteran toast, and a badge on the Character group. The creation screen does **not** open.
+  - Tap the entry → the creation screen opens → submit. It then reads "No changes left".
+  - The paid appearance change is refused while the free change is still unused.
+  - Leave mid-creation and rejoin: the entry reopens the screen without using up a second change.
+  - An account already past 50 gets Veteran on login.
+  - Locked in combat places.
+  - The gamepad radial shows all 7 Character entries.
 - [ ] Respec costs 25 Essence everywhere (UI labels too); the respec scroll costs 25.
 - [ ] Only the Respec Scroll is buyable under Consumables; the others show "Coming soon" (`X10`).
 - [ ] Daily login: the calendar day advances per claim, and the spree resets after a missed day (`X47`).

@@ -113,7 +113,7 @@ local function MenuRail(props)
 	local state = Model.useStack()
 	local getBadge = Badge.useBadges()
 	local place = Model.resolvePlace(props.place, nil)
-	local groups = React.useMemo(function() return Model.groups(place) end, { place })
+	local groups = Model.useGroups(place)  -- §AGX/X18b: re-reads on gate changes
 
 	local rail = ff.design.rail or DEFAULT_RAIL
 	local cell = rail.cell or DEFAULT_RAIL.cell
