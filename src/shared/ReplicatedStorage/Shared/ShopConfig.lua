@@ -5,7 +5,8 @@
     ⚠ §DISC/D7 (Pablo): the CURRENT ITEMS ARE PLACEHOLDERS ("random
     nonsense objects") — don't balance-audit them. §AGX/D7: the rotation
     timer + paid Essence refresh are built (ShopConfig.Rotation /
-    .Refresh below, ShopManager, BALANCE_NUMBERS §D7); the curated
+    .Refresh below, ShopManager,
+    BALANCE_NUMBERS.md#shop-rotation-and-paid-refresh); the curated
     catalog is still to come.
 
     Three tabs:
@@ -138,10 +139,9 @@ ShopConfig.Consumables = {
         levelReq = 5,
     },
     -- Buff items
-    -- §AGX/X10b: potions, crystals and buffs are sold again — `enabled` is
-    -- derived from ConsumableConfig.usable (bottom of file), now true for
-    -- all of them. §AGX/D-FIX2: swiftness_elixir included — MovementSpeed
-    -- has a reader now (§AGX/STATS), so it's live, not hidden.
+    -- §AGX/X10b, §AGX/D-FIX2: `enabled` is derived from
+    -- ConsumableConfig.usable (bottom of file), true for all of these.
+    -- swiftness_elixir is live: MovementSpeed has a reader (§AGX/STATS).
     {
         itemId   = "power_scroll",
         tab      = "Consumables",
@@ -178,8 +178,7 @@ ShopConfig.Consumables = {
         levelReq = 5,
     },
     -- Special
-    -- §AGX/X42: 50 → 25 Essence. It cost 2× a direct respec (25), so no
-    -- one had a reason to buy it. Now equal: the scroll is a prepaid,
+    -- §AGX/X42: priced equal to a direct respec: the scroll is a prepaid,
     -- stackable respec usable for talents OR stats (PlayerDataConfig
     -- RESPEC_COSTS).
     {
@@ -193,14 +192,14 @@ ShopConfig.Consumables = {
 }
 
 -- ═══════════════════════════════════════════════════════════
--- PREMIUM TAB  (§AGX/X40 monetization decision, 2026-09-26)
+-- PREMIUM TAB  (§AGX/X40 monetization decision)
 -- ═══════════════════════════════════════════════════════════
 -- §AGX/X40: Robux buys cosmetics, appearance changes and non-power
 -- convenience ONLY. Gameplay currency (Merits, Essence) and anything
 -- that converts into it (respec scrolls, consumables, gear, refine /
--- reroll / tier-up) is never sold. The old Essence / Merit packs and the
--- "Respec Token x3" pack were DELETED, not disabled: a respec scroll is
--- worth 25 Essence (BALANCE_NUMBERS §33), so selling it was an indirect
+-- reroll / tier-up) is never sold. Currency and respec packs are deleted,
+-- not disabled: a respec scroll is worth Essence
+-- (BALANCE_NUMBERS.md#economy-anchor), so selling one is an indirect
 -- Essence sale. MonetizationService refuses to register any entry whose
 -- grant.type is not in its allowlist (AppearanceChange / Cosmetics /
 -- GamePass), so a currency pack re-added here can't be prompted.
@@ -238,7 +237,7 @@ ShopConfig.Premium = {
     -- They are also sold for Merits/Essence in the Cosmetics tab, and
     -- MonetizationService blocks a Robux bundle that overlaps an
     -- earn-currency listing (buying it for Robux would free up gameplay
-    -- currency). Replace them with Robux-exclusive cosmetics in the D7
+    -- currency). Replace them with Robux-exclusive cosmetics in the §DISC/D7
     -- shop pass, or take them out of the Cosmetics tab.
     {
         itemId       = "premium_bundle_vanguard",
@@ -300,7 +299,7 @@ ShopConfig.Premium = {
 }
 
 -- ═══════════════════════════════════════════════════════════
--- ROTATION + PAID REFRESH  (§DISC/D7, BALANCE_NUMBERS §D7)
+-- ROTATION + PAID REFRESH  (§DISC/D7, BALANCE_NUMBERS.md#shop-rotation-and-paid-refresh)
 -- ═══════════════════════════════════════════════════════════
 -- §AGX/D7: each rotating tab shows its `staple` entries plus `slots`
 -- entries drawn from the rest of the tab (enabled only). The draw is a
@@ -310,14 +309,14 @@ ShopConfig.Premium = {
 -- Periods are aligned to the UTC epoch (86400 and 21600 divide a day), so
 -- every server agrees on when a tab rotates.
 -- Premium never rotates: a countdown on a Robux listing is fake urgency
--- (X40 / economy-designer "no dark patterns").
+-- (§AGX/X40: no dark patterns).
 ShopConfig.Rotation = {
     Cosmetics   = { slots = 4, period = 86400 },  -- daily, 00:00 UTC
     Consumables = { slots = 3, period = 21600 },  -- every 6 h, 00/06/12/18 UTC
 }
 
 -- §AGX/D7: "Refresh now" re-rolls ONE tab's current rotation for Essence.
--- Pure sink (Essence is never sold for Robux, X40 / §48). The counter is
+-- Pure sink (Essence is never sold for Robux, §AGX/X40). The counter is
 -- per UTC day and shared by all tabs; the nth refresh of the day costs
 -- prices[n]; after `dailyCap` the button locks until 00:00 UTC.
 ShopConfig.Refresh = {
@@ -374,7 +373,7 @@ end
 
 -- §AGX/X10: consumables without a server-side use handler can't be bought.
 -- Derive `enabled = false` from ConsumableConfig (single source of truth,
--- Audit §5.6) so GlobalShopUI hides them with no client change and
+-- ARCHITECTURE.md#single-source-of-truth) so GlobalShopUI hides them with no client change and
 -- ShopManager rejects them. Flip `usable = true` in ConsumableConfig when a
 -- use handler lands and the item reappears. An explicit `enabled` here wins.
 do
@@ -396,7 +395,7 @@ end
 
 --- §AGX/D7: the rotation pool of a tab, in catalog order (deterministic):
 --- enabled, non-staple entries. Empty for a tab that does not rotate.
---- Must stay below the `enabled` derivation above so X10 hides unusable
+--- Must stay below the `enabled` derivation above so §AGX/X10 hides unusable
 --- consumables from the pool too (they never take a slot).
 function ShopConfig.GetRotationPool(tab)
     local pool = {}

@@ -8,7 +8,7 @@
       • Armor switching & unlocking
       • Child systems: ArmorRefinement, ArmorTierSystem, ArmorBonusSystem
 
-    NOTE: Armor XP was removed — only weapons level up. Total weapon levels
+    NOTE: armor has no XP — only weapons level up. Total weapon levels
     across all classes grant talent points (see WeaponXPSystem).
 ]]
 
@@ -21,8 +21,8 @@ local ArmorConfig       = require(Modules:WaitForChild("ArmorConfig"))
 local ArmorRegistry     = require(Modules:WaitForChild("ArmorRegistry"))
 local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 local NetworkManager    = require(Modules:WaitForChild("NetworkManager"))
--- NOTE: Armor visual attachment was removed. Body appearance is now
--- handled by CosmeticManager (color/material-based outfits).
+-- Body colour/material comes from CosmeticManager outfits; the armor model
+-- itself is attached through VisualEquipmentManager (attachArmorVisual below).
 
 -- §NM-D2: lazy ReadyGate ref. ArmorEquipped is fired during PlayerAdded
 -- (EnsureStarterArmor) — same boot-race shape as WeaponEquipped.
@@ -133,13 +133,13 @@ end
 -- §EASY/E3 (§V2): attach the armor VISUAL alongside the data equip.
 -- Lazy VEM (same shape as WeaponManager's attach path). Slot comes from
 -- the armor def when present, else 1; VEM falls back to the DefaultArmor
--- stub asset when no per-class model exists yet.
+-- stub asset when no per-class model exists yet (art: BACKLOG §V2-ART).
 local _VEM
 local function attachArmorVisual(player, className, armorId)
 	if _VEM == nil then
 		local mod = script.Parent:FindFirstChild("VisualEquipmentManager")
-		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-		-- so this getter always returned nil. Two-step form keeps both.
+		-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value
+		-- (CLAUDE.md § Luau pitfalls).
 		local ok, result = false, nil
 		if mod then ok, result = pcall(require, mod) end
 		_VEM = (ok and result) or false
@@ -159,11 +159,9 @@ function ArmorManager.EnsureStarterArmor(player)
 		return
 	end
 
-	-- §LD-W1 follow-up: same early-return shape as WeaponManager — for
-	-- a returning player with EquippedArmor already in saved data we'd
-	-- skip the ArmorEquipped echo, leaving the EquipmentUI without a
-	-- snapshot until the next refresh. (No visual to attach yet — see
-	-- §V2 in TODO_PARKING_LOT — but we still need the client event.)
+	-- §LD-W1: a returning player with EquippedArmor already saved still
+	-- gets the ArmorEquipped echo (same early-return shape as WeaponManager),
+	-- or EquipmentUI has no snapshot until the next refresh.
 	if classData.EquippedArmor and classData.EquippedArmor.armorId then
 		fireArmorEquipped(player, {
 			armorId   = classData.EquippedArmor.armorId,

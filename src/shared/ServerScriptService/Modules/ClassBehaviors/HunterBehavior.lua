@@ -20,9 +20,9 @@ HunterBehavior.CONFIG = {
 
 	-- Crit bonus (Hunters are crit-focused!)
 	GainPerCrit = 2,                -- §29.1: +2 on crit
-	-- §T1.4/Y11: MultiCritBonus removed — stale class-specific knob (was
-	-- always 0). Multi-crit is owned by the dedicated CriticalSystem
-	-- (geometric multi-proc), not per-behavior resource gain.
+	-- §T1.4/Y11: no MultiCritBonus knob here. Multi-crit is owned by the
+	-- dedicated CriticalSystem (geometric multi-proc), not per-behavior
+	-- resource gain.
 
 	-- On kill
 	GainPerKill = 3,                -- §29.1: +3 on kill

@@ -12,9 +12,8 @@ local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local ClassManager = require(Modules:WaitForChild("ClassManager"))
 
 -- §T2/Z5 (§14b): per-player Janitor for the CharacterAdded +
--- DeathState-attribute connections wired in setupPlayerCharacterHandler.
--- Player destruction disconnects them in practice; tracking them keeps
--- AttackHandler consistent with the L1/L2 lifetime pattern.
+-- DeathState-attribute connections wired in setupPlayerCharacterHandler
+-- (ARCHITECTURE.md#janitor-per-player).
 local Janitor = require(Modules:WaitForChild("Janitor"))
 local playerJanitors = setmetatable({}, { __mode = "k" })
 local function getPlayerJanitor(player)
@@ -102,9 +101,8 @@ function AttackHandler.Init()
 
 	-- Setup CharacterAdded handler for all players (new and existing)
 	local function setupPlayerCharacterHandler(player)
-		-- §AGX/T11-JAN: a player who joins between the PlayerAdded connect
-		-- and the GetPlayers() loop below reached this twice and got two
-		-- CharacterAdded + two DeathState handlers. Wire once per player.
+		-- §AGX/T11-JAN: wire once per player; a player who joins between the
+		-- PlayerAdded connect and the GetPlayers() loop below reaches this twice.
 		if playerJanitors[player] then return end
 		-- §A2 helper: clear all attack-ticket state for a fresh "spawn".
 		-- The monotonic attackId guard prevents replay attacks WITHIN a
@@ -113,7 +111,6 @@ function AttackHandler.Init()
 		-- Without clearing here, lastAttackId stays at the old session's
 		-- high-water mark and every post-respawn attack is rejected by
 		-- the `attackId <= prev` check until the client outpaces it.
-		-- Pablo's "sometimes can't attack at all" reproduces here.
 		local function resetAttackState()
 			lastAttackId[player] = nil
 			pendingAttacks[player] = nil
@@ -133,7 +130,7 @@ function AttackHandler.Init()
 				AttackHandler.SendCombatConfig(player)
 			end)
 		end
-		-- §A3 fix: in-place respawn (DeathSystem §LD-DS5) preserves the same
+		-- §A3: in-place respawn (DeathSystem §LD-DS5) preserves the same
 		-- Character instance, so CharacterAdded never fires on revive. Listen
 		-- on the DeathState attribute instead and reset whenever the player
 		-- transitions back to "Alive" (covers both KnockedDown→Alive recovery
@@ -241,9 +238,8 @@ function AttackHandler.GetMaxHitsForAttack(player)
 end
 
 --- Prune expired and overflow tickets for a player.
--- §A1: keep evicting oldest until under cap. The previous version
--- evicted one ticket per call, so a flood of attackIds in one frame
--- could grow the table arbitrarily until many subsequent prunes ran.
+-- §A1: keep evicting oldest until under cap, so a flood of attackIds in
+-- one frame can't grow the table.
 local function pruneTickets(player)
 	local tickets = pendingAttacks[player]
 	if not tickets then return end
@@ -393,12 +389,9 @@ function AttackHandler.HandleHitReport(player, data)
 	-- Per-target dedup: reject repeated hits on the same mob within one attack
 	if ticket.targetsHit[target] then return end
 
-	-- §T2/Z1: VALIDATE FIRST, CONSUME AFTER. The old order marked the
-	-- target + burned a hit slot BEFORE the alive/range checks, so a
-	-- report invalidated by lag (mob died in flight, player moved) still
-	-- consumed the slot and permanently dedup'd that target for the
-	-- attack — the player's legit follow-up hit was rejected. Painful
-	-- on pierce projectiles (maxHits 3).
+	-- §T2/Z1: VALIDATE FIRST, CONSUME AFTER. A report invalidated by lag
+	-- (mob died in flight, player moved) must not burn a hit slot or dedup
+	-- the target, or the player's legit follow-up hit is rejected.
 	local humanoid = target:FindFirstChild("Humanoid")
 	if not humanoid or humanoid.Health <= 0 then return end
 
@@ -412,8 +405,8 @@ function AttackHandler.HandleHitReport(player, data)
 
 	local distance = (rootPart.Position - mobRoot.Position).Magnitude
 	local maxRange = AttackHandler.GetMaxBasicAttackRange(player)
-	-- §AGX/X17: written fail-closed — a NaN distance (NaN position) made
-	-- `distance > maxRange` false and accepted the hit from any range.
+	-- §AGX/X17: written fail-closed: a NaN distance (NaN position) makes
+	-- `distance > maxRange` false (CLAUDE.md § Luau pitfalls).
 	if not (distance <= maxRange) then return end
 
 	-- Hit accepted — consume the slot and mark the target.

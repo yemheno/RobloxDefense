@@ -1,7 +1,7 @@
 -- centralboss/ServerScriptService/Modules/PlaceholderRig.lua
 --[[
     §AGX/X28: runtime placeholder mob rig (mob .rbxmx templates are not in
-    git — AUDIT_FINDINGS G1 — so there is no model file to clone).
+    git, DESIGN_DECISIONS.md#assets, so there is no model file to clone).
 
     Builds a Part-based "block golem" that satisfies what MobAI.RegisterMob
     and the combat code need from a mob model:

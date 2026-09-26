@@ -16,7 +16,7 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
--- §T0P2/G3: bounded wait + loud error (was: silent infinite hang).
+-- §T0P2/G3: bounded wait + loud error, never a silent infinite hang.
 local SharedModules = SSS:WaitForChild("Modules", 10)
     or error("[LaneDefenseMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
 
@@ -25,7 +25,7 @@ local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
 local ctx       = Boot.MakeContext("LaneDefense")
 local IsAdmin   = ctx.IsAdmin
 
--- §T0P2/X19: _G.LaneDefenseRequireLoaded removed — write-only global.
+-- §T0P2/X19: no _G.LaneDefenseRequireLoaded (it was a write-only global).
 
 -- ───────────────────────────────────────────────────────────
 -- CONFIG
@@ -157,10 +157,9 @@ ctx.loaded["TeleportDataReader"] = require(SharedModules:WaitForChild("TeleportD
 ctx.loaded["TeleportDataReader"].Init("Defense")
 
 -- §T0P2/X2: difficulty arrives with the FIRST processed player's
--- teleport data (lobby-owned — DQ-B), not at boot. The old boot-time
--- GetDifficulty() read always returned "Normal" because ProcessPlayer
--- hadn't run yet — the lobby's difficulty selection never reached the
--- spawner. OnDifficultyResolved fires once, validated, when it's real.
+-- teleport data (lobby-owned — DQ-B), not at boot: a boot-time
+-- GetDifficulty() read returns "Normal" because ProcessPlayer hasn't run
+-- yet. OnDifficultyResolved fires once, validated, when it's real.
 ctx.loaded["TeleportDataReader"].OnDifficultyResolved(function(difficulty)
     local spawner = ctx.loaded["MobSpawner"]
     if spawner then spawner.SetDifficulty(tostring(difficulty)) end
@@ -169,12 +168,10 @@ ctx.loaded["TeleportDataReader"].OnDifficultyResolved(function(difficulty)
     print("[LaneDefense] Difficulty resolved:", difficulty)
 end)
 
--- §LD1 fix + §T3/W8: anchor mob levels to the highest player level,
+-- §LD1, §T3/W8: anchor mob levels to the highest player level,
 -- re-computed on EVERY player's data-ready (mirrors HordeMode's extras
--- re-anchor). The old once-flag anchored to whichever player's data
--- loaded FIRST — a later-loading higher-level player never counted, so
--- subsequent waves under-scaled (carried G6). SetPartyAnchorLevel only
--- affects future waves, which is exactly what we want here.
+-- re-anchor), so a later-loading higher-level player counts too (G6).
+-- SetPartyAnchorLevel only affects future waves, which is what we want.
 local function applyLaneAnchor()
     local ok, err = pcall(function()
         local spawner = ctx.loaded["MobSpawner"]
@@ -288,7 +285,8 @@ ctx.loaded["SharedEventHandlers"].Register({
 -- GAME STATE EVENTS
 -- ───────────────────────────────────────────────────────────
 GameStateManager.OnStateChanged(function(newState, oldState)
-    -- §47.1: Defense line HP scales with highest player level on each new run.
+    -- §47.1: Defense line HP scales with the highest player level (as the
+    -- chapter level) on each new run.
     if newState == "Defending" then
         local highestLevel = 1
         for _, p in ipairs(Players:GetPlayers()) do
@@ -320,8 +318,8 @@ end)
 if MobSpawner and VoteManager then
     MobSpawner.SetPreSpawnHook(function(_waveNumber)
         task.wait(0.1)  -- let OnWaveStarted callbacks fire
-        -- §AGX/SEC: bounded (mirrors Horde's 12 s cap). A normal vote is
-        -- 10 s + 5 s grace; a stuck vote flag used to stall the wave forever.
+        -- §AGX/SEC: bounded wait (Horde caps its vote wait too). A normal
+        -- vote is 10 s + 5 s grace; a stuck vote flag must not stall the wave.
         local deadline = os.clock() + 30
         while VoteManager.IsVoteActive() and os.clock() < deadline do task.wait(0.25) end
     end)

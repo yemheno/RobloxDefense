@@ -1,8 +1,8 @@
 -- centralboss/StarterPlayerScripts/UI/BossHud.lua
 --[[
-    §AGX/X28: top-of-screen boss HP bar + phase banner (CentralBoss only).
-    §AGX/UI-P4: the phase banner is a Notify banner ("bossPhase", the top
-    priority) now; this component renders only the HP bar.
+    §AGX/X28, §AGX/UI-P4: top-of-screen boss HP bar (CentralBoss only).
+    The phase banner is a Notify banner ("bossPhase", the top priority);
+    this component renders only the HP bar.
 
     Display-only: the server (BossEncounter) owns HP and phases and pushes
         BossStateUpdate  { active, name, hp, maxHp, phase, phaseCount, phaseName, ... }
@@ -17,13 +17,12 @@
                        (the HUD's Layout owns it for the slot).
       onActiveChanged  fn(bool), called when the bar shows / hides (the HUD
                        passes it so the slot reserve follows the bar).
-    Standalone (no props, Wave 1): unchanged.
+    Standalone (no props): publishes its own reserve (below).
 ]]
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local GuiService        = game:GetService("GuiService")
--- §AGX/UI-P4: Workspace (banner height from the viewport) no longer needed.
 local React             = require(ReplicatedStorage.Packages.React)
 
 local PlayerScripts  = Players.LocalPlayer:WaitForChild("PlayerScripts")
@@ -32,13 +31,11 @@ local Notify         = require(PlayerScripts:WaitForChild("UI"):WaitForChild("Co
 
 local BANNER_SECONDS = 3.5
 
--- §AGX/UI-P1: M9: BossHud owns its own top-centre slot directly under the
--- topbar (safeTop). It publishes how many px below safeTop it uses as a
--- client-local ReplicatedStorage attribute; the HUD pushes Start / Next Wave
--- / Return below that (they collided at safeTop+30..88), and Notify puts
--- its banner below both. §AGX/UI-P4: only the HP bar is reserved now; the
--- phase banner lives in Notify's banner slot.
--- TODO(FormFactor): becomes the "top-centre banner" region in P5.
+-- §AGX/UI-P1, §AGX/UI-P4: M9: standalone, BossHud owns its own top-centre
+-- slot directly under the topbar (safeTop). It publishes how many px below
+-- safeTop it uses as a client-local ReplicatedStorage attribute; the HUD
+-- pushes Start / Next Wave / Return below that, and Notify puts its banner
+-- below both. Only the HP bar is reserved; the phase banner is Notify's.
 local ATTR_TOP_CENTRE = "UI_TopCentreReservedPx"
 local BAR_H      = 46
 local SLOT_GAP   = 8
@@ -67,9 +64,8 @@ local function BossHud(props)
 				setState(data)
 			end
 		end)
-		-- §AGX/UI-P4: was local banner state + a 3.5 s token timer. Same
-		-- text and colour; "bossPhase" outranks (preempts) a wave banner,
-		-- and a newer phase replaces an older one via the key.
+		-- §AGX/UI-P4: "bossPhase" outranks (preempts) a wave banner, and a
+		-- newer phase replaces an older one via the key.
 		local phaseConn = NetworkManager.OnServerEvent("BossPhaseChanged", function(data)
 			if type(data) ~= "table" then return end
 			Notify.banner(tostring(data.text or data.name or ""), {
@@ -86,15 +82,15 @@ local function BossHud(props)
 		end
 	end, {})
 
-	-- §AGX/UI-P1: roots use ScreenInsets = DeviceSafeInsets now; in landscape
+	-- §AGX/UI-P1: roots use ScreenInsets = DeviceSafeInsets; in landscape
 	-- its top inset is 0, so GetGuiInset().Y (topbar) is not double-counted.
 	local topInset = select(1, GuiService:GetGuiInset())
 	local safeTop  = topInset.Y + 10
 
 	local showBar = state ~= nil and state.active == true and (state.maxHp or 0) > 0
 
-	-- §AGX/UI-P1: slot geometry (px below safeTop).
-	-- §AGX/UI-P4: reserves the HP bar only; the phase banner is Notify's.
+	-- §AGX/UI-P1, §AGX/UI-P4: slot geometry (px below safeTop); reserves the
+	-- HP bar only, the phase banner is Notify's.
 	local reserved = 0
 	if showBar then reserved = BAR_H + SLOT_GAP end
 
@@ -137,9 +133,8 @@ local function BossHud(props)
 	}, {
 		bar = showBar and React.createElement("Frame", {
 			AnchorPoint            = slotted and Vector2.new(0, 0) or Vector2.new(0.5, 0),
-			-- §AGX/UI-P1: own slot at safeTop (was safeTop+30, on top of the
-			-- HUD's Start/Next Wave at safeTop+34). 0.36 wide (was 0.42) so it
-			-- stays clear of the HUD's top-right currency strip (from 0.695 W).
+			-- §AGX/UI-P1: own slot at safeTop, above the HUD's Start/Next Wave;
+			-- narrow enough to stay clear of the HUD's top-right currency strip.
 			-- §AGX/UI-P5 (C3): slotted -> (0,0) of the slot, full slot width.
 			Position               = slotted and UDim2.new(0, 0, 0, 0) or UDim2.new(0.5, 0, 0, safeTop),
 			Size                   = slotted and UDim2.new(1, 0, 0, BAR_H) or UDim2.new(0.36, 0, 0, BAR_H),
@@ -195,7 +190,6 @@ local function BossHud(props)
 			}),
 		}) or nil,
 
-		-- §AGX/UI-P4: phase banner removed (Notify.banner, see above).
 	})
 end
 

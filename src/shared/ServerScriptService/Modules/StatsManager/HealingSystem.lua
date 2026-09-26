@@ -22,7 +22,7 @@
       • LifeSteward's statDerivation has Damage scaling from MAG; that
         same MAG-driven Damage value is the heal scaling input.
       • A dedicated `HealingPower` derived stat could be split out later
-        (see TODO §T1.3-DQ2) — useful when PvP arrives and we want
+        (BACKLOG §T1.3-DQ2) — useful when PvP arrives and we want
         damage-vs-heal scaling to diverge. The override hook (the
         `options` table) is the seam where that split lives.
 

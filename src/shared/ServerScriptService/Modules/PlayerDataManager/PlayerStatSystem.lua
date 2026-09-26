@@ -19,15 +19,15 @@ end
 --============================================
 -- HEALTH APPLICATION
 --============================================
--- §PDM-D9: explicit `freshSpawn` flag replaces the old `MaxHealth == 100`
--- magic check. CharacterAdded handlers pass freshSpawn=true (the player
+-- §PDM-D9: explicit `freshSpawn` flag (no magic MaxHealth check).
+-- CharacterAdded handlers pass freshSpawn=true (the player
 -- just (re)spawned and should start at full HP); stat-change callers
 -- (AllocateStat etc.) leave it nil/false and get proportional rescaling
 -- so a +VIT allocation doesn't full-heal you mid-fight.
 function PlayerStatSystem.ApplyHealthToCharacter(player, character, freshSpawn)
 	-- §AGX/T11-JAN: bounded wait. An unbounded WaitForChild on a character
-	-- that was destroyed before its Humanoid replicated parked this thread
-	-- (and any synchronous caller) forever.
+	-- destroyed before its Humanoid replicated would park this thread (and
+	-- any synchronous caller) forever.
 	local humanoid = character:WaitForChild("Humanoid", 10)
 	if not humanoid then return end
 	local totalHealth = math.floor(PlayerStatSystem.GetTotalStat(player, "Health"))
@@ -58,7 +58,7 @@ function PlayerStatSystem.ResetHealth(player)
 	local totalHealth = math.floor(PlayerStatSystem.GetTotalStat(player, "Health"))
 	humanoid.MaxHealth = totalHealth
 	humanoid.Health = totalHealth
-	-- §T1.4/Y12: info print removed.
+	-- §T1.4/Y12: no info print here (log spam).
 end
 
 --============================================

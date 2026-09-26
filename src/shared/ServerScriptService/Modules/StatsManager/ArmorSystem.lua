@@ -24,11 +24,8 @@ end
 -- armorMultiplier = 100 / (100 + effectiveArmor)
 --
 -- §T1.3/B6: no inner min-1 clamp. The single floor lives in
--- DamageSystem.CalculateIncomingDamage which is the only caller and
--- already enforces math.max(1, math.floor(finalDamage)). Stacking
--- two clamps obscured the pipeline and let intermediate values
--- (which can legitimately be < 1 if armor is enormous) round up
--- prematurely.
+-- DamageSystem.CalculateIncomingDamage (the only caller), so intermediate
+-- values (legitimately < 1 if armor is enormous) don't round up early.
 -- ═══════════════════════════════════════════════════════════
 function ArmorSystem.ApplyArmor(player, incomingDamage, attackerPenetration)
 	attackerPenetration = attackerPenetration or 0

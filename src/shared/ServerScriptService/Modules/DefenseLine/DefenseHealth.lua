@@ -30,8 +30,7 @@ local onHealedCallbacks = {}
 -- so we pre-declare the upvalue here and assign the function body below.
 local handleDestroyed
 
--- §AGX/X35 (SCALING_AUDIT Deferred #5): DefenseLineDamaged was one
--- FireAllClients per breach. Now leading-edge throttled to one send per
+-- §AGX/X35: DefenseLineDamaged is leading-edge throttled to one send per
 -- BROADCAST_WINDOW (≤ 5 Hz): an isolated breach still sends at once; hits
 -- inside the window are summed and flushed at the window's end with the
 -- HP read AT FLUSH TIME (the HUD only reads currentHealth/maxHealth/percent).
@@ -41,9 +40,8 @@ local pendingDamage = 0          -- summed damage not yet broadcast
 local pendingDamageSource = nil  -- last source in the window
 local damagedFlushScheduled = false
 
--- §AGX/X37: regen heal accumulator (same window). Regen used to run
--- UpdateVisuals (a replicated part.Color write) every Heartbeat and
--- broadcast whenever one frame healed ≥ 1 HP.
+-- §AGX/X37: regen heal accumulator (same window), so regen doesn't run
+-- UpdateVisuals (a replicated part.Color write) or broadcast every frame.
 local lastRegenFlush = 0
 local regenDirty = false
 
@@ -159,7 +157,7 @@ handleDestroyed = function()
 	currentHealth = 0
 
 	-- §AGX/X35: deliver the killing blow's DefenseLineDamaged before
-	-- DefenseLineDestroyed so clients see them in the old order.
+	-- DefenseLineDestroyed so clients see them in order.
 	DefenseHealth.FlushDamagedBroadcast()
 
 	print("[DefenseHealth] ═══════════════════════════════════")
@@ -262,7 +260,7 @@ function DefenseHealth.UpdateRegen(dt)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- §AGX/X35: DefenseLineDamaged throttle (SCALING_AUDIT Deferred #5)
+-- §AGX/X35: DefenseLineDamaged throttle
 -- ═══════════════════════════════════════════════════════════
 
 function DefenseHealth.FlushDamagedBroadcast()

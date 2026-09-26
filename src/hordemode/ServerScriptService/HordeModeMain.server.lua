@@ -20,7 +20,7 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
--- §T0P2/G3: bounded waits + loud error (was: silent infinite hang).
+-- §T0P2/G3: bounded waits + loud error, never a silent infinite hang.
 local SharedModules    = SSS:WaitForChild("Modules", 10)
     or error("[HordeModeMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
 local HordeFolder      = SSS:WaitForChild("HordeMode", 10)
@@ -33,7 +33,7 @@ local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
 local ctx       = Boot.MakeContext("HordeMode")
 local IsAdmin   = ctx.IsAdmin
 
--- §T0P2/X19: _G.HordeModeRequireLoaded removed — write-only global.
+-- §T0P2/X19: no _G.HordeModeRequireLoaded (it was a write-only global).
 
 -- ───────────────────────────────────────────────────────────
 -- CONFIG
@@ -164,7 +164,7 @@ ctx.loaded["TeleportDataReader"].Init("HordeMode")
 -- difficulty is lobby-owned (DQ-B) and arrives with the first processed
 -- player's teleport data — the OnDifficultyResolved hook below (after
 -- the spawner loads) updates this local, the spawner, and VoteManager.
--- The old boot-time GetDifficulty() read always returned "Normal".
+-- A boot-time GetDifficulty() read would always return "Normal".
 local hordeDifficulty = "Normal"
 
 -- §AGX/SEC: §T0P2-ADMIN — admin panel backend is Studio-only.
@@ -224,8 +224,8 @@ local ReturnTeleporter   = ctx.loaded["ReturnTeleporter"]
 
 -- ───────────────────────────────────────────────────────────
 -- RUN-TIMING STATE
--- §HM3 fix: declared at the top of the chunk so the OnStateChanged
--- closure correctly captures them as locals, not globals.
+-- §HM3: declared at the top of the chunk so every later closure
+-- captures them as locals, not globals (CLAUDE.md § Luau pitfalls).
 -- ───────────────────────────────────────────────────────────
 local hordeStartTime     = os.clock()
 local hordeRunActive     = true
@@ -235,23 +235,19 @@ local pauseStartedAt     = nil
 -- ───────────────────────────────────────────────────────────
 -- GAME STATE EVENTS
 -- §T0P2/X13 (DQ-C): HordeMode servers are ONE-RUN by design — players
--- are returned to the lobby at the end and the server dies. The old
--- OnStateChanged closure re-armed the run timers "on each Defending
--- entry", but the vote loop and run-timer threads below exit
--- permanently after the first run, so a re-armed state machine would
--- have had no votes and no end-timer. Deleted rather than made
--- restartable. If re-runs in one server ever become a thing, restart
--- the two loops here too.
+-- are returned to the lobby at the end and the server dies. Nothing
+-- re-arms the run on a later Defending entry: the vote loop and run-timer
+-- threads below exit permanently after the first run. If re-runs in one
+-- server ever become a thing, restart the two loops here too.
 -- ───────────────────────────────────────────────────────────
 GameStateManager.OnReturnToLobby(function()
     if RunModifiers then RunModifiers.Reset() end
     if ReturnTeleporter then ReturnTeleporter.TeleportAllToLobby() end
 end)
 
--- §AGX/D-FIX2: end the run flag on ANY run end, not just the run timer.
--- A team-wipe TriggerDefeat left hordeRunActive true, so the vote loop
--- could open a vote and Pause/Resume the horde over the DEFEAT screen
--- during the ReturnToLobbyDelay. (Not a re-arm — see §T0P2/X13 above.)
+-- §AGX/D-FIX2: end the run flag on ANY run end, not just the run timer,
+-- so a team wipe can't let the vote loop open a vote and Pause/Resume the
+-- horde over the DEFEAT screen. (Not a re-arm — see §T0P2/X13 above.)
 GameStateManager.OnStateChanged(function(newState)
     if newState == "Defeat" or newState == "Victory" then
         hordeRunActive = false
@@ -294,10 +290,10 @@ TeleportDataReader.OnDifficultyResolved(function(difficulty)
     print("[HordeMode] Difficulty resolved:", hordeDifficulty)
 end)
 
--- §3.1 fix: defer Start() until the first player's DataStore load
+-- §3.1: defer Start() until the first player's DataStore load
 -- completes so the party-anchor level isn't read as the default 1.
 local hordeSpawnerStarted = false
--- §AGX/D-FIX: N6 — level-watcher baseline, hoisted so anchor jumps can re-baseline it (a 1→2 anchor looked like a natural +1 tick).
+-- §AGX/D-FIX: N6 — level-watcher baseline, hoisted so anchor jumps can re-baseline it (a 1→2 anchor would look like a natural +1 tick).
 local hordeLevelBaseline = HordeModeSpawner.GetLevel() or 1
 local function startSpawnerOnce()
     if hordeSpawnerStarted then return end
@@ -309,8 +305,8 @@ local function startSpawnerOnce()
         if lvl > highest then highest = lvl end
     end
     -- §AGX/SEC: Start() FIRST. Its first call resets currentLevel /
-    -- maxAutoLevel to CFG defaults, which silently clobbered an anchor
-    -- applied before it (the per-player extras re-anchor masked this).
+    -- maxAutoLevel to CFG defaults, which would clobber an anchor applied
+    -- before it.
     HordeModeSpawner.Start()
     if highest > 1 then
         HordeModeSpawner.SetPartyAnchorLevel(highest)
@@ -319,7 +315,7 @@ local function startSpawnerOnce()
     hordeLevelBaseline = HordeModeSpawner.GetLevel() or hordeLevelBaseline
 end
 
--- §AGX/WC: §PB-D3 — the spawner now also waits for the all-players-ready
+-- §AGX/WC: §PB-D3 — the spawner also waits for the all-players-ready
 -- gate (see the EnableStartGate block below). Both conditions must hold:
 -- a loaded player (§3.1 anchor) AND the gate open.
 local hordeGateOpen  = false
@@ -346,21 +342,13 @@ HordePauseManager.Setup({
     NetworkManager   = NetworkManager,
 })
 
--- §EASY/E4 (§AM4): HordeMode has no MobSpawner waves, so wavesSurvived /
--- highestWave never advanced for horde players. Watch the horde level
--- and feed each increment into the SAME public hook the wave system uses.
--- §AGX/X27: the same watcher also records HighestWaveReached (same level
--- number the achievement hook gets), so it no longer bails when
--- AchievementManager is missing.
--- §AGX/SEC: HighestWave semantics = the highest wave/level COMPLETED,
--- same as Lane (MobSpawner.OnWaveCompleted passes the wave just cleared)
--- and the achievement hook. Level N→N+1 means level N was survived, so we
--- report the OLD level; the old loop reported the level just REACHED
--- (one too high). Only a single-step tick counts as progress: the party
--- anchor (SetPartyAnchorLevel) and the Studio setHordeLevel command jump
--- the level, and those jumps used to be credited as dozens of "survived"
--- waves. Any other change just re-baselines. Natural ticks are 75 s apart
--- (HordeModeSpawner CFG.LEVEL_TICK_INTERVAL) against a 2 s poll.
+-- §EASY/E4 (§AM4), §AGX/X27, §AGX/SEC: HordeMode has no MobSpawner waves,
+-- so this watches the horde level and feeds each step into the SAME hooks
+-- the wave system uses (achievements, and HighestWaveReached even when
+-- AchievementManager is missing). Semantics = highest level COMPLETED, as
+-- in Lane: N→N+1 reports N. Only a single-step tick counts; anchor jumps
+-- (SetPartyAnchorLevel, Studio setHordeLevel) just re-baseline. Natural
+-- ticks (CFG.LEVEL_TICK_INTERVAL) are far apart against a 2 s poll.
 task.spawn(function()
     local amMod = ctx.loaded["AchievementManager"]
     if amMod and not amMod.OnWaveCompleted then amMod = nil end
@@ -393,10 +381,10 @@ VoteManager.SetRunState({
     modeId     = "HordeMode",
 })
 
--- §T0P2/X13: one-run server; no OnStateChanged re-arm exists anymore.
+-- §T0P2/X13: one-run server; no OnStateChanged re-arm.
 -- "suppressWaveStart" keeps MobSpawner's wave 1 out of Defending (Horde
 -- spawns via HordeModeSpawner).
--- §AGX/WC: §PB-D3 — no more SetState("Defending") at boot. The shared
+-- §AGX/WC: §PB-D3 — no SetState("Defending") at boot. The shared
 -- start gate enters Defending itself (autoStart) once every party member
 -- expected here has sent ClientReady, or 20 s after the first one did.
 -- No Start button: RequestStartGame is refused in auto-start places and
@@ -444,7 +432,7 @@ Lifecycle.StartVitalsLoop(ctx)
 -- ───────────────────────────────────────────────────────────
 -- HORDE VOTE CADENCE + RUN DURATION
 --
--- Supply Vote every 45 s, Threat Vote every 90 s (alternating).
+-- One vote every SUPPLY_INTERVAL of play time, alternating Supply / Threat.
 -- Run lasts RUN_DURATION seconds of *play time* — pause windows are
 -- excluded because HordePauseManager freezes the mobs + spawner.
 -- Budget math: 14 × 45 s = 630 s = 10 m 30 s (also 7 × 90 s).
@@ -454,7 +442,7 @@ Lifecycle.StartVitalsLoop(ctx)
 local SUPPLY_INTERVAL = 45    -- seconds of play-time between votes
 local RUN_DURATION    = 630   -- 10 m 30 s of play time
 
--- §AGX/WC: §PB-D3 — both loops now start when the start gate opens
+-- §AGX/WC: §PB-D3 — both loops start when the start gate opens
 -- (startHordeLoops, called from the OnStartGateOpen hook below), not at
 -- boot, so the play clock and vote cadence count from the real start.
 local hordeLoopsStarted = false
@@ -571,7 +559,7 @@ Lifecycle.WireOnPlayerReady(ctx, {
             if lvl > highest then highest = lvl end
         end
         -- §AGX/D-FIX: only before the run starts. SetPartyAnchorLevel resets
-        -- currentLevel and the phase clock, so a mid-run joiner used to rewind
+        -- currentLevel and the phase clock, so a mid-run joiner would rewind
         -- the whole party's horde progress. startSpawnerOnce re-reads every
         -- loaded player's level when the gate opens anyway.
         if not hordeSpawnerStarted then
@@ -581,10 +569,9 @@ Lifecycle.WireOnPlayerReady(ctx, {
         end
 
         -- Push current game state to late-joiners.
-        -- §T0P2/X9: ReadyGate-routed — this fires from the data-ready
-        -- path, i.e. exactly the boot window where a bare FireClient
-        -- drops if the client hasn't subscribed yet (the race this
-        -- late-joiner fix exists to solve).
+        -- §T0P2/X9: ReadyGate-routed (ARCHITECTURE.md#readygate-pushes):
+        -- this fires from the data-ready path, the boot window where a bare
+        -- FireClient drops if the client hasn't subscribed yet.
         local state = GameStateManager.GetState()
         local rg = ctx.loaded["ReadyGate"]
         local fire = rg and rg.FireClient or NetworkManager.FireClient

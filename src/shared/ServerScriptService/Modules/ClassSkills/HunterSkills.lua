@@ -85,10 +85,10 @@ HunterSkills.Skills = {
 	--
 	--   Fires 5 arrows forward in rapid succession.
 	--   Base damage is the same per arrow.
-	--   If the same mob is hit by successive arrows, each hit
-	--   gains +0.3× extra (compounding per hit on that mob):
-	--       Hit 1 = 1.0×  |  Hit 2 = 1.3×  |  Hit 3 = 1.6×
-	--       Hit 4 = 1.9×  |  Hit 5 = 2.2×
+	--   If the same mob is hit by successive arrows, each earlier hit
+	--   on that mob adds +successiveHitScaling× (linear, 0.25 below):
+	--       Hit 1 = 1.0×  |  Hit 2 = 1.25×  |  Hit 3 = 1.5×
+	--       Hit 4 = 1.75× |  Hit 5 = 2.0×
 	-- ═══════════════════════════════════════════════════════
 	[2] = {
 		id   = "Barrage",
@@ -136,7 +136,7 @@ HunterSkills.Skills = {
 	},
 
 	-- ═══════════════════════════════════════════════════════
-	-- SLOT 3: Rain of Arrows (Mouse-targeted rectangle, 2 waves)
+	-- SLOT 3: Rain of Arrows (forward-cast rectangle, 2 waves)
 	-- ═══════════════════════════════════════════════════════
 	[3] = {
 		id   = "RainOfArrows",
@@ -193,8 +193,8 @@ HunterSkills.Skills = {
 	--       • −AttackSpeed  = attackSpeedPenalty %
 	--
 	--   Configurable constants for tuning:
-	--       critPerResource      default 0.5  (100 Focus → +50 % crit)
-	--       attackSpeedPenalty   default 40   (−40 % attack speed)
+	--       critPerResource      0.5  (100 Killer Instinct → +50 % crit)
+	--       attackSpeedPenalty   30   (−30 % attack speed)
 	--       buffDuration         default 6 s
 	-- ═══════════════════════════════════════════════════════
 	[4] = {
@@ -321,8 +321,7 @@ function HunterSkills.SwiftArrowExec(player, skill, inputData)
 
 	-- Prefer client's authoritative look direction (already flat/normalised by SkillInput)
 	-- Falls back to server rootPart LookVector if not provided
-	-- §T2/Z3: client-look preferred, server fallback, NaN-proof (the old
-	-- inline version normalized the flattened client vector unguarded).
+	-- §T2/Z3: client-look preferred, server fallback, NaN-proof.
 	local direction = Base.GetCastDirection(rootPart, inputData)
 
 	-- Visual
@@ -353,7 +352,7 @@ function HunterSkills.SwiftArrowExec(player, skill, inputData)
 		hitCount = hitCount + 1
 	end
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 	return true
 end
 
@@ -368,8 +367,7 @@ function HunterSkills.BarrageExec(player, skill, inputData)
 	local origin = rootPart.Position
 
 	-- Prefer client's authoritative look direction
-	-- §T2/Z3: client-look preferred, server fallback, NaN-proof (the old
-	-- inline version normalized the flattened client vector unguarded).
+	-- §T2/Z3: client-look preferred, server fallback, NaN-proof.
 	local direction = Base.GetCastDirection(rootPart, inputData)
 
 	local arrowCount = skill.arrowCount or 5
@@ -418,12 +416,12 @@ function HunterSkills.BarrageExec(player, skill, inputData)
 		player:SetAttribute("CastingLockAttack", false)
 	end)
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 	return true
 end
 
 -- ═══════════════════════════════════════════════════════════
--- SKILL 3: RAIN OF ARROWS  (mouse-targeted, 2 waves)
+-- SKILL 3: RAIN OF ARROWS  (forward-cast, 2 waves)
 -- ═══════════════════════════════════════════════════════════
 
 function HunterSkills.RainOfArrowsExec(player, skill, inputData)
@@ -432,14 +430,11 @@ function HunterSkills.RainOfArrowsExec(player, skill, inputData)
 
 	local playerPos = rootPart.Position
 
-	-- §LD-SK1: deterministic forward cast (was reading nil
-	-- inputData.targetPosition, so the volley landed at the player's
-	-- feet while the visual followed the mouse).
+	-- §LD-SK1: deterministic forward cast (see BaseSkills.GetForwardCastPosition).
 	local targetPos = Base.GetForwardCastPosition(player, skill, inputData)
 
 	-- Capture player facing at cast time for shape orientation
-	-- §T2/Z3: seventh copy of the direction block, missed by the first
-	-- sweep — server-look on purpose (shape orientation, not aim).
+	-- §T2/Z3: server-look on purpose (shape orientation, not aim).
 	local direction = Base.GetCastDirection(rootPart)
 
 	-- Visual
@@ -459,7 +454,7 @@ function HunterSkills.RainOfArrowsExec(player, skill, inputData)
 			-- Hit targets at the target position (not player position)
 			local targets = Base.GetTargetsInShape(targetPos, direction, skill)
 			local hits    = Base.DamageTargets(targets, player, skill.damageMultiplier, skill.id, skill.element)
-			-- §T2/Z6: telemetry print removed.
+			-- §T2/Z6: no telemetry print (log spam).
 		end)
 	end
 
@@ -478,7 +473,7 @@ function HunterSkills.EagleEyeExec(player, skill, inputData)
 	local atkPenalty   = skill.attackSpeedPenalty or 40
 	local dur          = skill.buffDuration or 6
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 
 	-- Apply Crit Chance buff
 	Effects.ApplyEffect(player, {

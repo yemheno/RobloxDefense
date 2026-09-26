@@ -62,15 +62,16 @@
       cap150 incremented when pale_colossus is killed while player.Level ≤ 150
       cap200 incremented when abyssal_sovereign is killed while player.Level ≤ 200
 
-    REWARD PHILOSOPHY (balanced against BALANCE_NUMBERS.md)
+    REWARD PHILOSOPHY (balanced against BALANCE_NUMBERS.md#economy-anchor;
+    tables in BALANCE_NUMBERS.md#achievements)
     ═══════════════════════════════════════════════════════
     Economy anchors:
-      • 99 Robux  = 50 Essence  (Essence is premium)
+      • 1 Essence ≈ 250 Merits; Robux never buys Merits or Essence
+        (DESIGN_DECISIONS.md#monetization)
       • Weapon tier ladder I→XII = ~1,650 Essence total
       • Respec = 25 Essence flat (§AGX/X42)
       • Daily login = 2–10 Essence/day; day-30 bonus = 100 Essence
       • 12-wave Lane run ≈ 542 × (1 + 0.1(L−1)) Merits on Normal (§AGX/X25)
-      • Old achievement lifetime cap ≈ 100K Merits + 500–600 Essence + 2 Respecs
 
     Reward bands (tier 10 cap per band):
       Standard  — 125K Merits / 125 Essence / 1 Respec   (common combat / survival)
@@ -480,7 +481,7 @@ AchievementConfig.Achievements = {
 
 	--[[  ACCOUNT LEVEL 50  (§AGX/X18b: one-shot, single tier)  ]]
 	-- Pablo: the first appearance change after creation is earned here;
-	-- every later change is paid (MonetizationService, BALANCE_NUMBERS §48).
+	-- every later change is paid (MonetizationService, BALANCE_NUMBERS.md#monetization-robux).
 	{
 		id       = "veteran",
 		name     = "Veteran",

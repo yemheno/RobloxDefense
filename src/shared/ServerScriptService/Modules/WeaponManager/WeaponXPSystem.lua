@@ -89,8 +89,8 @@ local function getRole(player)
 	return (class and class.weaponXPRole) or "dps"
 end
 
--- §AGX/X22: WeaponXPGained is coalesced (SCALING_AUDIT §SCALE/S5 pattern).
--- It used to fire once per kill (dps) / per hit taken (tank). Gains are now
+-- §AGX/X22, §SCALE/S5: WeaponXPGained is coalesced (ARCHITECTURE.md#scaling)
+-- instead of firing per kill (dps) / per hit taken (tank). Gains are
 -- summed per player and weapon and flushed once per WEAPON_XP_WINDOW with
 -- the weapon's CURRENT xp/level (a snapshot, so the summed xpGained plus
 -- the latest totals is all the client needs — EquipmentUI only refreshes).

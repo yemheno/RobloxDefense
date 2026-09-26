@@ -11,10 +11,10 @@ local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local VisualEquipmentManager = require(Modules:WaitForChild("VisualEquipmentManager"))
 
--- §NM-D2: lazy ReadyGate ref. WeaponEquipped is fired during PlayerAdded
--- (EnsureStarterWeapon) before the client UI has subscribed, which used
--- to drop the first packet → "weapon icon missing on first spawn" bug.
--- ReadyGate queues until ClientReady so the icon always lands.
+-- §NM-D2: lazy ReadyGate ref (ARCHITECTURE.md#readygate-pushes).
+-- WeaponEquipped is fired during PlayerAdded (EnsureStarterWeapon) before
+-- the client UI has subscribed; ReadyGate queues until ClientReady so the
+-- first packet (the weapon icon) always lands.
 -- Lazy require because ReadyGate may load after WeaponManager.
 local _ReadyGate = nil
 local function fireWeaponEquipped(player, payload)
@@ -40,8 +40,7 @@ local TierSystem
 local BonusSystem
 
 -- §T0-FOLLOWUP/L1: per-player Janitor tracks the CharacterAdded conn so
--- it's torn down on PlayerRemoving rather than relying on Roblox to
--- eventually GC the Player object.
+-- it's torn down on PlayerRemoving (ARCHITECTURE.md#janitor-per-player).
 local Janitor = require(Modules:WaitForChild("Janitor"))
 local playerJanitors = setmetatable({}, { __mode = "k" })
 local function getPlayerJanitor(player)
@@ -89,19 +88,10 @@ function WeaponManager.Init()
 
 	-- §LD-W2: setup the starter weapon BOTH on PlayerAdded (mints
 	-- data on a brand-new account) AND on every CharacterAdded (so
-	-- the visual is re-attached after respawn / class switch).
-	-- The old one-shot version had two real failure modes:
-	--   1) PlayerAdded fires before the character spawns — the
-	--      polling loop only waits for CLASS DATA, so AttachClassWeapon
-	--      reached a nil character and silent-returned; nothing
-	--      retried.
-	--   2) Respawn dropped the weapon visual since the per-player
-	--      `initializedPlayers` guard blocked re-runs and the
-	--      VisualEquipmentManager.ReattachAll path needs the in-memory
-	--      cache that bug #1 prevented from ever being populated.
-	-- Calling EnsureStarterWeapon multiple times is safe — its
-	-- internal logic is idempotent (data row created once, AttachClassWeapon
-	-- always re-attaches the visual on the live character).
+	-- the visual is re-attached after respawn / class switch): PlayerAdded
+	-- usually fires before the character exists, so a one-shot attach
+	-- would find no character. EnsureStarterWeapon is idempotent (data
+	-- row created once, AttachClassWeapon re-attaches on the live character).
 	local function ensureWeaponSetup(player)
 		task.spawn(function()
 			-- Wait up to 5s for PlayerDataManager to set up the player.
@@ -132,8 +122,8 @@ function WeaponManager.Init()
 		end
 	end
 
-	-- §AGX/T11-JAN: one wire per player. A player joining between the
-	-- PlayerAdded connect and the GetPlayers() loop was wired twice (two
+	-- §AGX/T11-JAN: one wire per player, so a player joining between the
+	-- PlayerAdded connect and the GetPlayers() loop isn't wired twice (two
 	-- CharacterAdded conns → two setups per respawn).
 	local function wirePlayer(player)
 		if playerJanitors[player] then return end
@@ -195,12 +185,10 @@ function WeaponManager.EnsureStarterWeapon(player)
 		return
 	end
 
-	-- §LD-W1 fix: returning players already have classData.EquippedWeapon
-	-- populated from saved data, so the early-return below skipped the
-	-- entire AttachClassWeapon path. Result: weapon model never loaded
-	-- visually on first spawn even though the weapon is "equipped" in
-	-- data. Always attach the visual at the end; only the create-new
-	-- branch needs to mint a fresh instance.
+	-- §LD-W1: returning players already have classData.EquippedWeapon from
+	-- saved data; they still need the visual attached (and the echo), so
+	-- this branch attaches before returning. Only the create-new branch
+	-- mints a fresh instance.
 	if classData.EquippedWeapon and classData.EquippedWeapon.weaponId then
 		local equippedId = classData.EquippedWeapon.weaponId
 		local def = WeaponRegistry.GetWeapon(equippedId)
@@ -494,10 +482,7 @@ function WeaponManager.GetDebugInfo(player)
 	local weaponInstance = WeaponManager.GetEquippedWeapon(player)
 	if not weaponInstance then return "No weapon equipped" end
 
-	-- §LD-W3 file-truncation recovery: the file used to end abruptly
-	-- mid-function (same Studio re-sync corruption that nuked
-	-- VisualEquipmentManager). Reconstructed to return a useful
-	-- summary string for admin testing — does not affect gameplay.
+	-- §LD-W3: summary string for admin testing; does not affect gameplay.
 	local def = WeaponRegistry.GetWeapon(weaponInstance.weaponId)
 	local lines = {
 		string.format("Player: %s", player.Name),

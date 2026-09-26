@@ -405,7 +405,7 @@ local function spawnBoss(f, hpFraction)
 	f.boss, f.humanoid, f.root = model, humanoid, root
 	f.janitor:Add(model, "bossModel")
 
-	-- Per-boss connections die with the model (§5.2 LinkToInstance).
+	-- Per-boss connections die with the model (LinkToInstance, ARCHITECTURE.md#janitor-per-character).
 	local bossJan = Janitor.new("BossEncounter.boss")
 	bossJan:LinkToInstance(model)
 	f.janitor:Add(bossJan, "bossJanitor")

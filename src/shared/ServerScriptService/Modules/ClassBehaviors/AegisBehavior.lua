@@ -15,7 +15,7 @@ AegisBehavior.CONFIG = {
 	-- Passive regen
 	BaseRegen = 1.0,                -- §29.1: 1.0/s in-combat passive gain
 
-	-- (rest stays the same)
+	-- Gains
 	GainPerHitDealt = 1,            -- §29.1: +1 on hit dealt
 	GainPerKill = 3,                -- §29.1: +3 on kill
 	MinibossHitMultiplier = 1.5,

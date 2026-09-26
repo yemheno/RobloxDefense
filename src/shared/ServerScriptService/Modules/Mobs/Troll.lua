@@ -33,7 +33,4 @@ return {
 	behaviors = {
 		{ type = "Enrage", hpThreshold = 0.40, speedBonus = 3, damageBonus = 1.4 },
 	},
-
-	-- Future: special properties
-	-- passives = { "Regeneration" },
 }

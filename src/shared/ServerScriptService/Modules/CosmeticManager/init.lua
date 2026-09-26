@@ -43,7 +43,7 @@ local NetworkManager    = nil
 local PlayerDataManager = nil
 local CosmeticConfig    = nil
 
--- §AGX/T11-JAN: per-player Janitor (Audit_4.7 §5.1) for the CharacterAdded conn.
+-- §AGX/T11-JAN: per-player Janitor (ARCHITECTURE.md#janitor-per-player) for the CharacterAdded conn.
 local Janitor = require(Modules:WaitForChild("Janitor"))
 local playerJanitors = setmetatable({}, { __mode = "k" })
 
@@ -116,11 +116,10 @@ function CosmeticManager.Init()
 	end)
 
 	-- ── Player lifecycle ──────────────────────────────────
-	-- §AGX/T11-JAN: §T1.1-JAN1. The PlayerAdded handler and the
-	-- existing-players loop each wired an untracked CharacterAdded conn (and a
-	-- player joining between the two got both). One wirePlayer, guarded by the
-	-- per-player Janitor, owns the conn plus the in-flight settle thread;
-	-- PlayerRemoving destroys it.
+	-- §AGX/T11-JAN, §T1.1-JAN1: PlayerAdded and the existing-players loop
+	-- share one wirePlayer, guarded by the per-player Janitor so a player
+	-- joining between the two is wired once. The Janitor owns the conn plus
+	-- the in-flight settle thread; PlayerRemoving destroys it.
 	local function reapplyAfterSpawn(player)
 		task.wait(0.5)  -- wait for body parts + data to be ready
 		CosmeticManager.SetupPlayer(player)  -- re-run now that data is loaded

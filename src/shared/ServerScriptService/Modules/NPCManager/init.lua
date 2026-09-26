@@ -205,8 +205,8 @@ function NPCManager.CreateNPCModel(def)
 	-- §AGX/UI-P2: M2/D5 — native ProximityPrompt so NPCs work on touch,
 	-- gamepad and keyboard. Created here (server) so it replicates with the
 	-- model. The CLIENT (lobby NPCInteraction) handles PromptTriggered and
-	-- fires the same "NPCInteract" remote as before, so HandleInteraction's
-	-- INTERACT_RANGE check and handler routing are unchanged. Deliberately no
+	-- fires the "NPCInteract" remote, so HandleInteraction's INTERACT_RANGE
+	-- check and handler routing apply. Deliberately no
 	-- server-side .Triggered hook here: that would double-fire the handler.
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name                  = "NPCPrompt"
@@ -312,8 +312,8 @@ function NPCManager.HandleResponse(player, data)
 	local npcData = spawnedNPCs[data.npcId]
 	if not npcData then return end
 
-	-- §AGX/X29: responses skipped the range check that interacts have.
-	-- Doubled range so walking a few steps with the dialog open still works.
+	-- §AGX/X29: responses get the same range check as interacts, at double
+	-- range so walking a few steps with the dialog open still works.
 	local character = player.Character
 	local rootPart = character and character:FindFirstChild("HumanoidRootPart")
 	local npcRoot = npcData.model and npcData.model:FindFirstChild("HumanoidRootPart")

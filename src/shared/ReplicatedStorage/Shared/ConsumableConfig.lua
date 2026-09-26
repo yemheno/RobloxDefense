@@ -119,8 +119,8 @@ ConsumableConfig.Consumables = {
     {
         id       = "iron_skin_potion",
         name     = "Ironskin Potion",
-        -- §AGX/X10b: "+12% armor-derived mitigation" promised more than it
-        -- does: +12% Armor raises division-based mitigation by less than 12%.
+        -- §AGX/X10b: the desc says "+12% armor", not mitigation: +12% Armor
+        -- raises division-based mitigation by less than 12%.
         desc     = "+12% armor for 45 seconds.",
         icon     = "🛡",
         maxStack = 10,
@@ -135,10 +135,9 @@ ConsumableConfig.Consumables = {
         icon     = "💨",
         maxStack = 10,
         cooldown = 45,
-        -- §AGX/STATS: MovementSpeed now has a reader (DeathSystem folds it
-        -- into the X13 BaseWalkSpeed; StatCaps.MovementSpeed max 30), so the
-        -- elixir is a plain timed BonusStats buff. Was the non-existent
-        -- "MovementSpeedPercent" key, which BuffStat would have rejected.
+        -- §AGX/STATS: MovementSpeed has a reader (DeathSystem folds it into
+        -- the §AGX/X13 BaseWalkSpeed; StatCaps.MovementSpeed), so the elixir
+        -- is a plain timed BonusStats buff on that key.
         effect   = { type = "BuffStat", stat = "MovementSpeed", value = 10, duration = 30 },
         usable   = true,
     },

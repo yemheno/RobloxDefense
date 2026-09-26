@@ -7,11 +7,12 @@ local Players = game:GetService("Players")
 local Modules = script.Parent.Parent  -- Go up to Modules folder
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
 local StatsManager = require(Modules:WaitForChild("StatsManager"))
-local MobRegistry = require(Modules:WaitForChild("MobRegistry"))  -- CHANGED from MobConfig
+local MobRegistry = require(Modules:WaitForChild("MobRegistry"))
 local ElementalSystem = require(Modules:WaitForChild("ElementalSystem"))
 local PlayerDataConfig = require(Modules:WaitForChild("PlayerDataConfig"))
 
--- §AGX/BAL: StatCaps.Lifesteal (25) was declared but never enforced here.
+-- §AGX/BAL: StatCaps.Lifesteal is enforced here: lifesteal is a raw bonus
+-- + keystone sum, not a capped stat read.
 local LIFESTEAL_CAP = (PlayerDataConfig.StatCaps.Lifesteal and PlayerDataConfig.StatCaps.Lifesteal.max) or 25
 
 -- HitTracker reference (set after it's created)
@@ -29,9 +30,8 @@ function DamageHandler.OnMobKilled(callback)
 		KillRewardManager.OnMobKilled(callback)
 	else
 		-- Queue until Init resolves KillRewardManager.
-		-- §T2/Z6: bounded — the old loop polled forever if KRM never
-		-- loaded. 10 s covers any legitimate boot ordering; past that,
-		-- warn loudly and drop (loud-at-boot over silent spin).
+		-- §T2/Z6: bounded wait. 10 s covers any legitimate boot ordering;
+		-- past that, warn loudly and drop (ARCHITECTURE.md#loud-at-boot).
 		task.spawn(function()
 			local deadline = os.clock() + 10
 			repeat task.wait(0.05) until KillRewardManager ~= nil or os.clock() > deadline
@@ -86,7 +86,7 @@ function DamageHandler.DamageMob(mob, player, options)
 	-- Guard against double-kill: if mob is already dead, skip
 	if humanoid.Health <= 0 then return nil end
 
-	-- Get mob info (CHANGED: use MobId attribute and MobRegistry)
+	-- Get mob info (MobId attribute → MobRegistry)
 	local mobId = mob:GetAttribute("MobId") or mob:GetAttribute("MobType") or "Unknown"
 	local mobTier = mob:GetAttribute("MobTier") or MobRegistry.GetMobTier(mobId) or "normal"
 
@@ -169,14 +169,13 @@ end
 -- DAMAGE NUMBERS
 -- ═══════════════════════════════════════════════════════════
 
--- §PERF/F4 (task #17): spectator cache. SendDamageNumber fires for every
--- landing hit (dozens/sec in combat) and used to call GetPlayers() plus a
--- GetAttribute per player per hit. The set of players with ShowAllDamage
--- changes rarely — maintain it on the attribute signal instead.
+-- §PERF/F4: spectator cache. SendDamageNumber fires for every landing hit
+-- (dozens/sec in combat) and the set of players with ShowAllDamage changes
+-- rarely, so it is maintained on the attribute signal, not scanned per hit.
 local spectators = {}  -- [player] = true while ShowAllDamage == true
--- §AGX/T11-JAN: [player] = Janitor (was = true). The attribute conn is now
--- torn down on PlayerRemoving instead of relying on the Player instance
--- being destroyed (not guaranteed under every PlayerInstanceDestroyBehavior).
+-- §AGX/T11-JAN: [player] = Janitor. The attribute conn is torn down on
+-- PlayerRemoving instead of relying on the Player instance being destroyed
+-- (not guaranteed under every PlayerInstanceDestroyBehavior).
 local Janitor = require(Modules:WaitForChild("Janitor"))
 local spectatorsWired = setmetatable({}, { __mode = "k" })
 
@@ -301,7 +300,7 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 -- §AGX/X12: mobs whose death has already been processed. HandleMobDeath
--- is now reachable from three paths (DamageMob, DoT ticks, Thorns reflect)
+-- is reachable from three paths (DamageMob, DoT ticks, Thorns reflect)
 -- that can land in the same frame; the first one wins and the rest are
 -- no-ops, so a mob can never be rewarded twice. Weak keys: the mob is
 -- Destroy()ed right after, so the entry is collectable.
@@ -338,10 +337,9 @@ function DamageHandler.HandleMobDeath(mob, player, damageResult)
 end
 
 --- §AGX/X12: damage that bypasses StatsManager.CalculateDamage (DoT ticks,
---- Thorns reflect) used to call humanoid:TakeDamage directly, so a kill
---- skipped HandleMobDeath: the corpse was never destroyed and paid no XP,
---- drops, weapon XP or achievements. Every raw-damage site goes through
---- here instead. `amount` is final (already scaled by the caller).
+--- Thorns reflect). Every raw-damage site goes through here, never a bare
+--- humanoid:TakeDamage, so a kill still runs HandleMobDeath (corpse cleanup,
+--- XP, drops, weapon XP, achievements). `amount` is final (already scaled).
 --- `sourcePlayer` is credited with the kill; nil / departed = no rewards,
 --- but the mob is still cleaned up. Returns true if this call killed it.
 function DamageHandler.ApplyRawDamage(mob, amount, sourcePlayer)

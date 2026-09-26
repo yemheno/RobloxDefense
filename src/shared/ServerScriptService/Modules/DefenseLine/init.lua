@@ -22,7 +22,7 @@ local DefenseAnimation = require(script:WaitForChild("DefenseAnimation"))
 local defenseLinePart = nil
 local isInitialized = false
 -- §AGX/T11-JAN: run generation, bumped by Reset(). A breach whose
--- PlayHitAnimation delay straddles a Reset used to apply the previous run's
+-- PlayHitAnimation delay straddles a Reset must not apply the previous run's
 -- damage to the fresh line.
 local runGeneration = 0
 
@@ -81,10 +81,9 @@ function DefenseLine.Init()
 	end)
 end
 
--- §D2 fix: LateInit idempotency. Init() task.defers LateInit once, but
--- the place bootstrap (LaneDefenseMain) ALSO calls LateInit explicitly,
--- which used to log + re-require twice. Guard so the second call is a
--- silent no-op.
+-- §D2: LateInit idempotency. Init() task.defers LateInit once, but the
+-- place bootstrap (LaneDefenseMain) ALSO calls it explicitly; the second
+-- call is a silent no-op.
 local _lateInitDone = false
 
 function DefenseLine.LateInit()
@@ -178,7 +177,7 @@ function DefenseLine.OnMobReachedLine(mob, mobData)
 			baseDamage = baseDamage,
 		})
 
-		-- §AGX/X35 (G21): per-breach print removed (log noise under load).
+		-- §AGX/X35 (G21): no per-breach print (log noise under load).
 
 		-- Destroy mob
 		DefenseDetection.ClearMob(mob)
@@ -244,7 +243,7 @@ end
 
 --- Add a temporary shield as a flat heal equal to a fraction of max HP.
 --- Full shield mechanics (overheal buffer) can be added later; for now
---- this is equivalent to a heal that can over-cap up to 100%.
+--- this is a plain heal (DefenseHealth.Heal clamps at max HP).
 --- Called by the card/vote system (Fortify).
 function DefenseLine.AddShieldPercent(fraction)
 	local maxHP = DefenseHealth.GetMaxHealth()

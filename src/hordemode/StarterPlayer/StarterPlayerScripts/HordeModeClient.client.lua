@@ -151,7 +151,7 @@ if NetworkManager then
 			if humanoid and savedWalkSpeed then
 				-- §AGX/STATS: timed MovementSpeed buffs keep ticking during the
 				-- pause, so the saved value can be stale. When alive and not
-				-- cast-locked, restore the server's current X13 speed (active
+				-- cast-locked, restore the server's current §AGX/X13 speed (active
 				-- Stun/Slow first, then BaseWalkSpeed); otherwise the old value.
 				local restore = savedWalkSpeed
 				if localPlayer:GetAttribute("DeathState") == "Alive"

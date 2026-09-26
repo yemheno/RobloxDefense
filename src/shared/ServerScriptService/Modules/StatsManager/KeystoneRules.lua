@@ -27,12 +27,11 @@
 
     Rules NOT here stay "(coming soon)" (TalentTreeConfig.IMPLEMENTED_RULES):
     ArcSaturation, EyeOfTheStorm (need a per-cast hit-count hook; AoESize
-    itself is read since §AGX/STATS) and CalmUnderFire (its stats are all
-    read since §AGX/STATS; the rule itself is not written yet).
-    §AGX/X11: SpellRhythm (rewritten, below) and the two party auras
-    (StatsManager/PartyAura) landed with the delegated balance pass.
+    itself is read, §AGX/STATS) and CalmUnderFire (its stats are all read,
+    §AGX/STATS; the rule itself is not written yet).
+    SpellRhythm and the two party auras (StatsManager/PartyAura) are live.
 
-    Hot path (Audit_4.7 §5.4): HasRule and every sibling function are
+    Hot path (ARCHITECTURE.md#hot-path-ref-cache): HasRule and every sibling function are
     resolved ONCE and cached as function refs; per-hit work is table reads
     plus, only for players holding the rule, a Humanoid lookup on the target.
     All numbers below are the keystone descriptions verbatim.
@@ -92,7 +91,7 @@ local GRACE_EXCESS_FRAC       = 0.20
 local GRACE_HOT_DURATION      = 4
 local GRACE_LIFESTEAL_MULT    = 0.5
 
--- §AGX/X11: Spell Rhythm (rewritten description, delegated balance call)
+-- §AGX/X11: Spell Rhythm (delegated balance call)
 local RHYTHM_DURATION         = 5      -- s, per stack
 local RHYTHM_MAX              = 3
 local RHYTHM_DMG_PCT          = 8      -- per stack, on the consuming basic attack
@@ -101,7 +100,7 @@ local SAMPLE_INTERVAL         = 0.2
 local MOVE_EPS_SQ             = 0.5 * 0.5   -- studs² per sample (≈2.5 studs/s)
 
 -- ═══════════════════════════════════════════════════════════
--- CACHED REFERENCES  (Audit_4.7 §5.4 — resolve once, keep the fn ref)
+-- CACHED REFERENCES  (ARCHITECTURE.md#hot-path-ref-cache)
 -- ═══════════════════════════════════════════════════════════
 
 local _hasRule = nil  -- function | false
@@ -186,7 +185,7 @@ local function getSkillEffects()
 	return _SkillEffects or nil
 end
 
--- §AGX/X11: Notify feed line for Rhythm (UI_REVAMP Notify; never throws).
+-- §AGX/X11: Notify feed line for Rhythm (ARCHITECTURE.md#notify; never throws).
 local _NotifyService = nil  -- module | false
 local function getNotifyService()
 	if _NotifyService == nil then
@@ -495,9 +494,9 @@ function KeystoneRules.ModifyLifesteal(player, lifesteal)
 end
 
 --- Clarity Surge: each critical SKILL hit restores 4 Aether.
--- §AGX/D-FIX (review S1): once per CAST, not per target — an AoE crit on a
--- pack used to refund more Aether than the skill cost. All targets of one
--- cast resolve in the same step, so (skill, 0.25 s window) identifies it.
+-- §AGX/D-FIX (review S1): once per CAST, not per target, or an AoE crit on a
+-- pack refunds more Aether than the skill cost. All targets of one cast
+-- resolve in the same step, so (skill, 0.25 s window) identifies it.
 local claritySkillGrant = setmetatable({}, { __mode = "k" })  -- [player] = { skill, t }
 local CLARITY_CAST_WINDOW = 0.25
 function KeystoneRules.OnCritSkillHit(player, sourceSkill)

@@ -43,7 +43,7 @@ function HordePauseManager.Pause()
 	if paused then return end
 	paused = true
 
-	-- Stop spawning new mobs (markers disappear because MARKER_TRANSPARENCY = 1)
+	-- Stop spawning new mobs (Stop() also destroys the markers)
 	if HordeModeSpawner then
 		HordeModeSpawner.Stop()
 	end

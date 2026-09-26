@@ -1,22 +1,21 @@
 -- ServerScriptService/Modules/ArmorManager/ArmorBonusSystem
 --[[
     Random bonus rolling and rerolling for armors.
-    Mirrors WeaponBonusSystem but uses ArmorConfig / ArmorRegistry.
+    Mirrors WeaponBonusSystem but uses ArmorRegistry.
 ]]
 
 local ArmorBonusSystem = {}
 
 local Modules         = script.Parent.Parent
 -- §CFG-D1: tier slot/value tables + reroll cost are shared with weapons —
--- read them from GearUpgradeConfig. ArmorConfig retained for any
--- armor-specific reads added later.
+-- read them from GearUpgradeConfig.
 local GearUpgradeConfig = require(Modules:WaitForChild("GearUpgradeConfig"))
 local ArmorRegistry   = require(Modules:WaitForChild("ArmorRegistry"))
 local CurrencyManager = require(Modules:WaitForChild("CurrencyManager"))
 local NetworkManager  = require(Modules:WaitForChild("NetworkManager"))
--- §AGX/UI-P4: player-facing rejections used to be silent (return value
--- dropped by the caller / warn only). NotifyService pushes a toast; it
--- never throws, and a missing module is skipped, so logic is unchanged.
+-- §AGX/UI-P4: player-facing rejections go out as a NotifyService toast
+-- (the caller drops the return value). It never throws, and a missing
+-- module is skipped.
 local NotifyService = nil
 local function notifyReject(player, text)
 	if not NotifyService then
@@ -32,7 +31,7 @@ local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 
 ArmorBonusSystem.ArmorManager = nil
 
--- §AB1 fix: per-player reroll lock (mirrors WeaponBonusSystem §WB1).
+-- §AB1: per-player reroll lock (mirrors WeaponBonusSystem §WB1).
 local rerollLock = setmetatable({}, { __mode = "k" })
 
 --============================================

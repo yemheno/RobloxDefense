@@ -217,7 +217,8 @@ AegisSkills.Skills = {
 	--       DR% = ResourceUsed / (ResourceUsed + K) × 100
 	--       100 res → 50 %  |  200 → 66.7 %  |  500 → 83.3 %
 	--
-	--   Allies behind receive 70 % of self DR.
+	--   Allies behind: allyDrFraction (70 %) of self DR per BALANCE_NUMBERS,
+	--   but BattleBeastExec currently applies a flat 100 % instead.
 	--   Duration: 6 seconds (fixed).
 	--
 	--   Unlocks at level 30.
@@ -253,7 +254,7 @@ AegisSkills.Skills = {
 
 		-- Scaling constants (used by execution code)
 		drFormulaK       = 100,         -- DR% = R / (R + K) × 100
-		allyDrFraction   = 0.70,        -- allies get 70 % of self DR
+		allyDrFraction   = 0.70,        -- allies' share of self DR (computed, not applied: see BattleBeastExec)
 		buffDuration     = 6,
 
 		-- Ally detection cone (behind the Aegis)
@@ -365,7 +366,7 @@ function AegisSkills.ShieldBoomerang(player, skill, inputData)
 	-- PASS 1: Outgoing
 	local outTargets = Base.GetTargetsInShape(origin, direction, skill)
 	local hitCount   = Base.DamageTargets(outTargets, player, skill.outgoingMultiplier, skill.id, skill.element)
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 
 	-- PASS 2: Returning (delayed)
 	task.delay(skill.travelTime + (skill.returnDelay or 0), function()
@@ -373,7 +374,7 @@ function AegisSkills.ShieldBoomerang(player, skill, inputData)
 		if not rp then return end
 		local retTargets = Base.GetTargetsInShape(rp.Position, direction, skill)
 		local retHits    = Base.DamageTargets(retTargets, player, skill.returningMultiplier, skill.id .. "_return", skill.element)
-		-- §T2/Z6: telemetry print removed.
+		-- §T2/Z6: no telemetry print (log spam).
 	end)
 
 	return true
@@ -467,7 +468,7 @@ function AegisSkills.SunderingStrikesExec(player, skill, inputData)
 	-- Apply stacking debuff effects to each mob
 	Effects.ApplyStackingEffects(player, skill.effects, targets)
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 	return true
 end
 
@@ -494,7 +495,7 @@ function AegisSkills.BattleBeastExec(player, skill, inputData)
 	-- Allies always receive 100% DR (full protection — no cap applies to ultimates)
 	local allyFullDR = 100
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 
 	-- Apply self DR buff via the UNCAPPED path (bypasses the 75% stat cap)
 	Effects.ApplyEffect(player, {

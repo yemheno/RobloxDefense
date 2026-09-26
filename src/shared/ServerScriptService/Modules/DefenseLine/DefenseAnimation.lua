@@ -1,13 +1,11 @@
 -- ServerScriptService/Modules/DefenseLine/DefenseAnimation
 
 --[[
-    §AGX/X35: the breach "hit animation" is now CLIENT-side.
+    §AGX/X35: the breach "hit animation" is CLIENT-side. Never tween the
+    mob's parts on the SERVER: every property change replicates per part
+    to every client.
 
-    It used to TweenService every BasePart of the mob on the SERVER
-    (Transparency + Color, or Size / velocities), so each breach replicated
-    ~30 property changes per part per second for 0.5 s to every client.
-
-    Now the server only:
+    The server only:
       1. freezes the mob (PlatformStand, WalkSpeed 0, anchored root — the
          anchored root anchors the whole welded assembly),
       2. sets BreachStyle / BreachDuration / Breaching attributes and the

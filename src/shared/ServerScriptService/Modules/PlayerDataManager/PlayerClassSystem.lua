@@ -5,7 +5,7 @@ local PlayerClassSystem = {}
 local Modules = script.Parent.Parent
 local Config = require(Modules:WaitForChild("PlayerDataConfig"))
 
--- §AGX/T11-JAN: lazy ReadyGate getter (Audit_4.7 §5.3; false = looked, not found).
+-- §AGX/T11-JAN: lazy ReadyGate getter (ARCHITECTURE.md#lazy-getter; false = looked, not found).
 local _ReadyGate = nil
 local function getReadyGate()
 	if _ReadyGate ~= nil then
@@ -59,8 +59,8 @@ function PlayerClassSystem.SetActiveClass(player, className)
 	data.ActiveClass = className
 	data.LastClassSwitch = os.time()
 	-- §AGX/WC: mirror server truth into the ActiveClass attribute. The lobby's
-	-- TeleportManager stamps partyData.class from it (it was never written,
-	-- so every party member travelled as "Aegis").
+	-- TeleportManager stamps partyData.class from it (unset, every party
+	-- member travels as "Aegis").
 	player:SetAttribute("ActiveClass", className)
 
 	return true
@@ -136,7 +136,7 @@ function PlayerClassSystem.UnlockClass(player, className)
 	local data = playerDataStore[player]
 	if not data then return false, "No player data" end
 
-	-- §T1.2/D4: hardcoded Aegis exception removed. Every known class has
+	-- §T1.2/D4: no hardcoded Aegis exception. Every known class has
 	-- an entry in ClassUnlockRequirements (derived from ClassConfig); an
 	-- absent entry means the class is genuinely unknown.
 	if Config.ClassUnlockRequirements[className] == nil then
@@ -159,11 +159,10 @@ function PlayerClassSystem.UnlockClass(player, className)
 
 	-- §EASY/E6: class-unlock toast — rides the existing AchievementUnlocked
 	-- pipeline (AchievementClient → toast queue), no new client code.
-	-- §AGX/T11-JAN: routed through ReadyGate (Audit_4.7 §5.5). The login
-	-- auto-unlock (CheckAndUnlockEligibleClasses from SetupPlayer) fires
-	-- before ClientReady, so a raw FireClient dropped the toast. ReadyGate
-	-- queues until the handshake and sends immediately once ready. No
-	-- task.spawn needed: ReadyGate.FireClient never yields.
+	-- §AGX/T11-JAN: routed through ReadyGate (ARCHITECTURE.md#readygate-pushes).
+	-- The login auto-unlock (CheckAndUnlockEligibleClasses from SetupPlayer)
+	-- fires before ClientReady, where a raw FireClient drops the toast.
+	-- No task.spawn needed: ReadyGate.FireClient never yields.
 	local payload = {
 		id   = "class_unlock_" .. className,
 		name = "Class Unlocked!",
@@ -175,8 +174,8 @@ function PlayerClassSystem.UnlockClass(player, className)
 		rg.FireClient(player, "AchievementUnlocked", payload)
 	else
 		local nmMod = Modules:FindFirstChild("NetworkManager")
-		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-		-- so this getter always returned nil. Two-step form keeps both.
+		-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value
+		-- (CLAUDE.md § Luau pitfalls).
 		local ok, nm = false, nil
 		if nmMod then ok, nm = pcall(require, nmMod) end
 		if ok and nm and nm.FireClient then

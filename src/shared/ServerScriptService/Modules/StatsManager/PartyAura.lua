@@ -28,7 +28,7 @@
 
     Dynamic source keys follow the "timed_<tag>" precedent: BonusManager
     creates a missing source table on first write; the key family is
-    documented in BonusManager's header (see the X11 hand-off note).
+    documented in BonusManager's header (ARCHITECTURE.md#bonusmanager-sources).
 
     Party membership (first match wins):
       1. Combat places: TeleportDataReader.GetPartyData() roster (the
@@ -70,7 +70,7 @@ local RULE_SLOTS = {
 }
 
 -- ═══════════════════════════════════════════════════════════
--- LAZY REFERENCES  (Audit_4.7 §5.3 / §5.4)
+-- LAZY REFERENCES  (ARCHITECTURE.md#lazy-getter / #hot-path-ref-cache)
 -- ═══════════════════════════════════════════════════════════
 
 local _hasRule, _getTalentBonus = nil, nil
@@ -112,8 +112,7 @@ local _PartyManager = nil
 local function getPartyManager()
 	if _PartyManager then return _PartyManager end
 	-- §AGX/D-FIX2: PartyManager lives in ServerScriptService.Lobby.Modules
-	-- (lobby.project.json / LobbyMain), not the shared Modules folder, so
-	-- the old lookup never found it and the Lobby branch was dead.
+	-- (lobby.project.json / LobbyMain), not the shared Modules folder.
 	local lobby = game:GetService("ServerScriptService"):FindFirstChild("Lobby")
 	local lobbyModules = lobby and lobby:FindFirstChild("Modules")
 	local mod = lobbyModules and lobbyModules:FindFirstChild("PartyManager")

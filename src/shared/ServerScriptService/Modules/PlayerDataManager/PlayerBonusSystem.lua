@@ -18,11 +18,10 @@
 
     §PDM-D1: no fallback path. BonusManager is a Tier-0 dependency loaded by
     every place; if it isn't available we hard-error rather than silently
-    bypass it (the old fallback wrote directly to data.Bonus and got clobbered
-    by the next Recalculate — that's the V3 CODE_AUDIT race).
-    §PDM-D2: GetSystemStat/SetSystemStat aliases removed — use GetBonus/SetBonus.
-    §PDM-D3: SetBonus/ModifyBonus now route through BonusManager "other" source
-    so direct writes survive subsequent Recalculate calls.
+    bypass it (a direct data.Bonus write is clobbered by the next Recalculate).
+    §PDM-D2: no GetSystemStat/SetSystemStat aliases — use GetBonus/SetBonus.
+    §PDM-D3: SetBonus/ModifyBonus route through the BonusManager "other"
+    source so direct writes survive subsequent Recalculate calls.
 ]]
 
 local PlayerBonusSystem = {}
@@ -102,18 +101,16 @@ local BONUS_STAT_MAPPING = {
 	lifesteal = "Lifesteal",
 	cooldownReduction = "CooldownReduction",
 	determination = "Determination",
-	-- §T0P2/X23: rage row deleted (pre-rework resource name).
-	-- §AGX/D-FIX2: the X23 note claimed no registry rolls mana/focus — the
-	-- Arcanist/Hunter weapon pools do, and LifeSteward gear rolls
-	-- lifeEnergy, so those rolls were silently dropped. Pre-rework names
-	-- map onto the current class resource (all flat max-pool points,
-	-- same unit as the "+N Aether/Killer Instinct" talent nodes);
-	-- ResourceManager adds the class's own key to its effective max.
+	-- §T0P2/X23, §AGX/D-FIX2: no rage row (pre-rework name, nothing rolls it).
+	-- The Arcanist/Hunter weapon pools still roll mana/focus and LifeSteward
+	-- gear rolls lifeEnergy; these map onto the current class resource (flat
+	-- max-pool points, same unit as the "+N Aether/Killer Instinct" talent
+	-- nodes). ResourceManager adds the class's own key to its effective max.
 	mana       = "Aether",          -- Arcanist weapon ("Bonus Mana")
 	focus      = "KillerInstinct",  -- Hunter weapon ("Bonus Focus")
 	lifeEnergy = "LifeEnergy",      -- LifeSteward weapon + armor
-	-- §AGX/D-FIX2: healer + resist rolls had no row, so LifeSteward's top
-	-- weapon/armor stats did nothing. Units already match the readers:
+	-- §AGX/D-FIX2: healer + resist rolls (LifeSteward's top weapon/armor
+	-- stats) need these rows. Units already match the readers:
 	-- HealingPower flat (HealingSystem.GetBaseHealing), HealingPercent
 	-- percent points (/100 in CalculateHeal), StatusResistance percent
 	-- points (StatCaps 0–60, MobAI reads GetTotalStat).
@@ -147,7 +144,7 @@ function PlayerBonusSystem.ApplyWeaponBonuses(player)
 			local statName = BONUS_STAT_MAPPING[bonus.stat]
 			if statName then
 				-- §AGX/BAL: gear critDamage rolls are percent (5–40); CritDamage is a
-				-- multiplier (base 1.5, cap 1.8), so one raw roll used to pin the cap.
+				-- multiplier (base 1.5, cap 1.8), so a raw roll would pin the cap.
 				local v = (statName == "CritDamage") and bonus.value / 100 or bonus.value
 				weaponBonuses[statName] = (weaponBonuses[statName] or 0) + v
 			end
@@ -193,7 +190,7 @@ function PlayerBonusSystem.ApplyArmorBonuses(player)
 			local statName = BONUS_STAT_MAPPING[bonus.stat]
 			if statName then
 				-- §AGX/BAL: gear critDamage rolls are percent (5–40); CritDamage is a
-				-- multiplier (base 1.5, cap 1.8), so one raw roll used to pin the cap.
+				-- multiplier (base 1.5, cap 1.8), so a raw roll would pin the cap.
 				local v = (statName == "CritDamage") and bonus.value / 100 or bonus.value
 				armorBonuses[statName] = (armorBonuses[statName] or 0) + v
 			end

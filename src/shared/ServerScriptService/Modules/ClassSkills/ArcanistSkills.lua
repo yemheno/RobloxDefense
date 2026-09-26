@@ -83,9 +83,9 @@ ArcanistSkills.Skills = {
 	},
 
 	-- ═══════════════════════════════════════════════════════
-	-- SLOT 2: Frost Bind (Mouse-targeted AoE — Slow + DpS)
+	-- SLOT 2: Frost Bind (forward-cast AoE — Slow + DpS)
 	--
-	--   Targets the mouse position (clamped to maxRange).
+	--   Lands castDistance ahead of the caster (§LD-SK1).
 	--   Initial impact damage + lingering effects:
 	--       • −50 % movement speed for 3 s
 	--       • 0.15 × player Damage per second for 3 s (tick every 1 s)
@@ -102,9 +102,9 @@ ArcanistSkills.Skills = {
 
 		skillType    = "AreaEffect",
 		element      = "Water",            -- Frost = Water element
-		-- §LD-SK1: was "MousePosition" (mouse-driven, broke on
-		-- mobile/console). "Forward" = land at a fixed distance ahead
-		-- of the caster's facing direction; mirrored on client.
+		-- §LD-SK1: "Forward" = land at a fixed distance ahead of the
+		-- caster's facing direction (works on every input device);
+		-- mirrored on client.
 		targetMode   = "Forward",
 		maxRange     = 40,                 -- studs from player (sanity cap)
 		castDistance = 20,                 -- where the AoE actually lands
@@ -198,14 +198,14 @@ ArcanistSkills.Skills = {
 	-- ═══════════════════════════════════════════════════════
 	-- SLOT 4 ★ ULTIMATE: Meteorite
 	--
-	--   Mouse-targeted AoE (clamped to maxRange).
+	--   Forward-cast AoE (§LD-SK1).
 	--   Two separate damage instances: Fire then Earth.
-	--   All mobs hit receive 1.5× damage taken (Vulnerability) for 3 s.
+	--   All mobs hit receive vulnerabilityMultiplier (1.25×) damage taken for 3 s.
 	--   Damage scales linearly with Aether spent:
 	--       hitMult = baseDamageMultiplier × (1 + resourceUsed / 100)
 	--       100 Aether → 2× base  |  200 → 3× base  |  etc.
 	--
-	--   Uses ALL Aether (min 100). Locked until mission.
+	--   Uses ALL Aether (min 100). Level-gated by unlockLevel (BACKLOG §ULT-LEVEL).
 	-- ═══════════════════════════════════════════════════════
 	[4] = {
 		id   = "Meteorite",
@@ -248,7 +248,7 @@ ArcanistSkills.Skills = {
 		},
 
 		-- Vulnerability debuff applied to all targets hit
-		vulnerabilityMultiplier = 1.25,    -- §31: +25% damage taken (was 1.5x)
+		vulnerabilityMultiplier = 1.25,    -- §31: +25% damage taken
 		vulnerabilityDuration   = 3,
 
 		-- Animation
@@ -356,12 +356,12 @@ function ArcanistSkills.ArcaneBeamExec(player, skill, inputData)
 	local targets = Base.GetTargetsInShape(origin, direction, skill)
 	local hits    = Base.DamageTargets(targets, player, skill.damageMultiplier, skill.id, skill.element)
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 	return true
 end
 
 -- ═══════════════════════════════════════════════════════════
--- SKILL 2: FROST BIND  (mouse-targeted AoE + Slow + DpS)
+-- SKILL 2: FROST BIND  (forward-cast AoE + Slow + DpS)
 -- ═══════════════════════════════════════════════════════════
 
 function ArcanistSkills.FrostBindExec(player, skill, inputData)
@@ -370,11 +370,8 @@ function ArcanistSkills.FrostBindExec(player, skill, inputData)
 
 	local playerPos = rootPart.Position
 
-	-- §LD-SK1: deterministic forward cast — was reading
-	-- `inputData.targetPosition` (always nil; client never sent it),
-	-- so the AoE landed at the player's feet while the client's
-	-- preview circle followed the mouse. Now lands at a fixed
-	-- distance ahead of the player; visual preview matches.
+	-- §LD-SK1: deterministic forward cast: lands at a fixed distance ahead
+	-- of the player, and the client's visual preview matches.
 	local targetPos = Base.GetForwardCastPosition(player, skill, inputData)
 
 	-- Visual
@@ -394,7 +391,7 @@ function ArcanistSkills.FrostBindExec(player, skill, inputData)
 	-- Apply Slow + DpS to mobs in area
 	Effects.ApplyEffectsToMobs(player, skill.effects, targets)
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 	return true
 end
 
@@ -429,7 +426,7 @@ function ArcanistSkills.ArcaneSurgeExec(player, skill, inputData)
 	-- Knockback
 	Effects.ApplyEffects(player, skill.effects, origin)
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 	return true
 end
 
@@ -437,7 +434,7 @@ end
 -- SKILL 4 ★ ULTIMATE: METEORITE
 -- ═══════════════════════════════════════════════════════════
 
--- §LD-SK1: same forward-cast change applied below.
+-- §LD-SK1: forward cast, as Frost Bind.
 function ArcanistSkills.MeteoriteExec(player, skill, inputData)
 	local rootPart = Base.GetPlayerRootPart(player)
 	if not rootPart then return false end
@@ -454,7 +451,7 @@ function ArcanistSkills.MeteoriteExec(player, skill, inputData)
 	local div  = skill.resourceScalingDiv or 100
 	local scaledMult = base * (1 + resourceUsed / div)
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 
 	-- Find targets once
 	local targets = Base.GetTargetsInCircle(targetPos, skill.shapeParams.range)

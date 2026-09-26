@@ -5,8 +5,7 @@
     §AGX/UI-P3 (W2): a thin wrapper around the shared Shell
     (UI/Shell/Shell.lua) with place = "Plaza". Appearance-centric: no
     combat HUD, matchmaking or class bars. The Shell mounts the HUD (rail /
-    ☰ menu, and on touch the Emote + Wardrobe quick buttons that replace
-    the old AppearanceBar), PanelHost (Wardrobe, CharacterCreation, the
+    ☰ menu, and on touch the Emote + Wardrobe quick buttons), PanelHost (Wardrobe, CharacterCreation, the
     leave confirm and every other Plaza entry in Shell/Registry), the
     EmoteWheel (Q), Notify.Host and the TooltipHost.
 ]]

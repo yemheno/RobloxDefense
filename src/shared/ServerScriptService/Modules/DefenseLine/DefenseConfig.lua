@@ -35,8 +35,8 @@ DefenseConfig.BreachBasePct = {
 -- Formula: (BaseDamage + HP*HPFactor + Attack*AttackFactor) * TierMult * GlobalMult * ComboMult
 -- ═══════════════════════════════════════════════════════════
 
--- §47.2: replaced by percentage-based breach system (BreachBasePct)
--- Old formula kept as reference only.
+-- §47.2: unused; breach damage is percentage-based (BreachBasePct).
+-- This table is kept as reference only.
 DefenseConfig.Damage = {
 	BaseDamage = 10,
 	HPFactor = 0.5,

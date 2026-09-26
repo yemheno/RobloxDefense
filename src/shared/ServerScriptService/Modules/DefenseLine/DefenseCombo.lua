@@ -43,7 +43,7 @@ function DefenseCombo.IncrementCombo()
 	local now = os.clock()
 	local timeSinceHit = now - lastHitTime
 
-	-- FIX: Check if there WAS a previous hit (lastHitTime > 0), not if combo is already building
+	-- Check whether there WAS a previous hit (lastHitTime > 0), not whether a combo is already building
 	if lastHitTime > 0 and timeSinceHit <= config.Window then
 		-- Within combo window - increment!
 		comboLevel = math.min(comboLevel + 1, config.MaxLevel)

@@ -6,18 +6,18 @@ local Players          = game:GetService("Players")
 local DataStoreService = game:GetService("DataStoreService")
 
 local DATA_STORE_KEY = "PlayerData_v1"
--- §AGX/X3: was 300. Auto-save is also the session-lock heartbeat, so it
--- has to beat LOCK_STALE_AFTER below — at 300 s a live server's lock
--- would look stale for 3.5 min of every 5 and could be stolen.
+-- §AGX/X3: auto-save is also the session-lock heartbeat, so it must run
+-- well inside LOCK_STALE_AFTER below or a live server's lock could look
+-- stale and be stolen.
 local AUTO_SAVE_INTERVAL = 60  -- seconds between auto-saves
 
 -- §AGX/X3: session lock. The saved record carries
--- `_session = { jobId, placeId, time }` next to Account/Classes/… (there
--- is no wrapper table and adding one would break every existing save).
--- It is stripped on load and never lives in the in-memory data.
--- §AGX/X3r3: was 90 — one failed/slow 60 s heartbeat let a live lock go stale; ≥ 3 × AUTO_SAVE_INTERVAL.
+-- `_session = { jobId, placeId, time }` next to Account/Classes/… (no
+-- wrapper table: adding one would break every existing save). It is
+-- stripped on load and never lives in the in-memory data.
+-- §AGX/X3r3: ≥ 3 × AUTO_SAVE_INTERVAL, so one failed or slow heartbeat can't let a live lock go stale.
 local LOCK_STALE_AFTER   = 200  -- s; a lock older than this is dead and may be stolen
--- §AGX/X3r5: was 20 — give a slow teleport-source leave-save more time before we kick.
+-- §AGX/X3r5: long enough for a slow teleport-source leave-save to land before we kick.
 local LOCK_WAIT_MAX      = 30   -- s; how long a load waits on another live server's lock
 local FINAL_SAVE_RETRIES = 3    -- §AGX/X3: extra attempts for the lock-releasing leave save
 -- §AGX/X3r3: a failed heartbeat (auto-save) is retried once after this delay.
@@ -36,9 +36,8 @@ local pendingSaves = 0
 -- can't re-take a lock the shutdown save just released.
 local shuttingDown = false
 
--- §PDM-D7: gate the noisy save-entry print behind a flag. Was useful to
--- diagnose the §PERSIST1 XP-loss bug; now it's just log spam in production.
--- Flip to true if a save bug ever resurfaces.
+-- §PDM-D7, §PERSIST1: the save-entry print is log spam in production, so it
+-- sits behind this flag. Flip to true to debug a save bug.
 local DEBUG_SAVE = false
 
 local LOCAL_DATASTORE = DataStoreService:GetDataStore(DATA_STORE_KEY)
@@ -50,22 +49,21 @@ local Config = require(Modules:WaitForChild("PlayerDataConfig"))
 local BootProfiler = require(game:GetService("ReplicatedStorage")
 	:WaitForChild("Shared"):WaitForChild("BootProfiler"))
 
--- §PDM-D6: hoisted from below for readability. Tracks in-progress saves
--- so concurrent auto-save + terminal save don't double-write.
+-- §PDM-D6: keys with a save in flight, so a concurrent auto-save and
+-- terminal save don't double-write.
 local savingPlayers = {}
 
--- §T0P2/X17: tombstones for admin-wiped keys. Clearing savingPlayers
--- can't cancel an in-flight SetAsync — if one is mid-air it could land
--- AFTER RemoveAsync and resurrect the wiped data. SavePlayer checks
--- this set before writing. Cleared when the player sets up again.
+-- §T0P2/X17: tombstones for admin-wiped keys. A save already in flight
+-- can't be cancelled and could land AFTER RemoveAsync, resurrecting the
+-- wiped data, so SavePlayer checks this set before writing and again
+-- inside the UpdateAsync transform. Cleared when the player sets up again.
 local wipedPlayers = {}
 
--- §AGX/X3: keys whose lock-releasing final save has started. A plain
--- (auto/force) save that lands after it would re-take the lock and make
--- the player's next server wait until it goes stale, so the UpdateAsync
--- transform aborts non-releasing writes for these keys. Cleared when
--- the player sets up again.
--- §AGX/X3r8: also cleared once the release save succeeds (releasedPlayers takes over).
+-- §AGX/X3, §AGX/X3r8: keys whose lock-releasing final save has started.
+-- A plain (auto/force) save that lands after it would re-take the lock and
+-- make the player's next server wait until it goes stale, so the UpdateAsync
+-- transform aborts non-releasing writes for these keys. Cleared when the
+-- player sets up again, or once the release succeeds (releasedPlayers takes over).
 local releasingPlayers = {}
 
 -- §AGX/X3r1: keys with a release save running right now. Set before the
@@ -87,7 +85,7 @@ local sessionGen = {}
 local releasedPlayers = {}
 
 -- Guard: prevent double-setup if PlayerAdded fires during Init() loop.
--- §AGX/X3r9: hoisted from PLAYER SETUP so the auto-save loop in Init can read it.
+-- §AGX/X3r9: declared up here so the auto-save loop in Init can read it.
 local setupInProgress = {}
 -- Child systems (loaded in Init)
 local ClassSystem
@@ -115,11 +113,10 @@ local playerDataStore = {}
 -- Registered via PlayerDataManager.OnPlayerDataReady(callback).
 local dataReadyCallbacks = {}
 
--- §AGX/X27: session play-time accumulator. Account.TotalPlayTime (whole
--- SECONDS — LeaderboardManager floors it and stores it as an integer) was
--- never written, so the TotalPlayTime board was always empty. The mark is
--- set when data is ready; AccruePlayTime folds the elapsed time into the
--- account and moves the mark forward, so it is idempotent and can run on
+-- §AGX/X27: session play-time accumulator for Account.TotalPlayTime (whole
+-- SECONDS; LeaderboardManager floors it and stores it as an integer). The
+-- mark is set when data is ready; AccruePlayTime folds the elapsed time into
+-- the account and moves the mark forward, so it is idempotent and can run on
 -- every save (heartbeat, leave, shutdown) and before a leaderboard persist.
 -- Weak keys: a rejoin gets a new Player object and a fresh mark.
 local playTimeMark = setmetatable({}, { __mode = "k" })  -- [player] = os.clock() of last accrual
@@ -141,7 +138,8 @@ function PlayerDataManager.AccruePlayTime(player)
 end
 
 -- §T0-FOLLOWUP/L2: per-player Janitor tracks the CharacterAdded conn
--- registered inside SetupPlayer so we can tear it down on PlayerRemoving.
+-- registered inside SetupPlayer so we can tear it down on PlayerRemoving
+-- (ARCHITECTURE.md#janitor-per-player).
 local Janitor = require(script.Parent:WaitForChild("Janitor"))
 local playerJanitors = setmetatable({}, { __mode = "k" })
 local function getPlayerJanitor(player)
@@ -184,19 +182,13 @@ function PlayerDataManager.Init()
 	Players.PlayerAdded:Connect(PlayerDataManager.SetupPlayer)
 	Players.PlayerRemoving:Connect(PlayerDataManager.RemovePlayer)
 
-	-- Save all on server shutdown. §PERSIST1: force=true so the dedup
-	-- can't skip the terminal save when an auto-save is in flight.
-	-- §T0P2/X6: saves run in PARALLEL. Sequentially, each force-save can
-	-- wait up to 3 s for an in-flight auto-save plus the SetAsync yield —
-	-- a full server could blow the 30 s BindToClose budget and lose the
-	-- tail of the player list. Spawn all, then wait for completion.
-	-- §AGX/X2: wait on the global pendingSaves counter instead of only the
-	-- saves spawned here, and never early-return on an empty server — the
-	-- usual case is ReturnTeleporter emptying the server, whose
-	-- PlayerRemoving leave-saves are still in flight when this runs.
-	-- §AGX/X3: these are final saves, so they release the session lock.
-	-- §AGX/X3r4: registered BEFORE the existing-players setup below, so a
-	-- shutdown during that (yielding) setup still saves/releases.
+	-- §PERSIST1, §T0P2/X6, §AGX/X2, §AGX/X3, §AGX/X3r4
+	-- Shutdown: final saves (force, release the session lock), spawned in
+	-- parallel so a full server fits the 30 s budget. Waits on the global
+	-- pendingSaves counter so leave-saves already in flight (ReturnTeleporter
+	-- empties a server at once) finish too, even on an empty server.
+	-- Registered BEFORE the existing-players setup below, so a shutdown
+	-- during that yielding setup still saves and releases.
 	game:BindToClose(function()
 		shuttingDown = true
 		for _, player in ipairs(Players:GetPlayers()) do
@@ -212,8 +204,8 @@ function PlayerDataManager.Init()
 		end
 	end)
 
-	-- §AGX/X3r4: spawned — SetupPlayer yields on the DataStore (and up to
-	-- LOCK_WAIT_MAX on a lock), which used to block the place's boot.
+	-- §AGX/X3r4: spawned: SetupPlayer yields on the DataStore (up to
+	-- LOCK_WAIT_MAX on a lock) and must not block the place's boot.
 	for _, player in ipairs(Players:GetPlayers()) do
 		task.spawn(PlayerDataManager.SetupPlayer, player)
 	end
@@ -249,13 +241,9 @@ end
 -- DEFAULT DATA CREATION
 --============================================
 
--- §T0P2/X1: true deep copy for default tables. The old CreateDefaultData
--- copy was only two levels deep, so nested defaults (Wardrobe.owned,
--- Achievements.unlocked, Quests.active, …) were shared BY REFERENCE
--- between every first-visit player on the server AND with
--- PlayerDataConfig.AccountDefaults itself — player A's writes leaked
--- into player B's fresh save and into the config module for the rest
--- of the server's lifetime.
+-- §T0P2/X1: true deep copy, so no nested default (Wardrobe.owned,
+-- Achievements.unlocked, Quests.active, …) is ever shared between players
+-- or with PlayerDataConfig.AccountDefaults itself.
 local function DeepCopy(source)
 	local copy = {}
 	for key, value in pairs(source) do
@@ -284,7 +272,7 @@ local function DeepMerge(target, defaults)
 	end
 end
 
--- §4.2 + §4.3: deprecated-key sweep.
+-- §4.2 + §4.3: deprecated-key sweep (ARCHITECTURE.md#stale-callsite-grep).
 -- DeepMerge only ADDS missing keys; it never removes stale ones from older
 -- save formats. Every key listed here is a field we no longer use (either
 -- migrated to a different system, or removed outright). We strip them on
@@ -343,8 +331,8 @@ local function NewSessionLock()
 end
 
 -- True when `lock` belongs to ANOTHER server and is recent enough that
--- the server is presumed alive. Records from before §AGX/X3 have no
--- `_session` at all and read as unlocked.
+-- the server is presumed alive. Older records with no `_session` read as
+-- unlocked.
 local function IsForeignLiveLock(lock)
 	if type(lock) ~= "table" then return false end
 	if lock.jobId == game.JobId then return false end
@@ -355,8 +343,8 @@ end
 -- Load raw data from DataStore with retry.
 -- Returns the saved table on success, nil on genuine first visit,
 -- or LOAD_FAILED if all retries are exhausted.
--- §AGX/X3: now an UpdateAsync that takes the session lock in the same
--- round-trip (GetAsync couldn't). If another live server holds the lock
+-- §AGX/X3: an UpdateAsync, so the session lock is taken in the same
+-- round-trip as the read. If another live server holds the lock
 -- — normally the teleport source whose leave-save hasn't landed yet —
 -- back off and retry for up to LOCK_WAIT_MAX, then return LOAD_LOCKED.
 -- A stale lock is simply overwritten (stolen). First visits write a
@@ -446,10 +434,9 @@ local function CreateDefaultData()
 		Bonus = {},
 	}
 
-	-- §T0P2/X1: copy account defaults via DeepCopy so NO nested table is
-	-- ever shared between players or with the config module. This also
-	-- removes the old hand-built CharacterData special case — DeepCopy
-	-- covers it (the schema in AccountDefaults stays the single source).
+	-- §T0P2/X1: DeepCopy so NO nested table (CharacterData included) is
+	-- shared between players or with the config module; the schema in
+	-- AccountDefaults stays the single source.
 	data.Account = DeepCopy(Config.AccountDefaults)
 
 	-- Create class data for unlocked classes
@@ -482,13 +469,11 @@ local function LoadAndStorePlayerData(player, userKey)
 	local rawSaved = LoadRawData(player.UserId, player)
 	doneDataLoad()
 
-	-- §T0P2/X3: the player may have left while LoadRawData was yielding
-	-- (PlayerRemoving already ran — there was nothing to clean up yet).
-	-- Without this guard we'd store data for a departed Player (strong
-	-- key → leaks forever) and fire dataReadyCallbacks for a ghost,
-	-- setting up downstream state whose cleanup hook already fired.
-	-- §AGX/X3r2: same on shutdown — BindToClose already snapshotted the
-	-- player list, so nobody would release a lock taken by this load.
+	-- §T0P2/X3, §AGX/X3r2: while LoadRawData yielded, the player may have
+	-- left (PlayerRemoving already ran with nothing to clean up) or shutdown
+	-- may have begun (BindToClose already snapshotted the player list).
+	-- Storing now would leak data for a departed Player, fire
+	-- dataReadyCallbacks for a ghost, and leave a lock nobody releases.
 	-- No yield between here and the store below, so this check is final.
 	if not player.Parent or rawSaved == LOAD_ABANDONED or shuttingDown then
 		setupInProgress[player] = nil
@@ -548,13 +533,12 @@ function PlayerDataManager.SetupPlayer(player)
 	local userKey = tostring(player.UserId)
 	wipedPlayers[userKey] = nil
 
-	-- §AGX/X3: a quick rejoin to THIS server can arrive while the previous
-	-- session's leave-save is still running. Our own jobId never blocks
-	-- the lock, so wait for that save here (capped) or we'd load the
-	-- pre-save record.
-	-- §AGX/X3r1: wait on releaseInFlight, not savingPlayers — savingPlayers
-	-- is only set after the release save's 3 s force-wait (and an auto-save
-	-- finishing clears it early); 25 s covers the release's full retry chain.
+	-- §AGX/X3, §AGX/X3r1: a quick rejoin to THIS server can arrive while the
+	-- previous session's release save is still running. Our own jobId never
+	-- blocks the lock, so wait for that save (capped) or we'd load the
+	-- pre-save record. Wait on releaseInFlight, not savingPlayers: that is
+	-- set only after the release's 3 s force-wait, and an auto-save finishing
+	-- clears it early. RELEASE_WAIT_MAX covers the release's full retry chain.
 	local waitedForSave = 0
 	while releaseInFlight[userKey] and waitedForSave < RELEASE_WAIT_MAX do
 		task.wait(0.1)
@@ -647,7 +631,7 @@ function PlayerDataManager.SetupPlayer(player)
 	-- attribute exist. task.spawn runs each callback immediately (until
 	-- its first yield), so anything fired here that reads
 	-- player:GetAttribute("Level") — e.g. TeleportDataReader's
-	-- no-teleport-data fallback — now sees the real level, not nil.
+	-- no-teleport-data fallback — sees the real level.
 	for _, cb in ipairs(dataReadyCallbacks) do
 		task.spawn(cb, player)
 	end
@@ -675,20 +659,18 @@ function PlayerDataManager.SetupPlayer(player)
 end
 
 function PlayerDataManager.RemovePlayer(player)
-	-- §PERSIST1: force save on player leaving (teleport-out, disconnect,
-	-- kick). This MUST NOT be skipped by the auto-save dedup or the
-	-- player loses XP / progression earned since the last successful save.
-	-- §AGX/X3: release=true — this save hands the session lock back (the
-	-- teleport destination is waiting on it) and retries with backoff
-	-- before we drop the in-memory copy below.
-	-- §AGX/X3r7: on shutdown BindToClose's release usually got here first;
-	-- SavePlayer skips this one if a release is in flight or done for the key.
+	-- §PERSIST1, §AGX/X3, §AGX/X3r7: forced final save on leave (teleport-out,
+	-- disconnect, kick). The auto-save dedup MUST NOT skip it, or progress
+	-- since the last save is lost. release=true hands the session lock back
+	-- (the teleport destination waits on it) and retries with backoff before
+	-- we drop the in-memory copy. On shutdown BindToClose's release usually
+	-- got here first; SavePlayer then skips this one.
 	PlayerDataManager.SavePlayer(player, true, true)
 	playerDataStore[player] = nil
 
 	-- §T0-FOLLOWUP/L3: clear the in-flight setup flag in case the player
-	-- left while LoadRawData was still yielding. Without this the boolean
-	-- stays true forever, holding a strong ref to the Player object.
+	-- left while LoadRawData was still yielding; otherwise it holds a
+	-- strong ref to the Player forever.
 	setupInProgress[player] = nil
 
 	-- §T0-FOLLOWUP/L2: tear down the per-player Janitor (CharacterAdded
@@ -709,10 +691,8 @@ function PlayerDataManager.WipeData(player)
 	local key = tostring(player.UserId)
 
 	-- §T0P2/X17: tombstone the key BEFORE removing. SavePlayer checks
-	-- wipedPlayers right before SetAsync, so an in-flight or future save
-	-- can't resurrect the wiped data. (The old `savingPlayers[key] = nil`
-	-- couldn't actually cancel anything — it only confused the
-	-- force-save wait of concurrent savers.)
+	-- wipedPlayers before writing and inside the UpdateAsync transform, so
+	-- an in-flight or future save can't resurrect the wiped data.
 	wipedPlayers[key] = true
 
 	-- Remove from DataStore (this is the authoritative wipe).
@@ -733,14 +713,10 @@ function PlayerDataManager.WipeData(player)
 	return true
 end
 
--- §PERSIST1 fix: force-save bypasses the dedup that was silently
--- swallowing terminal saves. Story: auto-save fires at minute 4,
--- yields inside SetAsync. Player teleports at minute 4.5. PlayerRemoving
--- runs, calls SavePlayer, sees savingPlayers[key]=true, returns.
--- Auto-save completes — wrote the PRE-XP snapshot. Post-XP is gone.
--- Force=true waits for the in-flight save to clear (max 3s), then
--- writes the latest state. Auto-save still uses force=false for
--- normal dedup behaviour.
+-- §PERSIST1: a `force` save is never deduped: it waits (max 3 s) for an
+-- in-flight save to clear, then writes the latest state, so a leave-save
+-- can't be swallowed while an older auto-save snapshot lands. Auto-save
+-- uses force=false (normal dedup).
 -- §AGX/X3: `release` marks the player's final save (PlayerRemoving /
 -- BindToClose): it clears the session lock in the same UpdateAsync and
 -- retries FINAL_SAVE_RETRIES times with backoff. Other saves refresh
@@ -810,7 +786,7 @@ local function SavePlayerImpl(player, force, release)
 
 	if force then
 		-- §PERSIST1: wait for any in-flight save (auto-save) to clear
-		-- so we know our subsequent SetAsync writes the LATEST state.
+		-- so our write below lands the LATEST state.
 		-- Cap the wait at 3s; beyond that we proceed regardless rather
 		-- than block teleport / shutdown indefinitely.
 		local waited = 0
@@ -832,7 +808,7 @@ local function SavePlayerImpl(player, force, release)
 
 	savingPlayers[key] = true
 
-	-- §AGX/X3: UpdateAsync + session lock (was a blind SetAsync). The
+	-- §AGX/X3: UpdateAsync + session lock. The
 	-- final save retries with backoff; an "aborted" result is never
 	-- retried — another server owns the record, or the key was wiped.
 	local attempts = if release then 1 + FINAL_SAVE_RETRIES else 1
@@ -997,8 +973,8 @@ function PlayerDataManager.SetAccountData(player, key, value)
 		return true
 	end
 
-	-- Other keys that used to mirror to leaderstats (Merits) no longer do —
-	-- the only leaderstats are Level and Power. Both are handled explicitly.
+	-- Other keys don't mirror: the only leaderstats are Level and Power,
+	-- both handled explicitly.
 	return true
 end
 
@@ -1203,9 +1179,8 @@ function PlayerDataManager.GetTotalStat(player, statName)
 	return StatSystem.GetTotalStat(player, statName)
 end
 
--- §T0P2/X22: forward freshSpawn — the old passthrough silently dropped
--- the third argument, so any caller asking for a fresh-spawn full heal
--- would have gotten the mid-life proportional rescale instead.
+-- §T0P2/X22: forward freshSpawn, or a fresh-spawn full heal silently
+-- becomes the mid-life proportional rescale.
 function PlayerDataManager.ApplyHealthToCharacter(player, character, freshSpawn)
 	return StatSystem.ApplyHealthToCharacter(player, character, freshSpawn)
 end
@@ -1246,11 +1221,10 @@ function PlayerDataManager.RefreshArmorStats(player)
 	return BonusSystem.RefreshArmorStats(player)
 end
 
--- §AGX/X22: XP HUD pushes are coalesced (SCALING_AUDIT §SCALE/S5 pattern).
--- Every kill used to fire one PlayerInfoUpdate per recipient (≤ 5 party
--- members), so a 15-kill Horde burst was up to 75 sends in one frame.
--- Now AddExperience only marks the player dirty; one flush per
--- XP_PUSH_WINDOW sends the LATEST level/xp once per dirty player. The
+-- §AGX/X22, §SCALE/S5: XP HUD pushes are coalesced per window
+-- (ARCHITECTURE.md#scaling). AddExperience only marks the player dirty;
+-- one flush per XP_PUSH_WINDOW sends the LATEST level/xp once per dirty
+-- player instead of one PlayerInfoUpdate per kill per party member. The
 -- payload is a snapshot, so dropping the intermediate ones loses nothing.
 local XP_PUSH_WINDOW = 0.25
 local xpPushDirty = {}  -- [player] = true

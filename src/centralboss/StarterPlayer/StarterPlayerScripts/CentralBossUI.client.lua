@@ -31,7 +31,7 @@ screenGui.IgnoreGuiInset   = true
 screenGui.ScreenInsets   = Enum.ScreenInsets.DeviceSafeInsets
 screenGui.Parent           = playerGui
 
--- §AGX/UI-P1: D4 = landscape only. Every panel assumes a wide aspect; set
+-- §AGX/UI-P1: UI-D4 = landscape only (DESIGN_DECISIONS.md#ui-decisions). Every panel assumes a wide aspect; set
 -- it on this client's PlayerGui (StarterGui.ScreenOrientation is only a
 -- template and may be overridden by the place file).
 playerGui.ScreenOrientation = Enum.ScreenOrientation.LandscapeSensor
@@ -41,7 +41,7 @@ local root = ReactRoblox.createRoot(screenGui)
 local CentralBossApp = require(script.Parent:WaitForChild("UI"):WaitForChild("CentralBossApp"))
 root:render(React.createElement(CentralBossApp))
 
--- §RG1 fix-up: NetworkManager lives at PlayerScripts.Modules.
+-- §RG1: NetworkManager lives at PlayerScripts.Modules.
 task.defer(function()
     task.wait(0.15)
     local PlayerScripts = Players.LocalPlayer:WaitForChild("PlayerScripts")

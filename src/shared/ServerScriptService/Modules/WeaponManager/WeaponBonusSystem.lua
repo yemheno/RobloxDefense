@@ -4,15 +4,14 @@ local WeaponBonusSystem = {}
 
 local Modules = script.Parent.Parent
 -- §CFG-D1: tier slot/value tables + reroll cost are shared with armor —
--- read them from GearUpgradeConfig. WeaponConfig retained for any
--- weapon-specific reads added later.
+-- read them from GearUpgradeConfig.
 local GearUpgradeConfig = require(Modules:WaitForChild("GearUpgradeConfig"))
 local WeaponRegistry = require(Modules:WaitForChild("WeaponRegistry"))
 local CurrencyManager = require(Modules:WaitForChild("CurrencyManager"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
--- §AGX/UI-P4: player-facing rejections used to be silent (return value
--- dropped by the caller / warn only). NotifyService pushes a toast; it
--- never throws, and a missing module is skipped, so logic is unchanged.
+-- §AGX/UI-P4: player-facing rejections go out as a NotifyService toast
+-- (the caller drops the return value). It never throws, and a missing
+-- module is skipped.
 local NotifyService = nil
 local function notifyReject(player, text)
 	if not NotifyService then
@@ -28,7 +27,7 @@ end
 -- Set by WeaponManager
 WeaponBonusSystem.WeaponManager = nil
 
--- §WB1 fix: per-player reroll lock so two simultaneous Reroll requests can't
+-- §WB1: per-player reroll lock so two simultaneous Reroll requests can't
 -- both pass CanAfford, both call SpendMerits, and both apply rolls.
 local rerollLock = setmetatable({}, { __mode = "k" })
 

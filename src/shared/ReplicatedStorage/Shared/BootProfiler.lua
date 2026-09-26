@@ -38,7 +38,7 @@ local RunService = game:GetService("RunService")
 
 local BootProfiler = {}
 
--- §AGX/SEC: OFF for shipping (docs/TODO.md §PERF/BP). Flip to true
+-- §AGX/SEC, §PERF/BP: OFF for shipping. Flip to true
 -- locally to get the boot timeline in Output; it is zero-cost when false.
 local ENABLED          = false
 local SLOW_THRESHOLD   = 0.100  -- s

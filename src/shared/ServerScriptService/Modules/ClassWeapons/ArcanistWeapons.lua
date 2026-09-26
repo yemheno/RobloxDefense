@@ -41,7 +41,7 @@ ArcanistWeapons.Weapons = {
 			{ stat = "skillDamage", min = 2, max = 10 },
 
 			-- Tier III
-			{ stat = "mana",        min = 5, max = 15 },  -- Bonus Mana
+			{ stat = "mana",        min = 5, max = 15 },  -- Bonus max Aether (PlayerBonusSystem maps mana)
 
 			-- Tier IV
 			{ stat = "cooldownReduction", min = 1, max = 5 },

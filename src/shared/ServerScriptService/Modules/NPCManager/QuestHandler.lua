@@ -136,7 +136,7 @@ end
 -- Active provider — DataStore-backed (persistent)
 local StateProvider = DataStoreStateProvider
 
--- §QH2 fix: per-player turn-in lock so two concurrent TurnInQuest packets
+-- §QH2: per-player turn-in lock so two concurrent TurnInQuest packets
 -- can't both pass the objective gate and grant rewards twice.
 local turnInLock = setmetatable({}, { __mode = "k" })
 
@@ -239,10 +239,9 @@ function QuestHandler.AcceptQuest(player, def, questId)
 	local quest = QuestHandler.FindQuest(def, questId)
 	if not quest then return end
 
-	-- §QH5 fix: re-check prerequisite server-side. GetQuestStatus does not
-	-- inspect quest.prerequisite, only OnInteract did — meaning a malicious
-	-- client could send AcceptQuest for a locked quest and the server would
-	-- accept it. Mirror the OnInteract gate here.
+	-- §QH5: re-check the prerequisite server-side (GetQuestStatus doesn't
+	-- inspect quest.prerequisite), or a modified client could AcceptQuest a
+	-- locked quest. Mirrors the OnInteract gate.
 	if quest.prerequisite then
 		local prereqDone = StateProvider:IsCompleted(player, quest.prerequisite)
 		if not prereqDone then

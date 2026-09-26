@@ -59,7 +59,7 @@ Load(SharedModules, "SoundManager")
 Load(SharedModules, "MovementSystem")   -- standard Roblox movement behaviour
 Load(SharedModules, "CameraSystem")     -- camera controller (avatar-preview mode planned)
 -- §AGX/UI-P3: the shell exposes Talents + Achievements in every Place;
--- without these client caches the Plaza panels showed 0 points / no data.
+-- without these client caches the Plaza panels show 0 points / no data.
 Load(SharedModules, "AchievementClient")
 Load(SharedModules, "TalentClient")
 

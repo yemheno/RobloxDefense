@@ -68,10 +68,9 @@ LifeStewardSkills.Skills = {
 		canBeInterrupted = false,
 
 		-- Healing
-		-- §AGX/BAL (§T1.3-BAL1): 2.2 → 2.1. Heals now use the shared multi-crit
-		-- pipeline (cap 1.80×, 2 procs) instead of the old single-proc 1.50× cap;
-		-- that lifted realised healing +3.4% at the L60 reference build and
-		-- +7.3% at L100. 2.1 lands L60 back on target (see BALANCE_NUMBERS §Combat).
+		-- §AGX/BAL (§T1.3-BAL1): tuned for heals going through the shared
+		-- multi-crit pipeline; lands the L60 reference build on target
+		-- (BALANCE_NUMBERS.md#heals-after-the-shared-crit-pipeline).
 		healMultiplier = 2.1,     -- §31: 2.1x-2.3x
 		canCrit        = true,
 
@@ -114,9 +113,8 @@ LifeStewardSkills.Skills = {
 		canBeInterrupted = false,
 
 		-- Healing (initial burst)
-		-- §AGX/BAL (§T1.3-BAL1): 1.3 → 1.25 for the same crit-pipeline lift;
-		-- the HoT below now also gets HealingPercent/HealingPower, so the
-		-- whole Verdant Bloom package lands at or above its old throughput.
+		-- §AGX/BAL (§T1.3-BAL1): tuned for the same crit-pipeline lift; the
+		-- HoT below also gets HealingPercent/HealingPower.
 		healMultiplier = 1.25,     -- §31: 1.2x-1.4x
 		canCrit        = true,
 
@@ -202,7 +200,7 @@ LifeStewardSkills.Skills = {
 		usesAllResource = true,
 		minimumResource = 100,     -- §30.4: all, min 100
 		resourceCost    = 0,
-		cooldown        = 60,      -- §30.4 (was 90 — tightened per alpha balance pass)
+		cooldown        = 60,      -- §30.4
 
 		-- Ultimate flags
 		isUltimate  = true,
@@ -344,7 +342,7 @@ function LifeStewardSkills.MendingTouchExec(player, skill, inputData)
 		color     = skill.debugColor,
 	})
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 	return true
 end
 
@@ -383,7 +381,7 @@ function LifeStewardSkills.VerdantBloomExec(player, skill, inputData)
 			Effects.ApplyHealOverTime(player, skill.hotHealing, origin)
 		end
 
-		-- §T2/Z6: telemetry print removed.
+		-- §T2/Z6: no telemetry print (log spam).
 	end
 
 	-- Visual
@@ -430,7 +428,7 @@ function LifeStewardSkills.NaturesPurgeExec(player, skill, inputData)
 		color    = skill.debugColor,
 	})
 
-	-- §T2/Z6: telemetry print removed.
+	-- §T2/Z6: no telemetry print (log spam).
 	return true
 end
 
@@ -492,7 +490,7 @@ function LifeStewardSkills.GenesisExec(player, skill, inputData)
 					color     = skill.debugColor,
 				})
 
-				-- §T2/Z6: telemetry print removed.
+				-- §T2/Z6: no telemetry print (log spam).
 				return true
 			end
 		end
@@ -511,11 +509,10 @@ function LifeStewardSkills.GenesisExec(player, skill, inputData)
 		local maxHP = targetHum.MaxHealth
 		local missingHP = maxHP - targetHum.Health
 		if missingHP > 0 then
-			-- §AGX/X11: heal THROUGH HealPlayer. The old code set Health = max
-			-- first, so HealPlayer then saw 0 missing HP and returned early:
-			-- Genesis showed no heal number and granted no heal weapon XP or
-			-- healing achievement progress (and would read as a full overheal
-			-- to Shared Grace). HealPlayer caps at MaxHealth itself.
+			-- §AGX/X11: heal THROUGH HealPlayer (it caps at MaxHealth itself).
+			-- Setting Health = max first leaves 0 missing HP: no heal number,
+			-- heal weapon XP or achievement progress, and a fake full overheal
+			-- for Shared Grace.
 			if Effects then
 				Effects.HealPlayer(target, math.ceil(missingHP), player, false, 0)
 			else
@@ -534,7 +531,7 @@ function LifeStewardSkills.GenesisExec(player, skill, inputData)
 			isGenesis = true,
 		})
 
-		-- §T2/Z6: telemetry print removed.
+		-- §T2/Z6: no telemetry print (log spam).
 		return true
 	end
 

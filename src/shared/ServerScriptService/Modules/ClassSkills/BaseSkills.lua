@@ -119,13 +119,12 @@ end
 -- VISUAL HELPERS
 -- ═══════════════════════════════════════════════════════════
 
--- §AGX/X21: range-scoped (extends SCALING_AUDIT Deferred #3, same shape as
--- §SCALE/S2 MobAI.FireNearbyClients). Was FireAllClients per cast = O(casts·P).
--- 250 studs from the visual's origin: covers the longest-travelling visual
--- (Hunter Projectile, 60 studs/s × 3 s = 180 from startPos) plus margin.
--- The caster and the heal/revive target (data.targetId) always receive it;
--- characterless players (mid-respawn) get it too — cheap & safe. The name is
--- kept so the 19 call sites don't change.
+-- §AGX/X21: range-scoped, not O(casts·P) (same shape as §SCALE/S2
+-- MobAI.FireNearbyClients; the per-swing AttackFired twin is BACKLOG §SCALE-D3).
+-- The range covers the longest-travelling visual (Hunter Projectile) from
+-- its origin plus margin. The caster and the heal/revive target
+-- (data.targetId) always receive it; characterless players (mid-respawn) get
+-- it too, cheap & safe. The name is kept so the call sites don't change.
 local SKILL_VISUAL_RANGE = 250
 
 function BaseSkills.SendVisualToAll(visualType, data)
@@ -140,7 +139,7 @@ function BaseSkills.SendVisualToAll(visualType, data)
 		origin = caster and BaseSkills.GetPlayerPosition(caster) or nil
 	end
 	if not origin then
-		-- No position to scope by — keep the old behaviour.
+		-- No position to scope by: broadcast to everyone.
 		BaseSkills.NetworkManager.FireAllClients("SkillVisual", data)
 		return
 	end
@@ -198,8 +197,8 @@ function BaseSkills.ExecuteDash(player, skill, inputData)
 	local moveDirection = inputData and inputData.moveDirection or Vector3.zero
 
 	-- §AGX/X17: flatten BEFORE the magnitude test and reject non-Vector3 /
-	-- NaN input. A vertical (0,1,0) used to pass the 3D check, flatten to
-	-- zero, and `.Unit` produced a NaN dash target (same class as §T2/Z3).
+	-- NaN input; a vertical (0,1,0) flattens to zero and `.Unit` would give
+	-- a NaN dash target (same class as §T2/Z3).
 	local flat = typeof(moveDirection) == "Vector3"
 		and Vector3.new(moveDirection.X, 0, moveDirection.Z) or Vector3.zero
 	local flatMag = flat.Magnitude
@@ -283,12 +282,9 @@ end
 
 --- §LD-SK1: Deterministic forward-cast resolver.
 --- Returns the world-space landing position for an AoE / placed-effect
---- skill, computed as `playerPos + lookDir * castDistance`. This
---- replaces the previous "use the mouse position the client sent"
---- pattern, which was inconsistent across input devices and (more
---- importantly) was always nil because the SkillInput client never
---- actually sent `inputData.targetPosition` — meaning the AoE landed
---- at the player's feet while the visual preview followed the mouse.
+--- skill, computed as `playerPos + lookDir * castDistance`. Deliberately
+--- not the client's mouse position: that is inconsistent across input
+--- devices, and the SkillInput client doesn't send `inputData.targetPosition`.
 ---
 --- Per-skill cast distance is read from `skill.castDistance`; if not
 --- set, defaults to `skill.maxRange * 0.6` (rounded down by the
@@ -322,9 +318,8 @@ function BaseSkills.GetForwardCastPosition(player, skill, inputData)
 	return playerPos + lookDir * castDistance
 end
 
---- §T2/Z3: single cast-direction resolver — replaces six copy-pasted
---- variants across Aegis/Arcanist/Hunter skill files. Returns a flat,
---- normalized, never-NaN direction.
+--- §T2/Z3: the single cast-direction resolver for the Aegis/Arcanist/Hunter
+--- skill files. Returns a flat, normalized, never-NaN direction.
 ---
 --- inputData handling is deliberate:
 ---   • Pass `inputData`  → prefer the client's lookDirection (Hunter
@@ -333,10 +328,9 @@ end
 ---     Arcanist melee & beam skills keep their server-authoritative
 ---     aim; passing inputData here would CHANGE aiming behavior).
 ---
---- The zero-guard runs AFTER flattening: the old Hunter client-look
---- branch normalized `Vector3.new(x, 0, z)` unguarded, so a vertical
---- lookDirection (e.g. (0,1,0) — magnitude 1, passed the pre-check)
---- produced a NaN direction that poisoned the shape math.
+--- The zero-guard runs AFTER flattening: a vertical lookDirection (e.g.
+--- (0,1,0), magnitude 1) flattens to zero and would give a NaN direction
+--- that poisons the shape math.
 function BaseSkills.GetCastDirection(rootPart, inputData)
 	local flat
 	if inputData and typeof(inputData.lookDirection) == "Vector3"

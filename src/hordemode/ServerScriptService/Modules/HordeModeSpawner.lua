@@ -8,7 +8,8 @@
     Design:
       • Each player gets NUM_SPAWNERS spawn markers (neon-red Parts),
         positioned at fixed orbit angles around the player.
-      • Markers update their CFrame every Heartbeat to follow their player.
+      • Markers are moved to follow their player on demand, at each spawn
+        tick (§SCALE/S1), not every Heartbeat.
       • The spawner cycles through the markers each spawn interval,
         chooses a marker whose position is at least MIN_SPAWN_DIST from
         ALL living players, then drops a mob there.
@@ -63,9 +64,8 @@ local activeDifficultyOverrides = {
 -- ─────────────────────────────────────────────────────────────────────
 local CFG = {
     -- Number of spawn markers orbiting each player
-    -- §HMS-DIR1: 8 spawn markers per player (was 4) so direction
-    -- granularity is 45° instead of 90°. Combined with velocity-
-    -- biased pick below this lets us spawn closer to the player's
+    -- §HMS-DIR1: enough markers for fine direction granularity, so the
+    -- velocity-biased pick below can spawn close to the player's
     -- movement vector.
     NUM_SPAWNERS    = 8,
 
@@ -106,7 +106,7 @@ local CFG = {
 -- The last phase repeats indefinitely.
 -- ─────────────────────────────────────────────────────────────────────
 -- Weights: Zombie-only phase 1 → Trolls added phase 2 → Ogres added phase 3.
--- Miniboss share: 0% → ~4% → ~10%  (vs old flat 23.1%)
+-- Miniboss share: 0% → ~4% → ~10%
 local PHASES = {
     -- 0:00 – 4:00  pure Zombies, forgiving ramp
     { afterSeconds = 0,   interval = 3.2, aliveCap = 40, weights = { Zombie = 1 },                       speedMult = 1.6  },
@@ -127,10 +127,10 @@ local sessionStartTime = 0                -- set when Start() is first called
 local maxAutoLevel     = CFG.MAX_AUTO_LEVEL  -- dynamic cap; overridden by SetPartyAnchorLevel()
 local levelTickGeneration = 0              -- bumped on each Start() to kill stale tick loops
 
--- playerSpawners[player] = { markers = {Part,...}, nextIndex = 1, heartbeatConn, spawnThread }
+-- playerSpawners[player] = { markers = {Part,...}, janitor, nextIndex = 1, spawnDebt, spawnThread }
 local playerSpawners = {}
 
-local heartbeatConn      = nil   -- single shared Heartbeat for all marker movement
+local heartbeatConn      = nil   -- never connected (§SCALE/S1); Stop() still guards it
 local playerAddedConn    = nil   -- reusable PlayerAdded connection
 local playerRemovingConn = nil   -- reusable PlayerRemoving connection
 
@@ -155,8 +155,7 @@ end
 -- ─────────────────────────────────────────────────────────────────────
 
 --- Weighted random pick from the current phase's weight table
---- §T3/W9: delegates to the shared helper (was a verbatim copy of
---- MobSpawner.GetRandomMobId's algorithm).
+--- §T3/W9: delegates to the shared MobSpawnHelper.
 local function pickMobId()
     return MobSpawnHelper.PickWeightedId(getPhase().weights)
 end
@@ -176,7 +175,7 @@ local function isSafeSpawnPosition(pos)
     return true
 end
 
---- Build the four orbit offsets (evenly spread around the player, flat).
+--- Build the NUM_SPAWNERS orbit offsets (evenly spread around the player, flat).
 --- Returns a table of Vector3 offsets; index 1–NUM_SPAWNERS.
 local function buildOrbitOffsets()
     local offsets = {}
@@ -273,17 +272,10 @@ local function spawnMobAt(spawnCFrame)
         return nil
     end
 
-    -- §HMS1: Clone() MUST succeed every time. Per the design, a missed
-    -- spawn would create a gameplay gap (and possibly an exploit window
-    -- where players could "starve" the spawner). We pcall with infinite
-    -- retry + exponential backoff capped at 1s. If Clone is failing
-    -- repeatedly, that's an environmental issue (corrupted template,
-    -- memory pressure) — we still keep trying because a permanently
-    -- silent spawner is worse than a delayed one. The retry yields, so
-    -- the per-player spawn loop's task.wait timing is preserved on the
-    -- happy path; only failures incur extra wait.
-    -- §T3/W9a: shared never-fail clone (this module's semantics won —
-    -- retry forever with backoff, abort only when the spawner stops).
+    -- §HMS1, §T3/W9a: the clone must never silently fail (a missed spawn
+    -- is a gameplay gap and lets players "starve" the spawner). The shared
+    -- helper retries forever with capped backoff and aborts only once the
+    -- spawner stops; only failures add wait to the spawn loop.
     local mob = MobSpawnHelper.CloneTemplate(template, mobId, "[HordeModeSpawner]",
         function() return not running end)
     if not mob then return nil end
@@ -332,13 +324,13 @@ end
 
 local ORBIT_OFFSETS = buildOrbitOffsets()
 
--- §MEM/M5: hoisted — was rebuilt per marker per Heartbeat
--- (8 markers × N players × 60 Hz of identical Vector3.new allocations).
+-- §MEM/M5: hoisted out of positionMarkers' per-marker loop (no
+-- identical Vector3.new allocation per marker).
 local SPAWN_Y_VEC = Vector3.new(0, CFG.SPAWN_Y_OFFSET, 0)
 
--- §AGX/X1: forward-declared — createPlayerSpawner's spawn loop calls it,
--- but the definition lives further down (§SCALE/S1). Without this the
--- calls resolved to a nil global and every spawner thread died on tick 1.
+-- §AGX/X1: forward-declared: createPlayerSpawner's spawn loop calls it and
+-- the definition lives further down (§SCALE/S1). An undeclared local here is
+-- a nil global at runtime (CLAUDE.md § Luau pitfalls).
 local positionMarkers
 
 local function createPlayerSpawner(player)
@@ -460,12 +452,10 @@ local function createPlayerSpawner(player)
                     weights[i] = w
                     totalW = totalW + w
                 end
-                -- §HMS-DIR3: if EVERY marker is zeroed (party fully
-                -- envelops this player's orbit — 8 markers makes this
-                -- nearly impossible but "nearly" isn't "never" at 1 B
-                -- players, especially with elite spawns we don't want
-                -- to drop), DON'T fall back to uniform on our own
-                -- markers. The outer loop will try ally markers instead.
+                -- §HMS-DIR3: if EVERY marker is zeroed (the party fully
+                -- envelops this player's orbit: rare, not impossible), DON'T
+                -- fall back to uniform on our own markers; the outer loop
+                -- tries ally markers instead.
                 if totalW <= 0 then
                     return {}  -- empty order → outer loop falls through
                 end
@@ -500,10 +490,9 @@ local function createPlayerSpawner(player)
 
                     local spawnPos = marker.Position
                     if isSafeSpawnPosition(spawnPos) then
-                        -- §T3/W9b: uniform scatter across the marker part
-                        -- (was the exact marker point). Resize markers in
-                        -- Studio to widen the area. Keeps the §LD-MS1
-                        -- 3-stud ground-clip lift.
+                        -- §T3/W9b: uniform scatter across the marker part;
+                        -- resize markers in Studio to widen the area. Keeps
+                        -- the §LD-MS1 3-stud ground-clip lift.
                         local spawnCFrame = MobSpawnHelper.GetSpawnCFrame(marker, 3)
                         local mob = spawnMobAt(spawnCFrame)
                         if mob then
@@ -529,7 +518,7 @@ local function createPlayerSpawner(player)
                     for ally, allySpawnerData in pairs(playerSpawners) do
                         if ally ~= player and ally.Parent and allySpawnerData and allySpawnerData.markers then
                             -- §SCALE/S1: refresh the ally's markers on demand
-                            -- before testing them (they no longer follow via
+                            -- before testing them (they don't follow via
                             -- Heartbeat). Rare path — only when own orbit is
                             -- fully blocked.
                             local allyChar = ally.Character
@@ -582,8 +571,8 @@ local function destroyPlayerSpawner(player)
     if not spawnerData then return end
 
     -- §AGX/T11-JAN: cancel the spawn loop + destroy the marker Parts via the
-    -- spawner's Janitor (reverse-add: thread first, then markers — same
-    -- order as before; the cancel is now pcall-wrapped).
+    -- spawner's Janitor (reverse-add: thread first, then markers; the cancel
+    -- is pcall-wrapped).
     playerSpawners[player] = nil
     spawnerData.janitor:Destroy()
 end
@@ -592,14 +581,10 @@ end
 -- HEARTBEAT: move all markers to follow their players
 -- ─────────────────────────────────────────────────────────────────────
 
--- §SCALE/S1: the old version moved every marker every Heartbeat —
--- 8 markers × P players × 60 Hz = 480·P anchored-Part position writes/s,
--- each REPLICATED to all clients (at P=30 that's ~240 invisible parts
--- streaming CFrame updates: ~100 KB/s of pure waste, plus 8·P extra
--- workspace-root children inflating every AttackShapes scan).
--- Markers are only READ at spawn time (once per ~2.5 s tick), so we
--- position them on demand instead. The Parts themselves stay — §T3/W9b:
--- Pablo resizes them in Studio to widen the scatter area.
+-- §SCALE/S1: markers are only READ at spawn time, so they are positioned
+-- on demand; a per-Heartbeat move replicated every marker write to every
+-- client. The Parts themselves stay (§T3/W9b: Pablo resizes them in Studio
+-- to widen the scatter area).
 function positionMarkers(spawnerData, basePos)
     for i, marker in ipairs(spawnerData.markers) do
         if marker and marker.Parent then
@@ -638,12 +623,9 @@ function HordeModeSpawner.Setup(mobAI, mobRegistry)
     MobAI      = mobAI
     MobRegistry = mobRegistry
 
-    -- §HMS2: cache the Mobs folder reference at Setup. The previous
-    -- per-spawn FindFirstChild was (a) wasted lookups on every spawn and
-    -- (b) hid load-order bugs because it re-checked instead of asserting.
-    -- We hard-error if the folder is missing because spawning without
-    -- templates is unrecoverable for this place — HordeModeMapLoader
-    -- always runs before this.
+    -- §HMS2: cache the Mobs folder once and hard-error if it's missing
+    -- (ARCHITECTURE.md#loud-at-boot): spawning without templates is
+    -- unrecoverable, and HordeModeMapLoader always runs before this.
     local mobsFolder = ReplicatedStorage:WaitForChild("Mobs", 10)
     if not mobsFolder then
         error("[HordeModeSpawner] ReplicatedStorage/Mobs not found after 10s — " ..
@@ -671,33 +653,30 @@ function HordeModeSpawner.Start()
     -- Kill any stale level-tick loop from a previous Start() before spawning a new one
     levelTickGeneration = levelTickGeneration + 1
 
-    -- §SCALE/S1: marker-follow Heartbeat removed — markers are positioned
-    -- on demand inside each spawn tick.
+    -- §SCALE/S1: no marker-follow Heartbeat; markers are positioned on
+    -- demand inside each spawn tick.
     startLevelTick()
 
-    -- §FRENZY1: speed escalation is now PER MOB and lives in MobAI.Update.
-    -- Each mob accelerates from its own spawn time (10 s grace, +5 % every
-    -- 5 s, capped at +60 %) so killing the old wave returns to base speed
-    -- without punishing the player. The old global session-time multiplier
-    -- is intentionally removed — having two competing speed systems would
-    -- compound multipliers in surprising ways.
+    -- §FRENZY1: speed escalation is PER MOB and lives in MobAI.Update: each
+    -- mob accelerates from its own spawn time, so killing the old wave
+    -- returns to base speed. Don't add a global session-time multiplier
+    -- here; two speed systems would compound.
 
     -- Connect PlayerAdded / PlayerRemoving only once (guard against pause→resume leak)
     if not playerAddedConn then
         playerAddedConn = Players.PlayerAdded:Connect(function(player)
             if running then
                 task.spawn(function()
-                    -- §AGX/X38: bounded wait — a bare CharacterAdded:Wait()
-                    -- never returned if the player left first (thread leak).
+                    -- §AGX/X38: bounded wait that exits if the player leaves
+                    -- first (a bare CharacterAdded:Wait() would leak the thread).
                     while not player.Character and player.Parent do
                         task.wait(0.25)
                     end
                     if not player.Character then return end
                     task.wait(1) -- brief settle time
-                    -- §HMS4: re-check `running` after the settle wait.
-                    -- Stop() may have fired during that 1s window; without
-                    -- this guard we would create a stranded spawner that
-                    -- the next Start() would fail to overwrite.
+                    -- §HMS4: re-check `running` after the settle wait: Stop()
+                    -- may have fired meanwhile, and a spawner created now would
+                    -- be stranded (the next Start() can't overwrite it).
                     if not running then return end
                     if not player.Parent then return end
                     createPlayerSpawner(player)
@@ -743,7 +722,7 @@ function HordeModeSpawner.Stop()
         MobAI.SetHordeGlobalSpeedMult(1.0)
     end
 
-    if heartbeatConn then  -- §SCALE/S1: legacy guard, no longer connected
+    if heartbeatConn then  -- §SCALE/S1: never connected; kept as a guard
         heartbeatConn:Disconnect()
         heartbeatConn = nil
     end
@@ -771,8 +750,7 @@ function HordeModeSpawner.SetDifficulty(tierName)
     local diff = DifficultyConfig.GetDifficulty(tierName)
     -- Stack: HordeMode base × difficulty tier.
     -- §T3/W2: base multipliers come from GameModeConfig (_baseMobMults,
-    -- cached at module load) — the old hardcoded 0.60/0.85/0.80 here
-    -- silently diverged whenever GameModeConfig.mobMultipliers changed.
+    -- cached at module load); the literals are only fallbacks.
     activeDifficultyOverrides = {
         hpMult     = (_baseMobMults.hpMult     or 0.60) * diff.hpMult,
         damageMult = (_baseMobMults.damageMult or 0.85) * diff.damageMult,

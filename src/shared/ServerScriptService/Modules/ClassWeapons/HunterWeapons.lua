@@ -42,7 +42,7 @@ HunterWeapons.Weapons = {
 			{ stat = "attackSpeed",  min = 2, max = 10 },
 
 			-- Tier III
-			{ stat = "focus", min = 3, max = 10 },  -- Bonus Focus gain
+			{ stat = "focus", min = 3, max = 10 },  -- Bonus max Killer Instinct (PlayerBonusSystem maps focus)
 
 			-- Tier IV
 			{ stat = "skillDamage", min = 2, max = 10 },

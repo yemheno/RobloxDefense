@@ -20,7 +20,7 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
--- §T0P2/G3: bounded wait + loud error (was: silent infinite hang).
+-- §T0P2/G3: bounded wait + loud error, never a silent infinite hang.
 local SharedModules = SSS:WaitForChild("Modules", 10)
     or error("[CentralBossMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
 
@@ -29,7 +29,7 @@ local Lifecycle = require(SharedModules:WaitForChild("PlaceLifecycle"))
 local ctx       = Boot.MakeContext("CentralBoss")
 local IsAdmin   = ctx.IsAdmin
 
--- §T0P2/X19: _G.CentralBossRequireLoaded removed — write-only global.
+-- §T0P2/X19: no _G.CentralBossRequireLoaded (it was a write-only global).
 
 -- ───────────────────────────────────────────────────────────
 -- CONFIG
@@ -149,8 +149,8 @@ ctx.loaded["TeleportDataReader"] = require(SharedModules:WaitForChild("TeleportD
 ctx.loaded["TeleportDataReader"].Init("CentralBoss")
 
 -- §T0P2/X2: difficulty is lobby-owned (DQ-B) and resolves with the
--- first processed player's teleport data — not at boot, where it was
--- always "Normal".
+-- first processed player's teleport data, not at boot (where it
+-- always reads "Normal").
 ctx.loaded["TeleportDataReader"].OnDifficultyResolved(function(difficulty)
     local spawner = ctx.loaded["MobSpawner"]
     if spawner then spawner.SetDifficulty(tostring(difficulty)) end
@@ -289,5 +289,5 @@ print(string.format("[CentralBoss] Place ready — %d modules loaded", (function
 end)()))
 
 -- §CB1 / §AGX/X28: the core boss fight is wired (BossEncounter). The mode
--- stays hidden in the lobby (GameModeConfig / MainMenu `available = false`,
--- X19) until Pablo tests it in Studio.
+-- stays hidden in the lobby (GameModeConfig / MainMenu `available = false`)
+-- until Pablo tests it in Studio; next steps: BACKLOG §AGX/X28-NEXT.

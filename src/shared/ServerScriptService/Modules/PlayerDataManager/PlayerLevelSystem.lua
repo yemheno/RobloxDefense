@@ -43,8 +43,8 @@ function PlayerLevelSystem.AddExperience(player, amount)
 	-- Chapter level cap (§4): cannot pass cap until chapter boss is defeated.
 	-- §PDM-D5: at hard cap, the player simply STOPS gaining XP. Other
 	-- progression channels (weapon XP, achievements, talents) still flow
-	-- through their own systems. Class Mastery XP has its own dedicated
-	-- earn path — see TODO §3 ("Class Mastery XP source").
+	-- through their own systems. Class Mastery has no XP source at all
+	-- (BACKLOG §T0P2-MASTERY).
 	local currentLevel = data.Account.Level
 	local chapterCap = ChapterConfig.GetChapterLevelCap(ChapterConfig.GetChapter(currentLevel))
 	if currentLevel >= chapterCap then
@@ -70,10 +70,7 @@ function PlayerLevelSystem.AddExperience(player, amount)
 		-- §T0P2/X4: route the level write through SetAccountData — the
 		-- SINGLE write path that also syncs the leaderstat, the Level
 		-- player Attribute (read by TeleportDataReader's fallback), and
-		-- RefreshPowerScore. The old direct write + manual leaderstat
-		-- update left the attribute and Power score stale after every
-		-- natural level-up (admin SetLevel was unaffected, which is why
-		-- live tests never caught it).
+		-- RefreshPowerScore. A direct write leaves those stale.
 		local PDM = PlayerLevelSystem.PlayerDataManager
 		if PDM and PDM.SetAccountData then
 			PDM.SetAccountData(player, "Level", data.Account.Level + 1)
@@ -98,12 +95,10 @@ function PlayerLevelSystem.AddExperience(player, amount)
 	end
 end
 
--- §T0P2/X21: AddClassMasteryXP DELETED. Class XP was superseded by
--- weapon/gear XP (WeaponXPSystem); the function had zero callers and
--- would still have granted BoundTokens if ever invoked. The schema
--- fields (Classes.*.MasteryXP / MasteryMilestones) and
--- ClassMasteryConfig remain — full sweep parked in docs/TODO.md
--- (§T0P2-MASTERY).
+-- §T0P2/X21: AddClassMasteryXP DELETED (class XP is superseded by
+-- weapon/gear XP, WeaponXPSystem). The schema fields
+-- (Classes.*.MasteryXP / MasteryMilestones) and ClassMasteryConfig remain;
+-- remove or keep them per BACKLOG §T0P2-MASTERY.
 
 function PlayerLevelSystem.GetLevel(player)
 	local playerDataStore = PlayerLevelSystem.GetDataStore()

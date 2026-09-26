@@ -22,7 +22,7 @@
 local Players = game:GetService("Players")
 local SSS     = game:GetService("ServerScriptService")
 
--- §T0P2/G3: bounded wait + loud error (was: silent infinite hang).
+-- §T0P2/G3: bounded wait + loud error, never a silent infinite hang.
 local SharedModules = SSS:WaitForChild("Modules", 10)
     or error("[SocialPlazaMain] ServerScriptService.Modules missing after 10 s — place structure broken", 0)
 
@@ -109,7 +109,7 @@ ctx.Load(SharedModules, "BonusExpSystem")
 -- §AGX/SEC: §T0P2-ADMIN — admin panel backend is Studio-only.
 if ctx.IsStudio then ctx.Load(SharedModules, "AdminTesting") end
 
--- §AGX/UI-P3: D15 exit from the Plaza (shell-spec F4/B9). The menu's
+-- §AGX/UI-P3: UI-D15 exit from the Plaza (shell-spec F4/B9). The menu's
 -- `leave` entry fires RequestReturnToLobby; only NetworkManager and
 -- TeleportService are needed, and the handler has no state gate.
 ctx.Load(SharedModules, "ReturnTeleporter")
@@ -146,9 +146,8 @@ ctx.loaded["SharedEventHandlers"].Register({
 -- PLAYER LIFECYCLE
 -- ───────────────────────────────────────────────────────────
 -- §T0-FOLLOWUP/L4: PlayerDataManager.Init already binds RemovePlayer to
--- PlayerRemoving. A second binding here used to fire after the first
--- cleared playerDataStore[player], which surfaced as a noisy
--- "in-memory data is nil" warn on every disconnect.
+-- PlayerRemoving; don't bind it again here (the second call finds the data
+-- already cleared and warns "in-memory data is nil" on every disconnect).
 Lifecycle.WireOnPlayerReady(ctx)
 
 print(string.format("[SocialPlaza] Place ready — %d modules loaded", (function()

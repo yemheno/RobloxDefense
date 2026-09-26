@@ -12,22 +12,21 @@ DamageSystem.ArmorSystem    = nil
 DamageSystem.CriticalSystem = nil
 DamageSystem.KeystoneRules  = nil  -- §AGX/X11: keystone hooks (set by StatsManager)
 
--- §AGX/BAL: combat guard caps, resolved once. Penetration (60) was declared in
--- StatCaps but never enforced; the other two answer TODO §1 [??] items.
+-- §AGX/BAL: combat guard caps, resolved once
+-- (BALANCE_NUMBERS.md#combat-caps-not-in-statcaps). Penetration comes from
+-- StatCaps; the other two are not stats and live here.
 local PENETRATION_CAP      = (Config.StatCaps.Penetration and Config.StatCaps.Penetration.max) or 60
--- Vulnerability never stacks (strongest application wins, §T2/Z9); the
--- strongest source is Meteorite at 1.25×. 2.0 leaves 60% headroom for
--- talents/new skills and bounds the worst hit at 3.24 (crit) × 1.25
--- (element) × 2.0 = 8.1× instead of 12.2× at the interim 3.0.
+-- Vulnerability never stacks (strongest application wins, §T2/Z9). The cap
+-- leaves headroom above the strongest source (Meteorite) for talents/new
+-- skills and bounds the worst crit × element × vulnerability hit.
 local VULNERABILITY_CAP    = 2.0
 -- ArmorReduction peaks at 25% today (Sundering 5 stacks × 5%). Capping at
 -- 50% (2× headroom) means shred alone can never zero a mob's armor;
 -- Penetration (capped at 60) is the stat that strips the rest.
 local ARMOR_REDUCTION_CAP  = 50
 
--- §T1.3/B10: single lazy getter. Same shape as ClassManager's per-module
--- lazy getters; replaces the two divergent inline implementations that
--- previously lived in GetBaseDamage and CalculateIncomingDamage.
+-- §T1.3/B10: the one lazy WeaponManager getter (ARCHITECTURE.md#lazy-getter)
+-- for GetBaseDamage and CalculateIncomingDamage.
 -- A pcall on the initial require so a deep WeaponManager load-error
 -- surfaces once and then we proceed with weapon-attack = 0.
 local _WeaponManager
@@ -139,10 +138,10 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 		mobArmor = targetMob:GetAttribute("Armor") or 0
 	end
 
-	-- ArmorReduction is now percentage-based (e.g. 30 = 30% reduction)
+	-- ArmorReduction is percentage-based (e.g. 30 = 30% reduction)
 	local armorReductionPct = 0
 	if targetMob then
-		-- §AGX/BAL: TODO §1 [??] ArmorReduction floor → capped (see top).
+		-- §AGX/BAL: capped at ARMOR_REDUCTION_CAP (see top).
 		armorReductionPct = math.clamp(targetMob:GetAttribute("ArmorReduction") or 0, 0, ARMOR_REDUCTION_CAP)
 	end
 
@@ -168,8 +167,7 @@ function DamageSystem.CalculateOutgoingDamage(player, targetMob, options)
 	damage = damage * elementMult
 
 	-- Step 7: Vulnerability multiplier (applied by skill debuffs, e.g. Meteorite)
-	-- §T1P2/Y2: runaway clamp. §AGX/BAL: 3.0 → VULNERABILITY_CAP (2.0),
-	-- answering TODO §1 [??] "Vulnerability stacking cap" (see top).
+	-- §T1P2/Y2, §AGX/BAL: runaway clamp at VULNERABILITY_CAP (see top).
 	if targetMob then
 		local vulnerability = targetMob:GetAttribute("Vulnerability") or 0
 		if vulnerability > 0 then

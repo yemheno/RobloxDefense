@@ -15,12 +15,12 @@ local ClassManager = nil
 local SkillRegistry = nil
 local BonusManager = nil
 local PlayerDataManager = nil
--- §AGX/STATS: stat readers resolved once in Init (Audit_4.7 §5.4) —
+-- §AGX/STATS: stat readers resolved once in Init (ARCHITECTURE.md#hot-path-ref-cache) —
 -- CooldownReduction, CastTimeReduction and AoESize are read per cast.
 local getTotalStat = function(_player, _stat) return 0 end
 local capStat = function(_stat, v) return v end
 
--- Skill execution helpers (set during Init — these used to live in SkillManager/SkillExecutor.lua)
+-- Skill execution helpers (set during Init)
 local BaseSkills = nil
 local SkillEffects = nil
 
@@ -28,8 +28,9 @@ local SkillEffects = nil
 -- rule lives in one place. Default is "never paused" until Init runs.
 local isWorldPaused = function(_player) return false end
 
--- §AGX/STATS: ReadyGate, lazy (§5.3). SetupPlayer runs on PlayerAdded,
--- before the client's SkillCooldownUpdate listener exists (§5.5).
+-- §AGX/STATS: ReadyGate, lazy (ARCHITECTURE.md#lazy-getter). SetupPlayer runs on
+-- PlayerAdded, before the client's SkillCooldownUpdate listener exists
+-- (ARCHITECTURE.md#readygate-pushes).
 local _ReadyGate
 local function getReadyGate()
 	if _ReadyGate ~= nil then return _ReadyGate or nil end
@@ -128,7 +129,7 @@ function SkillManager.Init()
 	if bmMod then BonusManager = require(bmMod) end
 
 	-- ───────────────────────────────────────────────────────────
-	-- Skill execution wiring (inlined from SkillManager/SkillExecutor)
+	-- Skill execution wiring
 	-- Sets up BaseSkills + SkillEffects + per-class skill modules with
 	-- the shared dependency bundle they expect.
 	-- ───────────────────────────────────────────────────────────
@@ -193,9 +194,9 @@ function SkillManager.Init()
 	NetworkManager.GetEvent("SkillActivated")
 	NetworkManager.GetEvent("SkillFailed")
 	NetworkManager.GetEvent("SkillCooldownUpdate")
-	NetworkManager.GetEvent("SkillCastStarted")     -- NEW
-	NetworkManager.GetEvent("SkillCastCompleted")   -- NEW
-	NetworkManager.GetEvent("SkillCastInterrupted") -- NEW
+	NetworkManager.GetEvent("SkillCastStarted")
+	NetworkManager.GetEvent("SkillCastCompleted")
+	NetworkManager.GetEvent("SkillCastInterrupted")
 	NetworkManager.GetEvent("BuffApplied")
 	NetworkManager.GetEvent("BuffRemoved")
 
@@ -239,8 +240,8 @@ function SkillManager.SetupPlayer(player)
 	local classSkills = SkillRegistry.GetClassSkillIds(className)
 
 	-- §AGX/UI-P2: include base resource costs so the touch SkillPad /
-	-- ActionBar can dim unaffordable skills from the start (was learned
-	-- only after a failed cast). usesAllResource skills need any > 0.
+	-- ActionBar can dim unaffordable skills from the start.
+	-- usesAllResource skills need any > 0.
 	local costs = {}
 	local classModule = SkillRegistry.GetClassModule(className)
 	if classModule and classModule.GetAllSkills then
@@ -249,8 +250,8 @@ function SkillManager.SetupPlayer(player)
 		end
 	end
 
-	-- §AGX/STATS: PlayerAdded push → ReadyGate (Audit_4.7 §5.5); a plain
-	-- FireClient here raced the client's listener and was dropped.
+	-- §AGX/STATS: PlayerAdded push → ReadyGate (ARCHITECTURE.md#readygate-pushes);
+	-- a plain FireClient here races the client's listener and is dropped.
 	local payload = {
 		skills = classSkills,
 		costs = costs,
@@ -321,9 +322,8 @@ function SkillManager.StartCasting(player, skill, inputData, castTime)
 	})
 
 	-- Notify the caster for the cast-time animation.
-	-- §AGX/X21: was FireAllClients with the full skill table; every
-	-- non-caster dropped it (SkillVisuals.OnSkillActivated filters on
-	-- playerId, and Roblox replicates the caster's animation itself).
+	-- §AGX/X21: caster only: SkillVisuals.OnSkillActivated filters on
+	-- playerId, and Roblox replicates the caster's animation itself.
 	-- Still the ONLY event that plays cast-time animations — don't remove.
 	NetworkManager.FireClient(player, "SkillActivated", {
 		skillId = skill.id,
@@ -459,7 +459,7 @@ end
 -- SKILL USAGE
 -- ═══════════════════════════════════════════════════════════
 
--- §S1 fix: per-player atomic-request lock. Two SkillRequest packets
+-- §S1: per-player atomic-request lock. Two SkillRequest packets
 -- arriving in the same network frame would otherwise both pass the
 -- cooldown + casting checks, both deduct resource, and both start a
 -- cooldown — a duplicated cast worth real damage. The lock is
@@ -542,9 +542,9 @@ function SkillManager.TryUseSkill(player, skillId, inputData)
 	local currentResource = ResourceManager.GetResource(player)
 
 	if skill.usesAllResource then
-		-- §EASY/E1 (Pablo): ultimates unlock at base level 10. Replaces
-		-- the stale "ultimateLocked = false for testing" TODO. Level
-		-- attribute is reliable mid-session since §T0P2/X4.
+		-- §EASY/E1 (Pablo): ultimates unlock at base level 10. But the
+		-- skill.unlockLevel gate above (30 on every ultimate) runs first and
+		-- wins; BACKLOG §ULT-LEVEL picks one. Level attribute: §T0P2/X4.
 		local ULTIMATE_UNLOCK_LEVEL = 10
 		if (player:GetAttribute("Level") or 1) < ULTIMATE_UNLOCK_LEVEL then
 			SkillManager.SendFailure(player, skillId,
@@ -638,7 +638,7 @@ end
 function SkillManager.StartCooldown(player, skillId, duration)
 	if not playerCooldowns[player] then
 		-- §AGX/T11-JAN: a late call for a player who already left (RemovePlayer
-		-- ran) used to re-create the Player-keyed entry, which then never cleared.
+		-- ran) must not re-create the Player-keyed entry; it would never clear.
 		if not player.Parent then return end
 		playerCooldowns[player] = {}
 	end

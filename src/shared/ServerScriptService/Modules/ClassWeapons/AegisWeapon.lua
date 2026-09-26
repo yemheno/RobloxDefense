@@ -1,4 +1,4 @@
--- ServerScriptService/Modules/ClassWeapons/AegisWeapons
+-- ServerScriptService/Modules/ClassWeapons/AegisWeapon
 
 local AegisWeapons = {}
 
