@@ -126,4 +126,99 @@ function Theme.GetImage(name)
 	return entry
 end
 
+-- ── Layout tokens (§AGX/UI-P2) ───────────────────────────────────────────────
+-- §AGX/UI-P2: per-form-factor size tokens from docs/ui_audit/mobile.md §2.2,
+-- plus the combat-control geometry (SkillPad arc §2.4/§2.5, ActionBar). This is
+-- the ONE place every SkillPad/ActionBar size and position comes from, so the
+-- pending D1/D2 decisions can restyle them without touching component code.
+-- Read it through FormFactor.Get().tokens (= Theme.Layout[kind]).
+-- All numbers are offset pixels at the form factor's reference scale.
+-- `uiScale` is recorded for D2 option (a) but is NOT applied yet.
+Theme.Layout = {
+	-- Classification thresholds (mobile.md §2.1 / §2.7)
+	Breakpoints = {
+		phoneMaxShort = 500,   -- touch + viewport short side <= this -> Phone
+		inputDebounce = 0.25,  -- seconds a LastInputType flip must hold
+	},
+
+	-- Shared by all form factors
+	CombatControls = {
+		displayOrder = 1,      -- SkillPad / ActionBar ScreenGui (AppGui is 0)
+		attackRepeat = 0.1,    -- s between repeat presses while Attack is held
+	},
+
+	Phone = {
+		uiScale   = 1,
+		minTarget = 48, gap = 8, edge = 16,
+		font      = { min = 12, body = 16, title = 22, hudMax = 28 },
+		header    = 56, close = 48,
+		attack    = 96, skill = 60, dash = 52,
+		skillPad  = {
+			-- Attack centre, measured in from the safe area's bottom-right corner
+			anchor     = Vector2.new(68, 68),
+			arcRadius  = 128,                    -- chord 2*128*sin15 = 66 >= 60+6
+			arcAngles  = { 180, 210, 240, 270 }, -- Skill1..4, screen degrees (270 = up)
+			dashOffset = Vector2.new(-208, 16),  -- Dash centre relative to Attack centre
+			aimDeadzone = 12,                    -- px of drag before twin-stick aims
+			knob       = 34,                     -- twin-stick knob diameter
+			stroke     = 2,
+			ultStroke  = 3,                      -- Skill4 gold ring
+		},
+	},
+
+	Tablet = {
+		uiScale   = 1.2,
+		minTarget = 48, gap = 10, edge = 20,
+		font      = { min = 14, body = 18, title = 26, hudMax = 32 },
+		header    = 64, close = 48,
+		attack    = 112, skill = 72, dash = 60,
+		skillPad  = {
+			anchor     = Vector2.new(80, 80),
+			arcRadius  = 150,                    -- chord 77.6 >= 72+6
+			arcAngles  = { 180, 210, 240, 270 },
+			dashOffset = Vector2.new(-242, 20),
+			aimDeadzone = 14,
+			knob       = 40,
+			stroke     = 2,
+			ultStroke  = 3,
+		},
+	},
+
+	Desktop = {
+		uiScale   = 1,
+		minTarget = 32, gap = 8, edge = 16,
+		font      = { min = 12, body = 16, title = 28, hudMax = 32 },
+		header    = 56, close = 40,
+		skill     = 52,
+		actionBar = {
+			slot     = 52,     -- Skill1..4
+			dashSlot = 40,
+			gap      = 8,
+			bottom   = 16,     -- distance from the screen's bottom edge
+			padding  = 6,
+			badge    = 18,     -- key badge height
+			radius   = 8,
+			stroke   = 2,
+		},
+	},
+
+	Console = {
+		uiScale   = 1.5,
+		minTarget = 64, gap = 16, edge = 48,
+		font      = { min = 20, body = 24, title = 36, hudMax = 40 },
+		header    = 80, close = 64,
+		skill     = 64,
+		actionBar = {
+			slot     = 64,
+			dashSlot = 52,
+			gap      = 16,
+			bottom   = 48,
+			padding  = 8,
+			badge    = 24,
+			radius   = 10,
+			stroke   = 2,
+		},
+	},
+}
+
 return Theme

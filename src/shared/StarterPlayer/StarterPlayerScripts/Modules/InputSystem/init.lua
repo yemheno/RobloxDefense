@@ -15,6 +15,13 @@
 
 	─── Mobile ──────────────────────────────────────────────
 	  On-screen buttons fire actions via touch UI callbacks.
+	  -- §AGX/UI-P2: they call InputSystem.FireAction(name, "Began"/"Ended")
+	  -- (UI/Common/SkillPad.lua), which applies the same context gate as
+	  -- physical input.
+
+	─── Active device ───────────────────────────────────────
+	  -- §AGX/UI-P2: GetActiveInputType() -> "Keyboard" | "Gamepad" | "Touch",
+	  -- live (from Modules/FormFactor), and OnInputTypeChanged(cb).
 
 	─── Contexts ────────────────────────────────────────────
 	  "Combat"  — lane-defense gameplay (Attack, Skill1-4)
@@ -33,6 +40,8 @@ local InputSystem = {}
 local UserInputService = game:GetService("UserInputService")
 
 local InputActions = require(script:WaitForChild("InputActions"))
+-- §AGX/UI-P2: live device detection lives in FormFactor (mobile.md §2.7/M5).
+local FormFactor   = require(script.Parent:WaitForChild("FormFactor"))
 
 -- ═══════════════════════════════════════════════════════════
 -- STATE
@@ -40,6 +49,14 @@ local InputActions = require(script:WaitForChild("InputActions"))
 
 local activeContext   = "Lobby"      -- "Lobby" | "Combat" | "UI"
 local activeInputType = "Keyboard"   -- "Keyboard" | "Gamepad" | "Touch"
+
+-- §AGX/UI-P2: input-type and context change listeners, plus the actions whose
+-- "Began" went out through FireAction (so their "Ended" is always delivered,
+-- even if the context changed mid-hold; otherwise a hold would stick).
+local inputTypeCallbacks = {}
+local contextCallbacks   = {}
+local signalNextId       = 1
+local firedHeld          = {}
 
 -- [actionName] = { [callbackId] = callback }
 local actionCallbacks = {}
@@ -59,14 +76,33 @@ local bindingChangedNextId    = 1
 -- INTERNAL
 -- ═══════════════════════════════════════════════════════════
 
-local function DetectPlatform()
-	if UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled then
-		return "Touch"
-	elseif UserInputService.GamepadEnabled and not UserInputService.KeyboardEnabled then
-		return "Gamepad"
-	end
+-- §AGX/UI-P2: replaces the detect-once DetectPlatform(). FormFactor's
+-- "KeyboardMouse" maps to this module's historical "Keyboard" platform key.
+local function MapInputType(ffInput)
+	if ffInput == "Touch" or ffInput == "Gamepad" then return ffInput end
 	return "Keyboard"
 end
+
+local function AddListener(list, callback)
+	local id = signalNextId
+	signalNextId = signalNextId + 1
+	list[id] = callback
+	return function()
+		list[id] = nil
+	end
+end
+
+local function SyncInputType(ff)
+	local newType = MapInputType(ff.input)
+	if newType == activeInputType then return end
+	activeInputType = newType
+	for _, cb in pairs(inputTypeCallbacks) do
+		task.spawn(cb, newType)
+	end
+end
+
+activeInputType = MapInputType(FormFactor.Get().input)
+FormFactor.Changed(SyncInputType)
 
 local function RebuildKeyMap()
 	keyToActions = {}
@@ -110,21 +146,16 @@ function InputSystem.Init()
 	if initialized then return end
 	initialized = true
 
-	activeInputType = DetectPlatform()
+	-- §AGX/UI-P2: activeInputType now follows FormFactor (see SyncInputType).
+	SyncInputType(FormFactor.Get())
 	RebuildKeyMap()
 
 	-- ── InputBegan ────────────────────────────────────────
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		if gameProcessed then return end
 
-		-- Track active device
-		if input.UserInputType == Enum.UserInputType.Gamepad1 then
-			activeInputType = "Gamepad"
-		elseif input.UserInputType == Enum.UserInputType.Touch then
-			activeInputType = "Touch"
-		else
-			activeInputType = "Keyboard"
-		end
+		-- §AGX/UI-P2: active-device tracking moved to FormFactor (debounced,
+		-- and it also sees gameProcessed input, which this handler skips).
 
 		-- Resolve key (MouseButton → UserInputType enum)
 		local key = input.KeyCode
@@ -162,11 +193,58 @@ function InputSystem.Init()
 		end
 	end)
 
-	-- ── Gamepad hotplug ──────────────────────────────────
-	UserInputService.GamepadConnected:Connect(function()
-		activeInputType = "Gamepad"
-	end)
+	-- §AGX/UI-P2: the GamepadConnected override is gone; plugging a pad in
+	-- no longer claims "Gamepad" until it is actually used (FormFactor).
 
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- VIRTUAL INPUT (§AGX/UI-P2)
+-- ═══════════════════════════════════════════════════════════
+
+--- Fire a named action from UI (e.g. the touch SkillPad), with the same
+--- context gate physical input gets. inputState: "Began" (default) | "Ended".
+--- Returns true when the action was dispatched.
+function InputSystem.FireAction(actionName, inputState)
+	local def = InputActions.Definitions[actionName]
+	if not def then
+		warn("[InputSystem] FireAction: unknown action:", actionName)
+		return false
+	end
+	inputState = inputState or "Began"
+
+	if inputState == "Ended" then
+		-- Always close a hold we opened, whatever the context is now.
+		if firedHeld[actionName] then
+			firedHeld[actionName] = nil
+			FireCallbacks(actionName, "Ended", nil)
+			return true
+		end
+		if not def.contexts[activeContext] then return false end
+		FireCallbacks(actionName, "Ended", nil)
+		return true
+	end
+
+	-- Same gate as InputBegan: suppressed outside the action's contexts,
+	-- which includes the "UI" context (D6: no skills behind menus).
+	if not def.contexts[activeContext] then return false end
+	firedHeld[actionName] = true
+	FireCallbacks(actionName, inputState, nil)
+	return true
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- ACTIVE INPUT TYPE (§AGX/UI-P2)
+-- ═══════════════════════════════════════════════════════════
+
+--- "Keyboard" | "Gamepad" | "Touch", live. Same keys GetBinding uses.
+function InputSystem.GetActiveInputType()
+	return activeInputType
+end
+
+--- cb(newType) whenever the active input type changes. Returns a disconnect.
+function InputSystem.OnInputTypeChanged(callback)
+	return AddListener(inputTypeCallbacks, callback)
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -199,7 +277,22 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 function InputSystem.SetContext(contextName)
+	-- §AGX/UI-P2: notify listeners (SkillPad hides outside "Combat").
+	if contextName == activeContext then return end
 	activeContext = contextName
+	for _, cb in pairs(contextCallbacks) do
+		task.spawn(cb, contextName)
+	end
+end
+
+-- §AGX/UI-P2: read the current context.
+function InputSystem.GetContext()
+	return activeContext
+end
+
+-- §AGX/UI-P2: cb(contextName) on every context change. Returns a disconnect.
+function InputSystem.OnContextChanged(callback)
+	return AddListener(contextCallbacks, callback)
 end
 
 -- ═══════════════════════════════════════════════════════════

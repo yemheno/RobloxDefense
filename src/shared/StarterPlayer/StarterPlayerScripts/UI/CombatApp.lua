@@ -39,6 +39,13 @@ local TeammateVitals = require(SharedUI:WaitForChild("TeammateVitals"))
 local DeathUI        = require(SharedUI:WaitForChild("DeathUI"))
 local VoteUI         = require(SharedUI:WaitForChild("VoteUI"))
 
+-- §AGX/UI-P2: combat input controls (mobile.md M1/§2.5, UX-04). SkillPad on
+-- touch, ActionBar (skill bar with cooldowns) on desktop/console.
+local SharedCommon  = SharedUI:WaitForChild("Common")
+local useFormFactor = require(SharedCommon:WaitForChild("useFormFactor"))
+local SkillPad      = require(SharedCommon:WaitForChild("SkillPad"))
+local ActionBar     = require(SharedCommon:WaitForChild("ActionBar"))
+
 local function CombatApp()
 	local showCharCreate, setShowCharCreate = React.useState(false)
 	local showClassReference, setShowClassReference = React.useState(false)
@@ -49,6 +56,8 @@ local function CombatApp()
 	local showAchievements, setShowAchievements = React.useState(false)
 	local showSettings,     setShowSettings     = React.useState(false)
 	local showShop,         setShowShop         = React.useState(false)
+	-- §AGX/UI-P2: picks SkillPad vs ActionBar; live across input switches.
+	local formFactor = useFormFactor()
 
 	-- Listen for character creation (edge case: first login on this place)
 	React.useEffect(function()
@@ -176,6 +185,15 @@ local function CombatApp()
 
 		-- Admin testing panel (renders nothing for non-creator players)
 		testingPanel = React.createElement(TestingUI),
+
+		-- §AGX/UI-P2: combat controls. Both hide while a fullscreen menu is
+		-- open (and outside the "Combat" input context / while down).
+		skillPad  = formFactor.isTouch and React.createElement(SkillPad.default, {
+			hidden = fullscreenOpen,
+		}) or nil,
+		actionBar = (not formFactor.isTouch) and React.createElement(ActionBar, {
+			hidden = fullscreenOpen,
+		}) or nil,
 
 		-- Death overlay (knocked down / dead states)
 		deathOverlay = React.createElement(DeathUI),

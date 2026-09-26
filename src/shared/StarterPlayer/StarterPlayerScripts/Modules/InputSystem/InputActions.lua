@@ -13,6 +13,8 @@
 
 	Touch bindings are empty because mobile on-screen buttons call
 	InputSystem.FireAction() directly — no physical key involved.
+	-- §AGX/UI-P2: FireAction(actionName, "Began" | "Ended") now exists
+	-- (InputSystem/init.lua) and is used by UI/Common/SkillPad.lua.
 ]]
 
 local InputActions = {}
