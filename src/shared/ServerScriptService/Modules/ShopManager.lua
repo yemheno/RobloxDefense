@@ -15,6 +15,7 @@
       ShopManager.Init()
       ShopManager.PurchaseCosmetic(player, itemId) → bool, string
       ShopManager.PurchaseConsumable(player, itemId, qty) → bool, string
+      ShopManager.PurchasePremium(player, itemId) → bool, string  (§AGX/X40: opens the Robux dialog)
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -287,9 +288,22 @@ function ShopManager.PurchaseConsumable(player, itemId, quantity)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- PREMIUM PURCHASES (stub — needs MarketplaceService wiring)
+-- PREMIUM PURCHASES  (§AGX/X40: routed through MonetizationService)
 -- ═══════════════════════════════════════════════════════════
 
+-- §AGX/X40: the Robux prompt, receipts and GamePass cache live in
+-- MonetizationService. Lazy require: it lazily requires us back.
+local MonetizationService = nil
+local function getMonetization()
+    if not MonetizationService then
+        MonetizationService = require(Modules:WaitForChild("MonetizationService"))
+    end
+    return MonetizationService
+end
+
+--- Opens the Roblox purchase dialog for a Premium entry. `true` means the
+--- dialog opened, NOT that anything was bought: the grant happens later in
+--- MonetizationService's ProcessReceipt (DevProduct) or GamePass handler.
 function ShopManager.PurchasePremium(player, itemId)
     local shopCfg = getShopConfig()
     local entry   = shopCfg.FindByItemId(itemId)
@@ -303,12 +317,12 @@ function ShopManager.PurchasePremium(player, itemId)
         return false, "Coming soon!"
     end
 
-    if entry.devProductId == 0 then
-        return false, "Coming soon!"
-    end
-
-    -- TODO: MarketplaceService:PromptProductPurchase(player, entry.devProductId)
-    return false, "Premium purchases not yet available."
+    -- §AGX/X40: was a hard `return false`. MonetizationService re-checks
+    -- enabled, the placeholder id (0), the no-P2W grant allowlist and
+    -- per-product "already owned / unused" rules before prompting.
+    return withPurchaseLock(player, function()
+        return getMonetization().PromptPurchase(player, itemId)
+    end)
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -337,6 +351,15 @@ end
 
 function ShopManager.Init()
     local net = getNet()
+
+    -- §AGX/X40: every Place's Main loads ShopManager, so this sets
+    -- ProcessReceipt in all five Places even before a Main loads
+    -- MonetizationService itself. Its Init is idempotent. pcall: a broken
+    -- monetization module must not take the Merit/Essence shop down.
+    local monOk, monErr = pcall(function() getMonetization().Init() end)
+    if not monOk then
+        warn("[ShopManager] MonetizationService failed to init:", monErr)
+    end
 
     net.GetEvent("ShopPurchase")
     net.GetEvent("GetShopState")

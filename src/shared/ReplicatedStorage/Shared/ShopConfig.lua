@@ -10,7 +10,7 @@
     Three tabs:
       Cosmetics    — headgear & outfits (unlocks, not consumable)
       Consumables  — potions, scrolls, buff items (stackable)
-      Premium      — Robux items via DevProducts (future implementation)
+      Premium      — Robux: cosmetics / appearance change / VIP only (§AGX/X40)
 
     Each entry:
       itemId     string   References CosmeticConfig or ConsumableConfig
@@ -179,49 +179,108 @@ ShopConfig.Consumables = {
 }
 
 -- ═══════════════════════════════════════════════════════════
--- PREMIUM TAB
+-- PREMIUM TAB  (§AGX/X40 monetization decision, 2026-09-26)
 -- ═══════════════════════════════════════════════════════════
--- Robux items — DevProduct IDs are placeholders (0)
--- until real products are created in the Roblox dashboard.
-
--- NOTE: set enabled = false on any item to hide it from the shop UI
--- and block purchases server-side until ready to ship.
+-- §AGX/X40: Robux buys cosmetics, appearance changes and non-power
+-- convenience ONLY. Gameplay currency (Merits, Essence) and anything
+-- that converts into it (respec scrolls, consumables, gear, refine /
+-- reroll / tier-up) is never sold. The old Essence / Merit packs and the
+-- "Respec Token x3" pack were DELETED, not disabled: a respec scroll is
+-- worth 25 Essence (BALANCE_NUMBERS §33), so selling it was an indirect
+-- Essence sale. MonetizationService refuses to register any entry whose
+-- grant.type is not in its allowlist (AppearanceChange / Cosmetics /
+-- GamePass), so a currency pack re-added here can't be prompted.
+--
+-- Entry fields (on top of the common ones above):
+--   kind          "DevProduct" (consumable, ProcessReceipt) | "GamePass" (permanent)
+--   devProductId  number  DevProduct id (0 = not created yet → never prompted)
+--   gamePassId    number  GamePass id   (0 = not created yet → never prompted)
+--   price         number  Robux. Display only — Roblox charges what the
+--                         Creator Dashboard says; keep the two in sync.
+--   grant         table   { type = "AppearanceChange" }
+--                         { type = "Cosmetics", items = { cosmeticId, ... } }
+--                         { type = "GamePass", attribute = "VIP", perks = {...} }
+--
+-- Every entry stays `enabled = false` until Pablo creates the product in
+-- the Creator Dashboard and pastes its id here. `enabled = false` hides
+-- it in GlobalShopUI and ShopManager/MonetizationService refuse the
+-- prompt; a receipt for an already-paid product is still honoured.
 ShopConfig.Premium = {
     {
-        itemId       = "premium_essence_pack",
+        itemId       = "premium_appearance_change",
         tab          = "Premium",
         enabled      = false,
-        name         = "Essence Pack (50)",
-        desc         = "50 Essence delivered instantly.",
-        icon         = "💰",
-        price        = 99,   -- Robux
-        currency     = "Robux",
-        devProductId = 0,    -- placeholder
-        grant        = { type = "Essence", amount = 50 },
-    },
-    {
-        itemId       = "premium_merit_pack",
-        tab          = "Premium",
-        enabled      = false,
-        name         = "Merit Bundle (5000)",
-        desc         = "5000 Merits delivered instantly.",
-        icon         = "🪙",
+        kind         = "DevProduct",
+        name         = "Appearance Change",
+        desc         = "Change your character's body, gender and skin once. Gear and stats are not affected.",
+        icon         = "🪞",
         price        = 49,
         currency     = "Robux",
-        devProductId = 0,
-        grant        = { type = "Merits", amount = 5000 },
+        devProductId = 0,    -- placeholder
+        grant        = { type = "AppearanceChange" },
     },
+    -- Cosmetic bundles. The ids below are the only non-starter cosmetics
+    -- that exist today (CosmeticConfig, all placeholders per §DISC/D7).
+    -- They are also sold for Merits/Essence in the Cosmetics tab, and
+    -- MonetizationService blocks a Robux bundle that overlaps an
+    -- earn-currency listing (buying it for Robux would free up gameplay
+    -- currency). Replace them with Robux-exclusive cosmetics in the D7
+    -- shop pass, or take them out of the Cosmetics tab.
     {
-        itemId       = "premium_respec_pack",
+        itemId       = "premium_bundle_vanguard",
         tab          = "Premium",
         enabled      = false,
-        name         = "Respec Token x3",
-        desc         = "3 Respec Tokens delivered instantly.",
-        icon         = "📋",
-        price        = 79,
+        kind         = "DevProduct",
+        name         = "Vanguard Look (Aegis)",
+        desc         = "Aegis helm + Dark Knight outfit. Cosmetic only, no stats.",
+        icon         = "🛡️",
+        price        = 99,
         currency     = "Robux",
         devProductId = 0,
-        grant        = { type = "RespecToken", amount = 3 },
+        grant        = { type = "Cosmetics", items = { "helm_aegis", "dark_knight" } },
+    },
+    {
+        itemId       = "premium_bundle_arcanum",
+        tab          = "Premium",
+        enabled      = false,
+        kind         = "DevProduct",
+        name         = "Arcanum Look (Arcanist)",
+        desc         = "Arcanist circlet + Shadow Robes. Cosmetic only, no stats.",
+        icon         = "🔮",
+        price        = 99,
+        currency     = "Robux",
+        devProductId = 0,
+        grant        = { type = "Cosmetics", items = { "circlet_arcanist", "shadow_robes" } },
+    },
+    {
+        itemId       = "premium_bundle_wildwood",
+        tab          = "Premium",
+        enabled      = false,
+        kind         = "DevProduct",
+        name         = "Wildwood Look (Hunter)",
+        desc         = "Hunter mask + Forest Ranger outfit. Cosmetic only, no stats.",
+        icon         = "🏹",
+        price        = 99,
+        currency     = "Robux",
+        devProductId = 0,
+        grant        = { type = "Cosmetics", items = { "mask_hunter", "forest_ranger" } },
+    },
+    -- VIP GamePass: social / cosmetic perks only. No XP, drop, Merit,
+    -- Essence, revive or stat bonus, ever. The perks are exposed as a
+    -- player attribute ("VIP") for the nameplate / chat tag to read;
+    -- nothing consumes it yet.
+    {
+        itemId       = "premium_vip",
+        tab          = "Premium",
+        enabled      = false,
+        kind         = "GamePass",
+        name         = "VIP",
+        desc         = "VIP nameplate and chat tag. Social perks only, no gameplay advantage.",
+        icon         = "⭐",
+        price        = 199,
+        currency     = "Robux",
+        gamePassId   = 0,    -- placeholder
+        grant        = { type = "GamePass", attribute = "VIP", perks = { "nameplate_tag", "chat_tag" } },
     },
 }
 

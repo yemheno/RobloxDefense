@@ -54,6 +54,8 @@
 44. [Combo System (Defense Line)](#44-combo-system-defense-line)
 45. [Hit Tracker](#45-hit-tracker)
 46. [HP Regen (Combat Modes)](#46-hp-regen-combat-modes)
+47. [Respec Economy](#47-respec-economy)
+48. [Monetization (Robux)](#48-monetization-robux)
 
 ---
 
@@ -1231,11 +1233,7 @@ Currently **disabled** (PerSecond=0, Delay=5s).
 
 ### Premium Tab (Robux)
 
-| Item | Robux | Grant |
-|---|---|---|
-| Essence Pack | **99** | 50 Essence |
-| Merit Bundle | **49** | 5,000 Merits |
-| Respec Token x3 | **79** | 3 RespecTokens |
+*§AGX/X40 (2026-09-26):* the Essence Pack, Merit Bundle and Respec Token x3 were **deleted**. Robux no longer buys gameplay currency or anything that converts into it. The Premium catalog and the no-P2W rule are in [§48 Monetization](#48-monetization-robux).
 
 ---
 
@@ -1748,7 +1746,7 @@ Required to advance to the next chapter:
 
 ### Economy Anchor Rate (1 Essence = 250 Merits)
 
-*Added 2026-09-26 (§AGX/X42).* Every fixed Merit↔Essence price derives from **1 Essence ≈ 250 Merits**. Why 250: it sits between the Robux packs (5,000 M for 49 R$ vs 50 E for 99 R$ ≈ 202:1) and the auction's global floor (240), and it is the earn ratio of a mid-game player (Lane Normal ≈ 15 E and ≈ 3.7k M per run at level ≈ 60). Late-game players earn Merits faster, so the auction bands below rise with level on purpose.
+*Added 2026-09-26 (§AGX/X42).* Every fixed Merit↔Essence price derives from **1 Essence ≈ 250 Merits**. Why 250: it sat near the old (now deleted, §48) Robux packs' ≈ 202:1 and sits just above the auction's global floor (240), and it is the earn ratio of a mid-game player (Lane Normal ≈ 15 E and ≈ 3.7k M per run at level ≈ 60). Late-game players earn Merits faster, so the auction bands below rise with level on purpose.
 
 | Price | Essence | Merit equivalent | Status |
 |---|---|---|---|
@@ -1756,7 +1754,7 @@ Required to advance to the next chapter:
 | Respec Scroll (shop) | 25 | 6,250 | Was 50 E, 2× a direct respec |
 | Wipe-revive (paid) | 25 | 6,250 | Unchanged |
 | Veteran Defender quest | 10 + 2,500 M | ≈5,000 | Was 10 M + 300 E |
-| Robux packs (disabled) | — | 202:1 | Off-anchor by ≈20%; re-price when monetization is wired |
+| Robux packs | — | — | Deleted (§AGX/X40): Robux never buys Merits or Essence, so no Robux:Merit rate exists. See §48 |
 
 ### Essence Market Anchor (Merits per Essence)
 
@@ -2084,6 +2082,57 @@ incremented `data.Account.RespecTokens`. These now grant `respec_scroll`
 items via `InventoryManager.AddItem`. The `RespecTokens` field remains in
 `PlayerDataConfig` for data-migration purposes but is no longer consulted
 by any hot code path.
+
+---
+
+## 48. Monetization (Robux)
+
+**Source:** `ShopConfig.lua` (Premium tab), `MonetizationService.lua`, `ShopManager.PurchasePremium` · *Added 2026-09-26 (§AGX/X40).*
+
+### The no-P2W rule
+
+Gameplay currency (Merits, Essence) is **never sold for Robux**, and nothing bought with Robux may turn into currency or power. Refine, reroll and tier-up stay earn-only, and so are not paid random items. Robux buys only:
+
+- cosmetics (no stats),
+- appearance changes (`CharacterManager.GrantAppearanceChange`, §AGX/X18),
+- non-power convenience or social perks.
+
+Things that are **not** allowed for Robux, even though they look like convenience:
+
+| Not allowed | Why |
+|---|---|
+| Merit / Essence packs | Direct currency sale. |
+| Respec scrolls or tokens | A scroll is worth 25 Essence (§33), so selling one frees 25 Essence for refine or reroll. |
+| Consumables (potions, buffs, revives) | Power, and Essence-priced. |
+| XP / drop / Merit boosts, extra revives | Power. The wipe-revive stays free 3/2/1, then 1 paid in Essence (§AGX/X40). |
+| A cosmetic that is also sold for Merits/Essence | Buying it with Robux frees the Merits/Essence it would have cost. |
+
+**Code guard:** `MonetizationService` only registers Premium entries whose `grant.type` is `AppearanceChange`, `Cosmetics` or `GamePass`. Any other entry is refused with a warning and can't be prompted. A `Cosmetics` bundle that contains an item from the Merit/Essence Cosmetics tab is registered (so receipts are honoured) but can't be prompted.
+
+### Catalog
+
+Every entry is `enabled = false`, with `devProductId = 0` / `gamePassId = 0`, until Pablo creates the product in the Creator Dashboard and pastes its id. The Robux price in `ShopConfig` is for display only: Roblox charges the Dashboard price, so keep the two in sync.
+
+| itemId | Kind | Robux | Grants | Purchase guard |
+|---|---|---|---|---|
+| `premium_appearance_change` | DevProduct | **49** | 1 appearance change (banked, then applied via `GrantAppearanceChange`) | Character must exist; no unused change (flag or banked token) |
+| `premium_bundle_vanguard` | DevProduct | **99** | `helm_aegis` + `dark_knight` | Not all items owned. **Blocked today:** both are in the Merit/Essence Cosmetics tab |
+| `premium_bundle_arcanum` | DevProduct | **99** | `circlet_arcanist` + `shadow_robes` | Same, blocked for the same reason |
+| `premium_bundle_wildwood` | DevProduct | **99** | `mask_hunter` + `forest_ranger` | Same, blocked for the same reason |
+| `premium_vip` | GamePass | **199** | `VIP` player attribute (nameplate + chat tag; nothing reads it yet) | Not already owned |
+
+The bundles reference the only non-starter cosmetics that exist (all §DISC/D7 placeholders). Before enabling them, either replace them with Robux-exclusive cosmetics or take those items out of the Merit/Essence Cosmetics tab.
+
+### Receipts
+
+| Rule | Value |
+|---|---|
+| ProcessReceipt owner | `MonetizationService` only (one per server; bootstrapped by `ShopManager.Init` in all 5 Places) |
+| Idempotency | `PurchaseId` is written to `Account.Monetization.receipts` in the same in-memory step as the grant; a forced `SavePlayer` writes both in one UpdateAsync (§AGX/X3 lock) |
+| `PurchaseGranted` | Only when that save returns `"ok"`; otherwise `NotProcessedYet` |
+| Receipt history kept | Last **100** purchase ids per player |
+| Robux spent | `Account.Monetization.robuxSpent`: private, never on a leaderboard (X46) |
+| PolicyService (X46) | Not required while no Robux purchase reaches a random outcome or player trading |
 
 ---
 

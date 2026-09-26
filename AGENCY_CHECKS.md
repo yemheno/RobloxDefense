@@ -458,3 +458,12 @@ Every item is tagged `§AGX/X<n>` in code. None of it has been tested in Studio 
 **X40 monetization (decided 2026-09-26):** gameplay currency (Merits, Essence) is **not** sold for Robux, so refine, reroll and tier-up stay earn-only and are not paid random items. Robux is reserved for cosmetics, appearance changes (`GrantAppearanceChange`) and non-power convenience.
 - **X46:** PolicyService is only needed if something bought with Robux ever reaches a random outcome or player trading.
 - **The planned Essence auction:** it trades an earn-only currency, so it isn't paid item trading. Keep a PolicyService check in reserve in case that changes.
+
+### X40 monetization wiring (2026-09-26, `§AGX/X40`, not yet tested in Studio)
+- **Currency packs deleted** from `ShopConfig.Premium`: Essence Pack, Merit Bundle, and Respec Token x3. The respec pack went too, because a scroll is worth 25 Essence (BALANCE §33), so selling it was an indirect Essence sale.
+- **New Premium catalog**, all `enabled = false` with id `0` placeholders: Appearance Change (49 R$), three class cosmetic bundles (99 R$ each), and a VIP GamePass (199 R$, social tag only). See BALANCE_NUMBERS §48.
+- **`MonetizationService`** (new) owns `ProcessReceipt`, the GamePass cache and the prompt. `ShopManager.PurchasePremium` routes there and still rejects `enabled == false` (X34). This closes the "Receipts checklist" above:
+  - grant and `PurchaseId` are written together in memory, then saved in one UpdateAsync under the X3 lock;
+  - `PurchaseGranted` is returned only after that save succeeds.
+- **X46 → not required** while no Robux purchase reaches a random outcome or player trading. Nothing sold for Robux today is random or tradable, and the Essence auction trades an earn-only currency.
+- **Guard (keep it this way):** before anything bought with Robux can roll a random result (loot box, reroll, gacha, random cosmetic) or be traded/auctioned, add PolicyService `ArePaidRandomItemsRestricted` / `IsPaidItemTradingAllowed` checks first and reopen X46. In code, `ALLOWED_GRANTS` in `MonetizationService.lua` (AppearanceChange / Cosmetics / GamePass) is the gate: widening it is a monetization decision for Pablo, not a code change. `Account.Monetization.robuxSpent` is private; never put it on a public leaderboard.
