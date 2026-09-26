@@ -47,10 +47,27 @@
     BannerHost and FeedHost. Queued notifications raised before the host
     mounts are kept in the store and appear once it does.
 
-    STYLE: D1 (visual direction) is pending, so colours and fonts come only
-    from Theme.Colors / Theme.Fonts, sizes from Theme.Layout[formFactor]
-    (via useFormFactor), and every Notify-specific number lives in GEOMETRY
+    STYLE: colours and fonts come only from Theme.Colors / Theme.Fonts
+    (Theme v2 aliases), sizes from Theme.Layout[formFactor] (via
+    useFormFactor), and every Notify-specific number lives in GEOMETRY
     below. Restyling = editing that one table.
+
+    §AGX/UI-P5 (C4, shell-spec §4.2 / F2):
+      SCALE  NotifyGui is its own UNSCALED ScreenGui, so every GEOMETRY length
+             is a DESIGN px turned into screen px with FormFactor.px(n) in
+             useNotifyLayout (and fonts / targets come from the pre-multiplied
+             ff.tokens), so toasts scale with the device (D2).
+      PLACE  Phone with a SkillPad (combat): toasts + feed live in the
+             top-centre CORRIDOR under the banner slot (1 toast), capped
+             above the Dash / combo (F2: the
+             right column sat on SkillPad's Skill 4 and its ✕ took the ult's
+             taps). Other form factors: right column, offset by the rail
+             (UI_RightRailLeftPx), capped above SkillPad (UI_SkillPadTopPx).
+      MODE   UI_HudMode (PanelStack): "none" hides the feed and pauses banners
+             (they queue; staleAfter drops old ones). Toasts always show.
+      Reads UI_TopRightBottomPx, UI_TopCentreReservedPx,
+      UI_TopCentreButtonsBottomPx, UI_LeftColumnRightPx, UI_RightRailLeftPx,
+      UI_SkillPadTopPx, UI_HudMode (all optional; nil = region absent).
 ]]
 
 local Notify = {}
@@ -71,6 +88,8 @@ local Common        = script.Parent
 local Theme          = require(Common:WaitForChild("Theme"))
 local useFormFactor  = require(Common:WaitForChild("useFormFactor"))
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
+-- §AGX/UI-P5: design px -> screen px for this unscaled ScreenGui.
+local FormFactor     = require(Modules:WaitForChild("FormFactor"))
 
 local C = Theme.Colors
 local F = Theme.Fonts
@@ -78,8 +97,10 @@ local F = Theme.Fonts
 -- ═══════════════════════════════════════════════════════════
 -- GEOMETRY (§AGX/UI-P4: the one table to restyle once D1 lands)
 -- ═══════════════════════════════════════════════════════════
--- Offset pixels unless noted. Form-factor sizes (edge, fonts, minTarget)
--- come from Theme.Layout via useFormFactor(); these are Notify's own.
+-- DESIGN px unless noted (§AGX/UI-P5: useNotifyLayout multiplies every
+-- length by the device uiScale via FormFactor.px; minText / minDismiss are
+-- absolute floors). Form-factor sizes (edge, fonts, minTarget) come from
+-- ff.tokens via useFormFactor(); these are Notify's own.
 local GEOMETRY = {
 	-- ScreenGui band. AppGui = 0, CombatControls = 1 (Theme.Layout),
 	-- JoystickAim/legacy 5, SkillVisuals 8. Modals are reserved >= 40
@@ -95,16 +116,22 @@ local GEOMETRY = {
 	stroke     = 1.5,
 
 	-- Client-local layout attributes the HUD/BossHud publish on
-	-- ReplicatedStorage (HUD.lua ATTR_*), so Notify stays clear of them.
+	-- ReplicatedStorage (HUD/Layout.lua ATTR), so Notify stays clear of them.
 	attrTopRightBottom = "UI_TopRightBottomPx",
 	attrTopCentre      = "UI_TopCentreReservedPx",
 	-- §AGX/UI-P4: bottom of the HUD's visible Start / Next Wave / Return
 	-- column (absolute px, like attrTopRightBottom; nil when none shows).
 	attrTopCentreButtons = "UI_TopCentreButtonsBottomPx",
+	-- §AGX/UI-P5 (shell-spec §4.3), all screen px from the safe-area origin:
+	attrLeftColumnRight = "UI_LeftColumnRightPx",  -- right edge of the vitals/party column
+	attrRightRailLeft   = "UI_RightRailLeftPx",    -- width taken by the rail / menu button (+edge)
+	attrSkillPadTop     = "UI_SkillPadTopPx",      -- SkillPad footprint from the bottom (nil = hidden)
+	attrHudMode         = "UI_HudMode",            -- "full" | "combatSide" | "none" (string)
 
 	toast = {
 		duration      = 3.5,
-		maxVisible    = 3,
+		maxVisible    = 3,      -- store cap; the layout lowers it (phone: 1)
+		phoneVisible  = 1,
 		maxPending    = 12,     -- oldest pending dropped beyond this
 		width         = 340,
 		maxWidthScale = 0.40,   -- of the safe-area width (phones)
@@ -127,6 +154,7 @@ local GEOMETRY = {
 		minTop        = 88,
 		width         = 460,
 		maxWidthScale = 0.56,
+		minCorridor   = 240,    -- §AGX/UI-P5: narrowest banner / toast column
 		pad           = 8,
 		stroke        = 2,
 		bgTransparency = 0.12,
@@ -183,6 +211,10 @@ local banner       = nil  -- current banner item
 local bannerQueue  = {}
 local feedLines    = {}   -- oldest first
 
+-- §AGX/UI-P5: live limits set by the Host from its layout.
+local visibleCap   = GEOMETRY.toast.maxVisible  -- toasts shown at once
+local bannerPaused = false                      -- UI_HudMode == "none"
+
 local nextId    = 0
 local listeners = {}
 local listenerSeq = 0
@@ -224,7 +256,7 @@ local function scheduleToast(item)
 end
 
 local function promoteToasts()
-	while #toasts < GEOMETRY.toast.maxVisible and #pendingToast > 0 do
+	while #toasts < visibleCap and #pendingToast > 0 do
 		local item = table.remove(pendingToast, 1)
 		table.insert(toasts, item)
 		scheduleToast(item)
@@ -282,7 +314,7 @@ function Notify.toast(kind, text, opts)
 		id = newId(), key = key, kind = kind, text = text,
 		count = 1, token = 1, duration = duration,
 	}
-	if #toasts < GEOMETRY.toast.maxVisible then
+	if #toasts < visibleCap then
 		table.insert(toasts, item)
 		scheduleToast(item)
 	else
@@ -299,10 +331,37 @@ function Notify.dismiss(id)
 	removeToast(id, nil)
 end
 
+--- §AGX/UI-P5: how many toasts may show at once (the Host sets it from its
+--- layout: 1 in the phone corridor, fewer when the column is capped).
+--- Extra visible toasts go back to the FRONT of the queue (their timers
+--- are invalidated and restart when they show again).
+function Notify.setVisibleCap(n)
+	n = math.clamp(math.floor(tonumber(n) or GEOMETRY.toast.maxVisible), 1, GEOMETRY.toast.maxVisible)
+	if n == visibleCap then return end
+	visibleCap = n
+	local changed = false
+	while #toasts > visibleCap do
+		local item = table.remove(toasts)          -- newest first
+		local demoted = table.clone(item)
+		demoted.token = item.token + 1             -- its pending removeToast no longer matches
+		table.insert(pendingToast, 1, demoted)
+		changed = true
+	end
+	if #toasts < visibleCap and #pendingToast > 0 then
+		promoteToasts()
+		changed = true
+	end
+	if changed then emit() end
+end
+
 -- ── Banner ────────────────────────────────────────────────
 local showBanner  -- forward decl
 
 local function nextBanner()
+	if bannerPaused then
+		banner = nil
+		return
+	end
 	local now = os.clock()
 	table.sort(bannerQueue, function(a, b)
 		if a.priority ~= b.priority then return a.priority > b.priority end
@@ -365,7 +424,9 @@ function Notify.banner(text, opts)
 		end
 	end
 
-	if banner == nil then
+	if bannerPaused then
+		table.insert(bannerQueue, item)   -- §AGX/UI-P5: shown when the HUD is back
+	elseif banner == nil then
 		showBanner(item)
 	elseif item.priority > banner.priority then
 		-- Preempt. A transient banner is time-bound and is dropped; a
@@ -380,6 +441,26 @@ function Notify.banner(text, opts)
 	end
 	emit()
 	return item.id
+end
+
+--- §AGX/UI-P5: pause banners while UI_HudMode is "none" (a panel covers
+--- the HUD). The current banner goes back in the queue; on resume the
+--- queue plays in priority order and stale entries are dropped.
+function Notify.setBannerPaused(paused)
+	paused = paused == true
+	if paused == bannerPaused then return end
+	bannerPaused = paused
+	if paused then
+		if banner then
+			local item = table.clone(banner)
+			if not item.sticky then item.queuedAt = os.clock() end
+			table.insert(bannerQueue, item)
+			banner = nil
+		end
+	else
+		nextBanner()
+	end
+	emit()
 end
 
 function Notify.clearBanner(key)
@@ -510,7 +591,7 @@ function Notify.useNotifyState()
 	return state
 end
 
-local function useNumberAttribute(instance, name)
+local function useAttribute(instance, name, kind)
 	local value, setValue = React.useState(function() return instance:GetAttribute(name) end)
 	React.useEffect(function()
 		setValue(instance:GetAttribute(name))
@@ -519,46 +600,159 @@ local function useNumberAttribute(instance, name)
 		end)
 		return function() conn:Disconnect() end
 	end, { instance, name })
-	return (type(value) == "number") and value or nil
+	return (type(value) == kind) and value or nil
 end
 
--- Resolved per-render layout (form factor + HUD-published regions).
+local function useNumberAttribute(instance, name)
+	return useAttribute(instance, name, "number")
+end
+
+-- §AGX/UI-P5: the Host's measured ScreenGui size (DeviceSafeInsets makes it
+-- smaller than the viewport on notched phones, and the attributes are
+-- relative to the safe-area origin). Shared so Notify.useLayout callers
+-- (MatchmakingUI) see the same numbers as the Host.
+local hostSize = nil
+local hostSizeListeners = {}
+local function setHostSize(v)
+	if hostSize == v then return end
+	hostSize = v
+	for _, cb in pairs(hostSizeListeners) do task.spawn(cb, v) end
+end
+local function useHostSize()
+	local value, setValue = React.useState(hostSize)
+	React.useEffect(function()
+		setValue(hostSize)
+		listenerSeq += 1
+		local id = listenerSeq
+		hostSizeListeners[id] = setValue
+		return function() hostSizeListeners[id] = nil end
+	end, {})
+	return value
+end
+
+-- §AGX/UI-P5: Dash top (from the safe bottom) for the phone corridor cap.
+-- HUD/Layout is a pure module (React + Theme), safe to require from here.
+local hudLayoutModule = nil
+local function dashTopPx(tokens)
+	if hudLayoutModule == nil then
+		local ui = PlayerScripts:FindFirstChild("UI")
+		local hud = ui and ui:FindFirstChild("HUD")
+		local mod = hud and hud:FindFirstChild("Layout")
+		hudLayoutModule = mod and require(mod) or false
+	end
+	if not hudLayoutModule then return nil end
+	local fp = hudLayoutModule.padFootprint(tokens.skillPad, tokens.attack, tokens.skill, tokens.dash)
+	return fp and fp.dashTop or nil
+end
+
+-- The corridor exists for SkillPad (F2). A place that ever published the
+-- SkillPad footprint is a touch-combat place for the rest of the session
+-- (a teleport is a new client), so the column doesn't jump back to the
+-- right while a menu hides the pad. The Lobby keeps the right column
+-- (MatchmakingUI's controls sit under the banner there).
+local sawSkillPad = false
+
+-- Resolved per-render layout (form factor + HUD-published regions), in
+-- SCREEN px for NotifyGui.
 local function useNotifyLayout()
 	local ff = useFormFactor()
+	local measured     = useHostSize()
 	local trBottom     = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrTopRightBottom)
 	local bossReserved = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrTopCentre) or 0
 	local tcButtons    = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrTopCentreButtons)  -- §AGX/UI-P4
+	-- §AGX/UI-P5 (C4)
+	local leftColRight = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrLeftColumnRight)
+	local railLeft     = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrRightRailLeft)
+	local padTop       = useNumberAttribute(ReplicatedStorage, GEOMETRY.attrSkillPadTop)
+	local hudMode      = useAttribute(ReplicatedStorage, GEOMETRY.attrHudMode, "string") or "full"
 
-	local t      = ff.tokens
-	local vpW    = ff.viewport.X
-	local safeTop = (ff.topbar or 0) + GEOMETRY.topGap
+	local t    = ff.tokens
+	local px   = FormFactor.px   -- design -> screen px (uiScale, same rounding as ff.tokens)
+	local size = measured or ff.viewport
+	local vpW, vpH = size.X, size.Y
+	local gap  = px(GEOMETRY.gap)
+	local safeTop = (ff.topbar or 0) + px(GEOMETRY.topGap)
+	local TG, BG, FG = GEOMETRY.toast, GEOMETRY.banner, GEOMETRY.feed
 
-	local body  = math.max(GEOMETRY.minText, t.font.body)
-	local small = math.max(GEOMETRY.minText, t.font.min)
+	local body    = math.max(GEOMETRY.minText, t.font.body)
+	local small   = math.max(GEOMETRY.minText, t.font.min)
 	local dismiss = math.max(GEOMETRY.minDismiss, t.minTarget)
 	local title   = math.max(GEOMETRY.minText, t.font.title)
+	local bannerPad = px(BG.pad)
 
-	return {
-		kind        = ff.kind,
-		body        = body,
-		small       = small,
-		title       = title,
-		dismiss     = dismiss,
-		columnTop   = math.max(safeTop, trBottom or 0),
-		toastW      = math.min(GEOMETRY.toast.width, math.floor(vpW * GEOMETRY.toast.maxWidthScale)),
-		toastH      = math.max(GEOMETRY.toast.minHeight, dismiss),
-		feedW       = math.min(GEOMETRY.feed.width, math.floor(vpW * GEOMETRY.feed.maxWidthScale)),
-		feedH       = math.max(GEOMETRY.feed.lineHeight, small + 2 * GEOMETRY.gap),
-		feedMax     = GEOMETRY.feed.maxLines[ff.kind] or 4,
+	local L = {
+		kind      = ff.kind,
+		hudMode   = hudMode,
+		body      = body,
+		small     = small,
+		title     = title,
+		dismiss   = dismiss,
+		gap       = gap,
+		radius    = px(GEOMETRY.radius),
+		stroke    = px(GEOMETRY.stroke),
+		toastPad  = px(TG.pad),
+		accentBar = px(TG.accentBar),
+		glyphW    = px(TG.glyphW),
+		feedPad   = px(FG.pad),
+		bannerPad = bannerPad,
+		bannerStroke = px(BG.stroke),
+		toastW    = math.min(px(TG.width), math.floor(vpW * TG.maxWidthScale)),
+		toastH    = math.max(px(TG.minHeight), dismiss),
+		feedW     = math.min(px(FG.width), math.floor(vpW * FG.maxWidthScale)),
+		feedH     = math.max(px(FG.lineHeight), small + 2 * gap),
+		feedMax   = FG.maxLines[ff.kind] or 4,
 		-- §AGX/UI-P4: below BossHud's reserved slot AND the HUD button column.
-		bannerY     = math.max(safeTop + GEOMETRY.banner.minTop,
-			math.max(safeTop + bossReserved, tcButtons or 0) + GEOMETRY.gap),
+		bannerY   = math.max(safeTop + px(BG.minTop),
+			math.max(safeTop + bossReserved, tcButtons or 0) + gap),
 		-- Height of a banner without subtitle (BannerHost's maths), so a
 		-- caller can place its own controls under the banner slot
 		-- (MatchmakingUI's Cancel / Retry / Close).
-		bannerH     = (title + GEOMETRY.banner.pad) + GEOMETRY.banner.pad,
-		bannerW     = math.min(GEOMETRY.banner.width, math.floor(vpW * GEOMETRY.banner.maxWidthScale)),
+		bannerH   = (title + bannerPad) + bannerPad,
+		bannerW   = math.min(px(BG.width), math.floor(vpW * BG.maxWidthScale)),
 	}
+	-- Extra height of a banner WITH a subtitle (the Host adds it while one shows).
+	L.bannerSubExtra = small + bannerPad
+	if padTop then sawSkillPad = true end
+
+	-- Phone / tablet: the top-centre stack stays inside the corridor right
+	-- of the vitals / party column (never narrower than minCorridor).
+	local corridor = nil
+	if (ff.kind == "Phone" or ff.kind == "Tablet") and leftColRight then
+		corridor = math.max(px(BG.minCorridor), math.floor(2 * (vpW / 2 - (leftColRight + gap))))
+		L.bannerW = math.min(L.bannerW, corridor)
+	end
+
+	if ff.kind == "Phone" and sawSkillPad then
+		-- F2: the right column sat on Skill 4 (and its ✕ took the ult's
+		-- taps). Toasts + feed go to the corridor under the banner slot,
+		-- one toast, feed capped above the Dash button and the combo.
+		local dashTop = padTop and dashTopPx(t) or nil
+		local bottomReserve = math.max((t.edge or 16) + 44 + gap, dashTop or 0)
+		L.placement   = "corridor"
+		L.columnAnchor = Vector2.new(0.5, 0)
+		L.columnTop   = L.bannerY + L.bannerH + gap
+		L.columnPos   = UDim2.new(0.5, 0, 0, L.columnTop)
+		L.columnW     = math.min(L.toastW, corridor or L.toastW)
+		L.toastW      = L.columnW
+		L.feedW       = L.columnW
+		L.columnBottom = vpH - bottomReserve - gap
+		L.toastMax    = TG.phoneVisible
+	else
+		local right = railLeft and (railLeft + gap) or px(GEOMETRY.rightEdge)
+		local top = math.max(safeTop, trBottom or 0)
+		L.placement   = "right"
+		L.columnAnchor = Vector2.new(1, 0)
+		L.columnPos   = UDim2.new(1, -right, 0, top)
+		L.columnTop   = top
+		L.columnW     = math.max(L.toastW, L.feedW)
+		-- Cap above SkillPad (tablet); else the safe bottom edge.
+		L.columnBottom = vpH - (padTop and (padTop + gap) or px(GEOMETRY.rightEdge))
+		local fit = math.floor((L.columnBottom - top + gap) / (L.toastH + gap))
+		L.toastMax = math.clamp(fit, 1, TG.maxVisible)
+	end
+	-- Legacy field (right column top).
+	L.columnTopPx = L.columnTop
+	return L
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -570,7 +764,7 @@ local function Toast(props)
 	local item, L = props.item, props.layout
 	local spec = TOAST_KINDS[item.kind] or TOAST_KINDS.info
 	local G = GEOMETRY.toast
-	local textLeft = G.accentBar + G.glyphW + G.pad
+	local textLeft = L.accentBar + L.glyphW + L.toastPad
 	local text = item.text
 	if item.count > 1 then text = text .. "  ×" .. tostring(item.count) end
 
@@ -581,20 +775,20 @@ local function Toast(props)
 		BorderSizePixel  = 0,
 		LayoutOrder      = item.id,
 	}, {
-		corner = e("UICorner", { CornerRadius = UDim.new(0, GEOMETRY.radius) }),
+		corner = e("UICorner", { CornerRadius = UDim.new(0, L.radius) }),
 		stroke = e("UIStroke", {
 			Color        = spec.color,
-			Thickness    = GEOMETRY.stroke,
+			Thickness    = L.stroke,
 			Transparency = G.strokeTransparency,
 		}),
 		bar = e("Frame", {
-			Size             = UDim2.new(0, G.accentBar, 1, 0),
+			Size             = UDim2.new(0, L.accentBar, 1, 0),
 			BackgroundColor3 = spec.color,
 			BorderSizePixel  = 0,
 		}),
 		glyph = e("TextLabel", {
-			Position               = UDim2.fromOffset(G.accentBar + 2, 0),
-			Size                   = UDim2.new(0, G.glyphW, 1, 0),
+			Position               = UDim2.fromOffset(L.accentBar + 2, 0),
+			Size                   = UDim2.new(0, L.glyphW, 1, 0),
 			BackgroundTransparency = 1,
 			Text                   = spec.glyph,
 			TextColor3             = spec.color,
@@ -602,8 +796,8 @@ local function Toast(props)
 			TextSize               = L.body,
 		}),
 		text = e("TextLabel", {
-			Position               = UDim2.fromOffset(textLeft, G.pad / 2),
-			Size                   = UDim2.new(1, -(textLeft + L.dismiss), 1, -G.pad),
+			Position               = UDim2.fromOffset(textLeft, L.toastPad / 2),
+			Size                   = UDim2.new(1, -(textLeft + L.dismiss), 1, -L.toastPad),
 			BackgroundTransparency = 1,
 			Text                   = text,
 			TextColor3             = C.text,
@@ -637,10 +831,14 @@ local function ToastHost(props)
 			FillDirection       = Enum.FillDirection.Vertical,
 			SortOrder           = Enum.SortOrder.LayoutOrder,
 			HorizontalAlignment = Enum.HorizontalAlignment.Right,
-			Padding             = UDim.new(0, GEOMETRY.gap),
+			Padding             = UDim.new(0, L.gap or GEOMETRY.gap),
 		}),
 	}
-	for _, item in ipairs(state.toasts) do
+	-- §AGX/UI-P5: never more than the layout's cap (the store follows it
+	-- via Notify.setVisibleCap; this guards the frame before that lands).
+	local cap = L.toastMax or GEOMETRY.toast.maxVisible
+	for i, item in ipairs(state.toasts) do
+		if i > cap then break end
 		children["t" .. item.id] = e(Toast, { item = item, layout = L })
 	end
 	return e("Frame", {
@@ -692,18 +890,20 @@ local function FeedLine(props)
 		BorderSizePixel        = 0,
 		LayoutOrder            = line.id,
 	}, {
-		corner = e("UICorner", { CornerRadius = UDim.new(0, GEOMETRY.radius) }),
+		corner = e("UICorner", { CornerRadius = UDim.new(0, L.radius) }),
 		scale  = e("UIScale", { ref = scaleRef, Scale = 1 }),
 		text = e("TextLabel", {
-			Position               = UDim2.fromOffset(G.pad, 0),
-			Size                   = UDim2.new(1, -2 * G.pad, 1, 0),
+			Position               = UDim2.fromOffset(L.feedPad, 0),
+			Size                   = UDim2.new(1, -2 * L.feedPad, 1, 0),
 			BackgroundTransparency = 1,
 			Text                   = line.text,
 			TextColor3             = line.color or C.text,
 			Font                   = F.bold,
 			TextSize               = L.small,
 			TextTruncate           = Enum.TextTruncate.AtEnd,
-			TextXAlignment         = Enum.TextXAlignment.Right,
+			-- §AGX/UI-P5: centred in the phone corridor, right-aligned in the column
+			TextXAlignment         = (L.placement == "corridor") and Enum.TextXAlignment.Center
+				or Enum.TextXAlignment.Right,
 			RichText               = false,
 		}),
 	})
@@ -711,16 +911,18 @@ end
 
 local function FeedHost(props)
 	local state, L = props.state, props.layout
+	local lineGap = math.floor((L.gap or GEOMETRY.gap) / 2)
 	local children = {
 		layout = e("UIListLayout", {
 			FillDirection       = Enum.FillDirection.Vertical,
 			SortOrder           = Enum.SortOrder.LayoutOrder,
 			HorizontalAlignment = Enum.HorizontalAlignment.Right,
-			Padding             = UDim.new(0, math.floor(GEOMETRY.gap / 2)),
+			Padding             = UDim.new(0, lineGap),
 		}),
 	}
 	local lines = state.feed
-	local first = math.max(1, #lines - L.feedMax + 1)  -- newest N, newest at the bottom
+	local maxLines = props.maxLines or L.feedMax
+	local first = math.max(1, #lines - maxLines + 1)  -- newest N, newest at the bottom
 	for i = first, #lines do
 		local line = lines[i]
 		children["f" .. line.id] = e(FeedLine, { line = line, layout = L })
@@ -740,11 +942,12 @@ local function BannerHost(props)
 	local item = state.banner
 	if item == nil then return nil end
 	local G = GEOMETRY.banner
+	local pad = L.bannerPad or G.pad
 	local color = item.color or C.accent
 	local hasSub = item.subtitle ~= nil and item.subtitle ~= ""
-	local titleH = L.title + G.pad
-	local subH   = hasSub and (L.small + G.pad) or 0
-	local height = titleH + subH + G.pad
+	local titleH = L.title + pad
+	local subH   = hasSub and (L.small + pad) or 0
+	local height = titleH + subH + pad
 
 	return e("Frame", {
 		Name             = "Banner",
@@ -755,11 +958,11 @@ local function BannerHost(props)
 		BackgroundTransparency = G.bgTransparency,
 		BorderSizePixel  = 0,
 	}, {
-		corner = e("UICorner", { CornerRadius = UDim.new(0, GEOMETRY.radius) }),
-		stroke = e("UIStroke", { Color = color, Thickness = G.stroke, Transparency = 0.2 }),
+		corner = e("UICorner", { CornerRadius = UDim.new(0, L.radius or GEOMETRY.radius) }),
+		stroke = e("UIStroke", { Color = color, Thickness = L.bannerStroke or G.stroke, Transparency = 0.2 }),
 		title = e("TextLabel", {
-			Position               = UDim2.fromOffset(G.pad, G.pad / 2),
-			Size                   = UDim2.new(1, -2 * G.pad, 0, titleH),
+			Position               = UDim2.fromOffset(pad, pad / 2),
+			Size                   = UDim2.new(1, -2 * pad, 0, titleH),
 			BackgroundTransparency = 1,
 			Text                   = item.text,
 			TextColor3             = color,
@@ -769,8 +972,8 @@ local function BannerHost(props)
 			RichText               = false,
 		}),
 		subtitle = hasSub and e("TextLabel", {
-			Position               = UDim2.fromOffset(G.pad, G.pad / 2 + titleH),
-			Size                   = UDim2.new(1, -2 * G.pad, 0, subH),
+			Position               = UDim2.fromOffset(pad, pad / 2 + titleH),
+			Size                   = UDim2.new(1, -2 * pad, 0, subH),
 			BackgroundTransparency = 1,
 			Text                   = item.subtitle,
 			TextColor3             = C.text,
@@ -789,6 +992,44 @@ local function NotifyHost()
 	local state  = Notify.useNotifyState()
 	local layout = useNotifyLayout()
 
+	-- §AGX/UI-P5: store limits follow the layout / HUD mode.
+	local toastMax = layout.toastMax
+	React.useEffect(function()
+		Notify.setVisibleCap(toastMax)
+	end, { toastMax })
+	local paused = layout.hudMode == "none"
+	React.useEffect(function()
+		Notify.setBannerPaused(paused)
+	end, { paused })
+	React.useEffect(function()
+		return function()
+			Notify.setVisibleCap(GEOMETRY.toast.maxVisible)
+			Notify.setBannerPaused(false)
+			setHostSize(nil)
+		end
+	end, {})
+
+	local onRootSize = React.useCallback(function(rbx)
+		local sz = rbx.AbsoluteSize
+		if sz.X > 0 and sz.Y > 0 then setHostSize(sz) end
+	end, {})
+
+	-- Corridor: step below a banner that carries a subtitle (taller).
+	local columnTop, columnPos = layout.columnTop, layout.columnPos
+	local b = state.banner
+	if layout.placement == "corridor" and b and b.subtitle and b.subtitle ~= "" and not paused then
+		columnTop += layout.bannerSubExtra
+		columnPos = UDim2.new(columnPos.X.Scale, columnPos.X.Offset, 0, columnTop)
+	end
+
+	-- Feed lines that fit between the toasts and the column cap.
+	local shownToasts = math.min(#state.toasts, layout.toastMax)
+	local used = shownToasts * (layout.toastH + layout.gap)
+	local lineGap = math.floor(layout.gap / 2)
+	local room = layout.columnBottom - columnTop - used
+	local feedLines = math.clamp(math.floor((room + lineGap) / (layout.feedH + lineGap)), 0, layout.feedMax)
+	if paused then feedLines = 0 end   -- UI_HudMode "none": no feed over panels
+
 	return ReactRoblox.createPortal(e("ScreenGui", {
 		Name           = "NotifyGui",
 		ResetOnSpawn   = false,
@@ -799,25 +1040,34 @@ local function NotifyHost()
 		-- layout.* adds FormFactor.Get().topbar explicitly.
 		ScreenInsets   = Enum.ScreenInsets.DeviceSafeInsets,
 	}, {
-		-- Right column: toasts, then feed lines directly under them.
-		column = e("Frame", {
-			Name                   = "RightColumn",
-			AnchorPoint            = Vector2.new(1, 0),
-			Position               = UDim2.new(1, -GEOMETRY.rightEdge, 0, layout.columnTop),
-			Size                   = UDim2.fromOffset(math.max(layout.toastW, layout.feedW), 0),
-			AutomaticSize          = Enum.AutomaticSize.Y,
+		root = e("Frame", {
+			Name                   = "Root",
+			Size                   = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
+			[React.Change.AbsoluteSize] = onRootSize,
 		}, {
-			layout = e("UIListLayout", {
-				FillDirection       = Enum.FillDirection.Vertical,
-				SortOrder           = Enum.SortOrder.LayoutOrder,
-				HorizontalAlignment = Enum.HorizontalAlignment.Right,
-				Padding             = UDim.new(0, GEOMETRY.gap),
+			-- Toasts, then feed lines directly under them: the right column,
+			-- or the top-centre corridor on phones (§AGX/UI-P5).
+			column = e("Frame", {
+				Name                   = "Column",
+				AnchorPoint            = layout.columnAnchor,
+				Position               = columnPos,
+				Size                   = UDim2.fromOffset(layout.columnW, 0),
+				AutomaticSize          = Enum.AutomaticSize.Y,
+				BackgroundTransparency = 1,
+			}, {
+				layout = e("UIListLayout", {
+					FillDirection       = Enum.FillDirection.Vertical,
+					SortOrder           = Enum.SortOrder.LayoutOrder,
+					HorizontalAlignment = (layout.placement == "corridor") and Enum.HorizontalAlignment.Center
+						or Enum.HorizontalAlignment.Right,
+					Padding             = UDim.new(0, layout.gap),
+				}),
+				toasts = e(ToastHost, { state = state, layout = layout }),
+				feed   = e(FeedHost,  { state = state, layout = layout, maxLines = feedLines }),
 			}),
-			toasts = e(ToastHost, { state = state, layout = layout }),
-			feed   = e(FeedHost,  { state = state, layout = layout }),
+			banner = e(BannerHost, { state = state, layout = layout }),
 		}),
-		banner = e(BannerHost, { state = state, layout = layout }),
 	}), player:WaitForChild("PlayerGui"))
 end
 

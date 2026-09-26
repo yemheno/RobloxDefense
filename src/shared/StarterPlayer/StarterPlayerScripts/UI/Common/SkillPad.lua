@@ -27,6 +27,13 @@
     ScreenInsets = DeviceSafeInsets, so the notch / home indicator are
     respected before the P1 safe-area roots exist.
 
+    §AGX/UI-P5 (C5): publishes its footprint as client-local
+    ReplicatedStorage attributes (screen px, from the safe area's bottom /
+    right edges; shell-spec §4.3), nil while not visible:
+      UI_SkillPadTopPx   top of the arc (Skill 4) / Dash
+      UI_SkillPadLeftPx  left of the Dash button
+    The HUD layout (rail band, combo) and Notify (column cap) read them.
+
     Module exports (AchievementsUI-style table):
       .default            the SkillPad component
       .CooldownWipe       radial wipe overlay, reused by ActionBar
@@ -56,6 +63,8 @@ local SkillInput    = require(Modules:WaitForChild("SkillInput"))
 local JoystickAim   = require(Modules:WaitForChild("MovementSystem"):WaitForChild("JoystickAim"))
 
 local ClassDescriptions = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("ClassDescriptions"))
+-- §AGX/UI-P5: footprint maths shared with the HUD layout and Notify.
+local HudLayout = require(PlayerScripts:WaitForChild("UI"):WaitForChild("HUD"):WaitForChild("Layout"))
 
 local C = Theme.Colors
 local F = Theme.Fonts
@@ -484,6 +493,21 @@ local function SkillPad(props)
 	local t = ff.tokens
 	local pad = t.skillPad
 	local playerGui = player:FindFirstChildOfClass("PlayerGui")
+
+	-- §AGX/UI-P5 (C5): footprint attributes (screen px; nil when hidden).
+	local fp = (visible and pad) and HudLayout.padFootprint(pad, t.attack, t.skill, t.dash) or nil
+	local fpTop  = fp and math.ceil(fp.top) or nil
+	local fpLeft = fp and math.ceil(fp.left) or nil
+	React.useEffect(function()
+		ReplicatedStorage:SetAttribute(HudLayout.ATTR.skillPadTop, fpTop)
+		ReplicatedStorage:SetAttribute(HudLayout.ATTR.skillPadLeft, fpLeft)
+	end, { fpTop or -1, fpLeft or -1 })
+	React.useEffect(function()
+		return function()
+			ReplicatedStorage:SetAttribute(HudLayout.ATTR.skillPadTop, nil)
+			ReplicatedStorage:SetAttribute(HudLayout.ATTR.skillPadLeft, nil)
+		end
+	end, {})
 
 	-- Tokens missing (non-touch kind mid-switch) or no PlayerGui: render nothing.
 	if not pad or not playerGui then return nil end

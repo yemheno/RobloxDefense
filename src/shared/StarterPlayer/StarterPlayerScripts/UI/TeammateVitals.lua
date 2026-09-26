@@ -17,13 +17,19 @@ local React             = require(ReplicatedStorage.Packages.React)
 -- §AGX/UI-P1: M9 layout. Rows are fixed pixels, so the container height is
 -- computed from the row count (it was a share of a 1080 px screen). The
 -- HUD publishes where its regions end as client-local ReplicatedStorage
--- attributes (see HUD.lua §AGX/UI-P1):
+-- attributes (see HUD/Layout.lua, §AGX/UI-P1):
 --   UI_TopLeftBottomPx / UI_TopLeftXPx: touch vitals stack (top-left) -> we
 --       stack under it (off the right-side skill arc and the ⋮ toggle).
 --   UI_TopRightBottomPx: bottom of the ☰/currency/killfeed block (desktop).
 --   UI_NavToggleTopPx: top of the ⋮ toggle; the right column stops above it
 --       and scrolls instead of running into it.
--- TODO(FormFactor): replace the attributes with the P5 HUD-regions layout.
+-- §AGX/UI-P5 (C2): optional `rect` prop. When the HUD mounts this panel
+-- (HUD/PartyRegion, partyInHud) it passes its region and the attributes
+-- above are ignored:
+--   rect = { anchorPoint, position (UDim2), width, maxHeight, rowH, rowGap }
+-- in the units of the parent (design px inside the HUD's UIScaleRoot). The
+-- list grows away from the anchor and scrolls past maxHeight. Without
+-- `rect` (standalone mount, Wave 1) nothing changes.
 local ROW_H         = 38
 local ROW_GAP       = 4
 local EDGE_GAP_PX   = 8
@@ -75,11 +81,12 @@ local C = {
 -- ═══════════════════════════════════════════════════════════
 local function TeammateMember(props)
 	local teammate = props.teammate
+	local rowH     = props.rowH or ROW_H
 	local hpFrac   = math.max(0, math.min(1, teammate.hp / math.max(teammate.maxHp, 1)))
 	local isLow    = hpFrac < 0.30
 
 	return React.createElement("Frame", {
-		Size             = UDim2.new(1, 0, 0, ROW_H),  -- §AGX/UI-P1: shared constant
+		Size             = UDim2.new(1, 0, 0, rowH),  -- §AGX/UI-P1 / §AGX/UI-P5: rect.rowH
 		LayoutOrder      = props.order or 0,
 		BackgroundColor3 = C.panel_bg,
 		BackgroundTransparency = 0.25,
@@ -137,7 +144,11 @@ end
 -- ═══════════════════════════════════════════════════════════
 -- TEAMMATE VITALS PANEL
 -- ═══════════════════════════════════════════════════════════
-local function TeammateVitals()
+local function TeammateVitals(props)
+	props = props or {}
+	local rect = props.rect  -- §AGX/UI-P5 (C2)
+	local rowH   = (rect and rect.rowH) or ROW_H
+	local rowGap = (rect and rect.rowGap) or ROW_GAP
 	local teammates, setTeammates = React.useState({})
 	local hudLayout = useHudLayout()  -- §AGX/UI-P1 (unconditional hook)
 
@@ -174,9 +185,10 @@ local function TeammateVitals()
 	if #teammates == 0 then
 		if game:GetService("RunService"):IsStudio() then
 			return React.createElement("TextLabel", {
-				AnchorPoint            = Vector2.new(1, 0),
-				Position               = UDim2.new(1, -8, 0, 120),
-				Size                   = UDim2.fromScale(0.089, 0.020),
+				AnchorPoint            = rect and rect.anchorPoint or Vector2.new(1, 0),
+				Position               = rect and rect.position or UDim2.new(1, -8, 0, 120),
+				Size                   = rect and UDim2.fromOffset(rect.width, rowH)
+					or UDim2.fromScale(0.089, 0.020),
 				BackgroundTransparency = 1,
 				Text                   = "[TeammateVitals — waiting]",
 				TextColor3             = C.stub_text,
@@ -195,21 +207,28 @@ local function TeammateVitals()
 		rows["member_" .. i] = React.createElement(TeammateMember, {
 			teammate = teammate,
 			order    = i,  -- §AGX/UI-P1: keep the alphabetical order in the list
+			rowH     = rowH,
 		})
 	end
 	rows.layout = React.createElement("UIListLayout", {
 		SortOrder     = Enum.SortOrder.LayoutOrder,
-		Padding       = UDim.new(0, ROW_GAP),  -- §AGX/UI-P1
+		Padding       = UDim.new(0, rowGap),  -- §AGX/UI-P1
 		FillDirection = Enum.FillDirection.Vertical,
 	})
 
 	-- §AGX/UI-P1: content height from the row count (n*38 + (n-1)*4).
-	local contentH = #teammates * ROW_H + math.max(0, #teammates - 1) * ROW_GAP
+	local contentH = #teammates * rowH + math.max(0, #teammates - 1) * rowGap
 	local tlBottom = hudLayout.UI_TopLeftBottomPx
 	local useLeft  = tlBottom ~= nil   -- HUD is in touch layout
 
 	local anchor, pos, width, height
-	if useLeft then
+	if rect then
+		-- §AGX/UI-P5 (C2): the HUD's party region; attributes ignored.
+		anchor = rect.anchorPoint or Vector2.new(0, 0)
+		pos    = rect.position
+		width  = UDim2.new(0, rect.width or 200, 0, 0)
+		height = math.max(rowH, math.min(contentH, rect.maxHeight or contentH))
+	elseif useLeft then
 		-- Touch: top-left, under the vitals stack.
 		anchor = Vector2.new(0, 0)
 		pos    = UDim2.fromOffset(hudLayout.UI_TopLeftXPx or EDGE_GAP_PX, tlBottom)
@@ -233,7 +252,7 @@ local function TeammateVitals()
 	return React.createElement("ScrollingFrame", {
 		AnchorPoint      = anchor,
 		Position         = pos,
-		Size             = UDim2.new(width.X.Scale, 0, 0, height),
+		Size             = UDim2.new(width.X.Scale, width.X.Offset, 0, height),
 		BackgroundTransparency = 1,
 		BorderSizePixel  = 0,
 		CanvasSize       = UDim2.new(0, 0, 0, contentH),

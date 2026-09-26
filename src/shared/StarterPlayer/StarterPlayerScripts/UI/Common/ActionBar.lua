@@ -16,6 +16,10 @@
         knocked down / dead (same rule as SkillPad).
 
     Sizes/positions: Theme.Layout[kind].actionBar (via FormFactor tokens).
+
+    §AGX/UI-P5 (C5): publishes UI_ActionBarTopPx (screen px from the safe
+    area's bottom edge to the bar's top; nil while not visible) for the
+    HUD's combo placement (shell-spec §4.3).
 ]]
 
 local Players           = game:GetService("Players")
@@ -39,6 +43,9 @@ local SkillInput    = require(Modules:WaitForChild("SkillInput"))
 local C = Theme.Colors
 local F = Theme.Fonts
 local ControlsLayout = Theme.Layout.CombatControls
+
+-- §AGX/UI-P5: attribute names (HUD/Layout is a pure module: React + Theme).
+local HudLayout = require(player:WaitForChild("PlayerScripts"):WaitForChild("UI"):WaitForChild("HUD"):WaitForChild("Layout"))
 
 local CooldownWipe       = SkillPad.CooldownWipe
 local useControlsVisible = SkillPad.useControlsVisible
@@ -129,6 +136,19 @@ local function ActionBar(props)
 	local t = ff.tokens
 	local bar = t.actionBar
 	local playerGui = player:FindFirstChildOfClass("PlayerGui")
+
+	-- §AGX/UI-P5 (C5): footprint attribute (before the early return: hooks
+	-- stay unconditional).
+	local barTop = (visible and bar) and (bar.bottom + bar.slot + 2 * bar.padding) or nil
+	React.useEffect(function()
+		ReplicatedStorage:SetAttribute(HudLayout.ATTR.actionBarTop, barTop)
+	end, { barTop or -1 })
+	React.useEffect(function()
+		return function()
+			ReplicatedStorage:SetAttribute(HudLayout.ATTR.actionBarTop, nil)
+		end
+	end, {})
+
 	if not bar or not playerGui then return nil end
 
 	local platform = InputSystem.GetActiveInputType()
