@@ -19,6 +19,11 @@ local React    = require(ReplicatedStorage.Packages.React)
 local e        = React.createElement
 local useState = React.useState
 
+-- §AGX/UI-P2: M3/M4 — the Emote button opens the wheel via its public open()
+-- (was a no-op, so emotes were unreachable on touch). Same re-export module
+-- SocialPlazaApp mounts, so it drives the mounted wheel.
+local EmoteWheel = require(script.Parent:WaitForChild("EmoteWheel"))
+
 -- ── Palette (matches the rest of the plaza UI) ────────────
 local C = {
 	bar_bg     = Color3.fromRGB(18,  18,  26),
@@ -95,8 +100,10 @@ local function AppearanceBar(props)
 	return e("Frame", {
 		Name            = "AppearanceBar",
 		AnchorPoint     = Vector2.new(1, 1),
-		Position        = UDim2.new(1, -16, 1, -16),
-		Size            = UDim2.fromScale(barW / 1920, barH / 1080),
+		-- §AGX/UI-P2: pixel-sized (was a share of 1920×1080 → ~67×27 px
+		-- on a phone) and lifted above Roblox's touch jump button.
+		Position        = UDim2.new(1, -16, 1, -104),
+		Size            = UDim2.fromOffset(barW, barH),
 		BackgroundColor3 = C.bar_bg,
 		BackgroundTransparency = 0.25,
 		BorderSizePixel = 0,
@@ -130,12 +137,15 @@ local function AppearanceBar(props)
 			onActivated = onWardrobeOpen,
 		}),
 
-		-- Emote hint button (not a toggle — EmoteWheel owns its own Q binding)
+		-- Emote button — §AGX/UI-P2: opens the wheel (touch + mouse); Q still
+		-- toggles it via InputSystem.
 		EmoteBtn = e(BarButton, {
 			size        = UDim2.fromScale(BTN_W / barW, BTN_H / barH),  -- §AGX/UX-01
-			icon        = "Q",
+			icon        = "\u{1F603}",  -- §AGX/UI-P2: glyph instead of "Q" (no key on touch)
 			label       = "Emotes",
-			onActivated = function() end,  -- EmoteWheel opens via InputSystem
+			onActivated = function()
+				if EmoteWheel and EmoteWheel.open then EmoteWheel.open() end
+			end,
 		}),
 	})
 end

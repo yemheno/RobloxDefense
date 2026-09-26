@@ -202,6 +202,25 @@ function NPCManager.CreateNPCModel(def)
 	rootPart:SetAttribute("NPCName", def.name)
 	rootPart:SetAttribute("NPCType", def.npcType)
 
+	-- §AGX/UI-P2: M2/D5 — native ProximityPrompt so NPCs work on touch,
+	-- gamepad and keyboard. Created here (server) so it replicates with the
+	-- model. The CLIENT (lobby NPCInteraction) handles PromptTriggered and
+	-- fires the same "NPCInteract" remote as before, so HandleInteraction's
+	-- INTERACT_RANGE check and handler routing are unchanged. Deliberately no
+	-- server-side .Triggered hook here: that would double-fire the handler.
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name                  = "NPCPrompt"
+	prompt.ActionText            = "Talk"
+	prompt.ObjectText            = def.name or ""
+	prompt.KeyboardKeyCode       = Enum.KeyCode.E
+	prompt.HoldDuration          = 0
+	-- §AGX/UI-P2: 1 stud inside INTERACT_RANGE so a tap at the edge never
+	-- fails the server range check.
+	prompt.MaxActivationDistance = INTERACT_RANGE - 1
+	prompt.RequiresLineOfSight   = false
+	prompt.Style                 = Enum.ProximityPromptStyle.Default
+	prompt.Parent                = rootPart
+
 	-- Name tag billboard
 	local billboard = Instance.new("BillboardGui")
 	billboard.Name        = "NameTag"

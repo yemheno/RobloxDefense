@@ -1,17 +1,25 @@
 -- StarterPlayerScripts/Modules/NPCInteraction
 --[[
-    Client-side NPC proximity detection and interaction.
-    
-    • Scans for nearby NPCs every 0.25 s.
-    • Shows an "[E] Talk" prompt when within range.
-    • On key press, fires "NPCInteract" to the server.
-    • Only active in Village scene (checks player attribute).
+    Client-side NPC interaction.
+
+    §AGX/UI-P2: M2/D5 — the custom "[E] Talk" billboard and the 0.25 s
+    proximity scan are retired. Each NPC now carries a native ProximityPrompt
+    ("NPCPrompt", created server-side by NPCManager.CreateNPCModel), which
+    gives touch, gamepad and keyboard with Roblox's own UI.
+
+    • Prompts are enabled locally only while CurrentScene == "Village"
+      (same gate the old scan used).
+    • The prompt's keyboard key follows the player's "Interact" binding
+      (default E), so rebinding in KeybindSettings still works.
+    • PromptTriggered fires "NPCInteract" { npcId } to the server — the exact
+      remote/payload the old E action fired, so dialogs, shops and smiths
+      open unchanged and the server INTERACT_RANGE check still applies.
 ]]
 
 local NPCInteraction = {}
 
-local Players          = game:GetService("Players")
-local RunService       = game:GetService("RunService")
+local Players                = game:GetService("Players")
+local ProximityPromptService = game:GetService("ProximityPromptService")
 
 local player = Players.LocalPlayer
 
@@ -19,15 +27,65 @@ local SharedModules  = player:WaitForChild("PlayerScripts"):WaitForChild("Module
 local NetworkManager = nil
 local InputSystem    = nil
 
--- ── Settings ──────────────────────────────────────────────
-local INTERACT_RANGE = 12
-local SCAN_INTERVAL  = 0.25
+local PROMPT_NAME = "NPCPrompt"
 
 -- ── State ─────────────────────────────────────────────────
-local nearestNPC  = nil   -- { model, npcId, npcName }
-local promptGui   = nil   -- BillboardGui instance (reused)
-local scanConn    = nil
-local inputBindId = nil
+local connections        = {}
+local unbindBindingChange = nil
+local folderConns        = {}
+
+-- ═══════════════════════════════════════════════════════════
+-- HELPERS
+-- ═══════════════════════════════════════════════════════════
+
+local function isNPCPrompt(prompt)
+	if not prompt or prompt.Name ~= PROMPT_NAME then return false end
+	local parent = prompt.Parent
+	return parent ~= nil and parent:GetAttribute("IsNPC") == true
+end
+
+local function inVillage()
+	return player:GetAttribute("CurrentScene") == "Village"
+end
+
+-- §AGX/UI-P2: keyboard key mirrors the Interact binding (default E).
+local function interactKeyCode()
+	local keys = InputSystem and InputSystem.GetBinding("Interact", "Keyboard") or {}
+	local key = keys[1]
+	if typeof(key) == "EnumItem" and key.EnumType == Enum.KeyCode then
+		return key
+	end
+	return Enum.KeyCode.E
+end
+
+local function applyToPrompt(prompt)
+	if not isNPCPrompt(prompt) then return end
+	-- Local-only property writes on a replicated instance.
+	prompt.Enabled = inVillage()
+	prompt.KeyboardKeyCode = interactKeyCode()
+end
+
+local function applyAll()
+	local npcFolder = workspace:FindFirstChild("NPCs")
+	if not npcFolder then return end
+	for _, d in ipairs(npcFolder:GetDescendants()) do
+		if d:IsA("ProximityPrompt") then
+			applyToPrompt(d)
+		end
+	end
+end
+
+local function watchFolder(npcFolder)
+	for _, c in ipairs(folderConns) do c:Disconnect() end
+	folderConns = {}
+	table.insert(folderConns, npcFolder.DescendantAdded:Connect(function(d)
+		if d:IsA("ProximityPrompt") then
+			-- Name/parent are set before replication, but defer one frame to be safe.
+			task.defer(applyToPrompt, d)
+		end
+	end))
+	applyAll()
+end
 
 -- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
@@ -37,140 +95,34 @@ function NPCInteraction.Init()
 	NetworkManager = require(SharedModules:WaitForChild("NetworkManager"))
 	InputSystem    = require(SharedModules:WaitForChild("InputSystem"))
 
-	-- Create the reusable prompt billboard
-	promptGui = NPCInteraction.CreatePromptGui()
+	-- §AGX/UI-P2: the InputSystem "Interact" callback is intentionally NOT
+	-- bound any more — the prompt's own KeyboardKeyCode handles E, and binding
+	-- both would fire NPCInteract twice per key press.
 
-	-- Start scanning
-	local lastScan = 0
-	scanConn = RunService.Heartbeat:Connect(function()
-		local now = os.clock()
-		if now - lastScan < SCAN_INTERVAL then return end
-		lastScan = now
-
-		-- Only scan in Village
-		if player:GetAttribute("CurrentScene") ~= "Village" then
-			NPCInteraction.ClearNearestNPC()
-			return
+	table.insert(connections, ProximityPromptService.PromptTriggered:Connect(function(prompt, triggeringPlayer)
+		if triggeringPlayer ~= player then return end
+		if not isNPCPrompt(prompt) then return end
+		if not inVillage() then return end
+		local npcId = prompt.Parent:GetAttribute("NPCId")
+		if npcId then
+			-- Same remote + payload as the pre-P2 Interact action.
+			NetworkManager.FireServer("NPCInteract", { npcId = npcId })
 		end
+	end))
 
-		NPCInteraction.ScanForNearbyNPC()
-	end)
+	table.insert(connections, player:GetAttributeChangedSignal("CurrentScene"):Connect(applyAll))
 
-	-- Input (via centralized InputSystem)
-	inputBindId = InputSystem.BindAction("Interact", function(_actionName, inputState)
-		if inputState ~= "Began" then return end
-		if nearestNPC then
-			NetworkManager.FireServer("NPCInteract", { npcId = nearestNPC.npcId })
-		end
-	end)
-
-end
-
--- ═══════════════════════════════════════════════════════════
--- SCANNING
--- ═══════════════════════════════════════════════════════════
-
-function NPCInteraction.ScanForNearbyNPC()
-	local character = player.Character
-	if not character then return end
-	local rootPart = character:FindFirstChild("HumanoidRootPart")
-	if not rootPart then return end
-
-	local playerPos = rootPart.Position
+	unbindBindingChange = InputSystem.OnBindingChanged(applyAll)
 
 	local npcFolder = workspace:FindFirstChild("NPCs")
-	if not npcFolder then
-		NPCInteraction.ClearNearestNPC()
-		return
+	if npcFolder then
+		watchFolder(npcFolder)
 	end
-
-	local closestDist = INTERACT_RANGE
-	local closestModel = nil
-	local closestId = nil
-	local closestName = nil
-
-	for _, model in ipairs(npcFolder:GetChildren()) do
-		local npcRoot = model:FindFirstChild("HumanoidRootPart")
-		if npcRoot and npcRoot:GetAttribute("IsNPC") then
-			local dist = (playerPos - npcRoot.Position).Magnitude
-			if dist < closestDist then
-				closestDist  = dist
-				closestModel = model
-				closestId    = npcRoot:GetAttribute("NPCId")
-				closestName  = npcRoot:GetAttribute("NPCName")
-			end
+	table.insert(connections, workspace.ChildAdded:Connect(function(child)
+		if child.Name == "NPCs" and child:IsA("Folder") then
+			watchFolder(child)
 		end
-	end
-
-	if closestModel then
-		NPCInteraction.SetNearestNPC(closestModel, closestId, closestName)
-	else
-		NPCInteraction.ClearNearestNPC()
-	end
-end
-
-function NPCInteraction.SetNearestNPC(model, npcId, npcName)
-	if nearestNPC and nearestNPC.model == model then
-		return  -- already showing
-	end
-
-	nearestNPC = { model = model, npcId = npcId, npcName = npcName }
-
-	-- Show prompt above the NPC's head
-	local head = model:FindFirstChild("Head")
-	if head then
-		promptGui.Adornee = head
-		promptGui.Enabled = true
-	end
-end
-
-function NPCInteraction.ClearNearestNPC()
-	if not nearestNPC then return end
-	nearestNPC = nil
-	promptGui.Enabled = false
-	promptGui.Adornee = nil
-end
-
--- ═══════════════════════════════════════════════════════════
--- PROMPT GUI
--- ═══════════════════════════════════════════════════════════
-
-function NPCInteraction.CreatePromptGui()
-	local gui = Instance.new("BillboardGui")
-	gui.Name        = "NPCPrompt"
-	gui.Size        = UDim2.new(0, 120, 0, 40)
-	gui.StudsOffset = Vector3.new(0, 3.5, 0)
-	gui.AlwaysOnTop = true
-	gui.MaxDistance  = INTERACT_RANGE + 5
-	gui.Enabled     = false
-	gui.Parent      = player:WaitForChild("PlayerGui")
-
-	local bg = Instance.new("Frame")
-	bg.Size                   = UDim2.fromScale(1, 1)
-	bg.BackgroundColor3       = Color3.fromRGB(20, 20, 30)
-	bg.BackgroundTransparency = 0.2
-	bg.BorderSizePixel        = 0
-	bg.Parent                 = gui
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0.25, 0)
-	corner.Parent       = bg
-
-	local stroke = Instance.new("UIStroke")
-	stroke.Color     = Color3.fromRGB(255, 220, 100)
-	stroke.Thickness = 1.5
-	stroke.Parent    = bg
-
-	local label = Instance.new("TextLabel")
-	label.Size                   = UDim2.fromScale(1, 1)
-	label.BackgroundTransparency = 1
-	label.Text                   = "[" .. (InputSystem and InputSystem.GetBindingDisplayName("Interact") or "E") .. "]  Talk"
-	label.TextColor3             = Color3.fromRGB(255, 220, 100)
-	label.Font                   = Enum.Font.GothamBold
-	label.TextScaled             = true
-	label.Parent                 = bg
-
-	return gui
+	end))
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -178,9 +130,11 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 function NPCInteraction.Stop()
-	if scanConn then scanConn:Disconnect(); scanConn = nil end
-	if inputBindId then InputSystem.UnbindAction("Interact", inputBindId); inputBindId = nil end
-	NPCInteraction.ClearNearestNPC()
+	for _, c in ipairs(connections) do c:Disconnect() end
+	connections = {}
+	for _, c in ipairs(folderConns) do c:Disconnect() end
+	folderConns = {}
+	if unbindBindingChange then unbindBindingChange(); unbindBindingChange = nil end
 end
 
 return NPCInteraction
