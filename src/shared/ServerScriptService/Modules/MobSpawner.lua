@@ -133,6 +133,12 @@ function MobSpawner.Init()
 
 	NetworkManager.OnClientEvent("RequestNextWave", function(_player)
 		if MobSpawner.ClientWaveRequestsDisabled then return end  -- §AGX/X28: off in CentralBoss (X5)
+		-- §AGX/X5: only while a run is actually in progress. A request from
+		-- Idle used to start an unlosable wave farm (no line damage, wipes
+		-- ignored, XP still paid, forced Victory at the end).
+		local gsmMod = Modules:FindFirstChild("GameStateManager")
+		local okGsm, gsm = gsmMod and pcall(require, gsmMod)
+		if not (okGsm and gsm and gsm.IsDefending and gsm.IsDefending()) then return end
 		if waveState == "idle" then
 			MobSpawner.StartNextWave()
 		end

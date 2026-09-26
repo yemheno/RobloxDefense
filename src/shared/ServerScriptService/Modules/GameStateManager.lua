@@ -76,7 +76,9 @@ function GameStateManager.LateInit()
 
 	-- Listen for wave completion
 	MobSpawner.OnAllWavesCompleted(function(finalWave)
-		GameStateManager.SetState(STATES.VICTORY)
+		-- §AGX/X5: via TriggerVictory so it only fires from DEFENDING
+		-- (was SetState from any state).
+		GameStateManager.TriggerVictory()
 	end)
 
 	print("[GameStateManager] Late init complete - MobSpawner connected")
