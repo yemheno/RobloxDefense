@@ -209,6 +209,11 @@ function TeleportDataReader.ProcessPlayer(player)
 		end
 		teleportData.modeId = matchModeId
 		teleportData.lobbyPlaceId = nil
+		-- §AGX/D-FIX: N3 — a non-table partyData (spoofed number/bool/string) is dropped before it's stored or #-indexed.
+		if teleportData.partyData ~= nil and type(teleportData.partyData) ~= "table" then
+			warn("[TeleportDataReader] Non-table partyData from", player.Name, "— ignoring")
+			teleportData.partyData = nil
+		end
 		arrivedPlayers[player.UserId] = teleportData
 
 		-- §T0P2/X2: validate against DifficultyConfig (teleport data
@@ -234,7 +239,7 @@ function TeleportDataReader.ProcessPlayer(player)
 					player.Name, ":", tostring(teleportData.difficulty), "— ignoring")
 			end
 		end
-		if teleportData.partyData and #teleportData.partyData > 0 then
+		if type(teleportData.partyData) == "table" and #teleportData.partyData > 0 then  -- §AGX/D-FIX: N3
 			matchPartyData = teleportData.partyData
 		end
 

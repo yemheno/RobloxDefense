@@ -287,6 +287,8 @@ end)
 -- §3.1 fix: defer Start() until the first player's DataStore load
 -- completes so the party-anchor level isn't read as the default 1.
 local hordeSpawnerStarted = false
+-- §AGX/D-FIX: N6 — level-watcher baseline, hoisted so anchor jumps can re-baseline it (a 1→2 anchor looked like a natural +1 tick).
+local hordeLevelBaseline = HordeModeSpawner.GetLevel() or 1
 local function startSpawnerOnce()
     if hordeSpawnerStarted then return end
     hordeSpawnerStarted = true
@@ -303,6 +305,8 @@ local function startSpawnerOnce()
     if highest > 1 then
         HordeModeSpawner.SetPartyAnchorLevel(highest)
     end
+    -- §AGX/D-FIX: N6 — re-baseline after Start()+anchor so the jump isn't credited as a survived wave.
+    hordeLevelBaseline = HordeModeSpawner.GetLevel() or hordeLevelBaseline
 end
 
 -- §AGX/WC: §PB-D3 — the spawner now also waits for the all-players-ready
@@ -317,7 +321,9 @@ end
 if DataManager.OnPlayerDataReady then
     DataManager.OnPlayerDataReady(function()
         hordeDataReady = true
-        tryStartSpawner()
+        -- §AGX/D-FIX: S1 — same pcall as the gate path; a spawner throw must not break the data-ready callback chain.
+        local ok, err = pcall(tryStartSpawner)
+        if not ok then warn("[HordeMode] Spawner start failed:", err) end
     end)
 else
     warn("[HordeMode] PlayerDataManager.OnPlayerDataReady missing; spawner waits for the start gate only")
@@ -348,16 +354,16 @@ HordePauseManager.Setup({
 task.spawn(function()
     local amMod = ctx.loaded["AchievementManager"]
     if amMod and not amMod.OnWaveCompleted then amMod = nil end
-    local lastLevel = HordeModeSpawner.GetLevel() or 1
+    -- §AGX/D-FIX: N6 — baseline lives in hordeLevelBaseline (re-set by anchors); no credit before the spawner runs.
     while hordeRunActive do
         task.wait(2)
-        local lv = HordeModeSpawner.GetLevel() or lastLevel
-        if lv == lastLevel + 1 then
-            local completed = lastLevel  -- the level just survived
+        local lv = HordeModeSpawner.GetLevel() or hordeLevelBaseline
+        if hordeSpawnerStarted and lv == hordeLevelBaseline + 1 then
+            local completed = hordeLevelBaseline  -- the level just survived
             if amMod then amMod.OnWaveCompleted(completed) end
             GameStateManager.RecordWaveReached(completed)
         end
-        lastLevel = lv
+        hordeLevelBaseline = lv
     end
 end)
 
@@ -527,8 +533,12 @@ end  -- startHordeLoops
 -- state to Defending before callbacks fire).
 GameStateManager.OnStartGateOpen(function()
     hordeGateOpen = true
-    tryStartSpawner()
+    -- §AGX/D-FIX: S1 — loops FIRST (timer/victory/votes must run even if the spawner throws), spawner pcall'd.
     startHordeLoops()
+    local ok, err = pcall(tryStartSpawner)
+    if not ok then
+        warn("[HordeMode] Spawner start failed (run timer still active):", err)
+    end
 end)
 
 -- ───────────────────────────────────────────────────────────
@@ -548,7 +558,15 @@ Lifecycle.WireOnPlayerReady(ctx, {
             local lvl = DataManager.GetAccountData(p, "Level") or 1
             if lvl > highest then highest = lvl end
         end
-        HordeModeSpawner.SetPartyAnchorLevel(highest)
+        -- §AGX/D-FIX: only before the run starts. SetPartyAnchorLevel resets
+        -- currentLevel and the phase clock, so a mid-run joiner used to rewind
+        -- the whole party's horde progress. startSpawnerOnce re-reads every
+        -- loaded player's level when the gate opens anyway.
+        if not hordeSpawnerStarted then
+            HordeModeSpawner.SetPartyAnchorLevel(highest)
+            -- §AGX/D-FIX: N6 — a late-join re-anchor is a jump too; re-baseline so it isn't credited.
+            hordeLevelBaseline = HordeModeSpawner.GetLevel() or hordeLevelBaseline
+        end
 
         -- Push current game state to late-joiners.
         -- §T0P2/X9: ReadyGate-routed — this fires from the data-ready

@@ -68,6 +68,14 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Genesis full heal shows its number. Verdant Bloom ticks are ~15% bigger. Healer feel check: does a Life Steward still feel strong?
 - [ ] Equip gear with a crit-damage roll: Stats shows crit damage like 1.5 → 1.6, not pinned at 1.8.
 
+## 2f. Review fixes (`§AGX/D-FIX`)
+- [ ] Horde: make `HordeModeSpawner.Start` `error()` temporarily → a "Spawner start failed" warning, but the run timer still ends the run and votes still appear.
+- [ ] Block ClientReady on the client temporarily: Horde starts and Lane's Start works after ~20 s (Lane refuses with "Waiting for party (0/1)" until then).
+- [ ] Horde gate open: HUD goes straight to Defending, no Start-button flicker.
+- [ ] Horde with a level ≥2 account: no wave credited at run start. A second player joining mid-run neither credits a wave nor resets the horde level.
+- [ ] Force an `error()` in `RollBonuses` (or refinement's `GetCeilingBelow`): the exact Merits/Essence come back with a "refunded" toast. An error after the item changed: no refund, a "reopen the menu" toast, and the next attempt still works.
+- [ ] Several Horde votes back to back: one countdown each, and the world unpauses ~5 s after each resolve.
+
 ## 3. Teleports and matchmaking (`X4`, `X6`, `X14`, `X15`)
 Studio can't test reserved servers. Check what it can:
 - [ ] Kick, leave, join or disband during the countdown → "Party changed — queue cancelled".

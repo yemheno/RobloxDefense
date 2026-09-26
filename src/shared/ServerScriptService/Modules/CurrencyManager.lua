@@ -116,7 +116,10 @@ function CurrencyManager.AddMerits(player, amount, opts)
 	print("[CurrencyManager]", player.Name, "+", finalAmount, "Merits (raw:", amount, raw and ", refund)" or ")")
 end
 
-function CurrencyManager.AddEssence(player, amount)
+-- §AGX/D-FIX: S4 — additive `opts` like AddMerits: `{ raw = true }` marks a
+-- refund (Essence has no bonus multiplier; raw only skips the "earned"
+-- callbacks). Callers without opts are unchanged.
+function CurrencyManager.AddEssence(player, amount, opts)
 	local data = DataManager.GetData(player)
 	if not data then return end
 
@@ -137,11 +140,15 @@ function CurrencyManager.AddEssence(player, amount)
 	fireCurrencyUpdate(player, data)
 
 	-- Notify subscribers (e.g. AchievementManager.OnEssenceEarned)
-	for _, cb in ipairs(essenceCallbacks) do
-		task.spawn(cb, player, amount)
+	-- §AGX/D-FIX: S4 — a raw credit (refund) is not "earned"; skip listeners.
+	local raw = type(opts) == "table" and opts.raw == true
+	if not raw then
+		for _, cb in ipairs(essenceCallbacks) do
+			task.spawn(cb, player, amount)
+		end
 	end
 
-	print("[CurrencyManager]", player.Name, "+", amount, "Essence")
+	print("[CurrencyManager]", player.Name, "+", amount, "Essence", raw and "(refund)" or "")
 end
 
 

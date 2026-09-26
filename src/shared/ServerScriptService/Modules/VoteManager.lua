@@ -100,15 +100,16 @@ local voteListenerConnPersonal = nil
 local Janitor = require(script.Parent:WaitForChild("Janitor"))
 local runJanitor = Janitor.new("VoteManager.run")
 
+-- §AGX/D-FIX: N5 — keyed slots: a new resolve cancels/replaces the previous pair instead of accumulating until Reset.
 local function schedulePostResolve()
     runJanitor:Add(task.delay(VOTE_RESULT_DISPLAY_SEC, function()
         NetworkManager.FireAllClients("VoteCountdown", {
             seconds = VOTE_RESULT_COUNTDOWN_SEC,
         })
-    end))
+    end), "countdown")
     runJanitor:Add(task.delay(VOTE_RESULT_GRACE_SEC, function()
         voteActive = false
-    end))
+    end), "grace")
 end
 
 -- Cooldown tracking for SHARED votes: { [cooldownKey] = lastWinTimestamp }

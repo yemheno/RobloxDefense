@@ -97,7 +97,8 @@ end
 --============================================
 -- §AGX/WC: body split out so the public Reroll can guarantee lock release
 -- even if something throws midway (mirrors EquipmentRefinement.attemptLock).
-local function rerollBody(player)
+-- §AGX/D-FIX: S4 — txn records what was spent / whether the item changed, so an error can be refunded exactly.
+local function rerollBody(player, txn)
 	local weaponInstance = WeaponBonusSystem.WeaponManager.GetEquippedWeapon(player)
 	if not weaponInstance then
 		notifyReject(player, "No weapon equipped")  -- §AGX/UI-P4
@@ -119,11 +120,13 @@ local function rerollBody(player)
 		notifyReject(player, "Not enough Merits")  -- §AGX/UI-P4
 		return false, "Failed to deduct Merits"
 	end
+	txn.spentMerits = cost  -- §AGX/D-FIX: S4
 
 	-- Roll new bonuses
 	local oldBonuses = weaponInstance.bonuses
 	local newBonuses = WeaponBonusSystem.RollBonuses(weaponInstance.weaponId, tier)
 	weaponInstance.bonuses = newBonuses
+	txn.mutated = true  -- §AGX/D-FIX: S4 — item changed; an error past here is not refunded
 
 	NetworkManager.FireClient(player, "WeaponRerollResult", {
 		success = true,
@@ -144,10 +147,23 @@ function WeaponBonusSystem.Reroll(player)
 	end
 	-- §AGX/WC: lock held only for the pcall'd body; released on every path, including errors.
 	rerollLock[player] = true
-	local ok, success, msg = pcall(rerollBody, player)
+	local txn = { spentMerits = 0, mutated = false }  -- §AGX/D-FIX: S4
+	local ok, success, msg = pcall(rerollBody, player, txn)
 	rerollLock[player] = nil
 	if not ok then
 		warn("[WeaponBonusSystem] Reroll errored for", player.Name, ":", success)
+		-- §AGX/D-FIX: S4 — refund exactly what was spent if the item is untouched (raw: no MeritBonus); always tell the player.
+		if txn.mutated then
+			warn("[WeaponBonusSystem] !!! Reroll errored AFTER bonuses changed for", player.Name,
+				"— NOT refunded (spent", txn.spentMerits, "Merits)")
+			pcall(notifyReject, player, "Something went wrong — reroll applied, reopen the menu.")
+		else
+			if txn.spentMerits > 0 then
+				local rOk, rErr = pcall(CurrencyManager.AddMerits, player, txn.spentMerits, { raw = true })
+				if not rOk then warn("[WeaponBonusSystem] !!! Refund FAILED for", player.Name, ":", rErr) end
+			end
+			pcall(notifyReject, player, "Something went wrong — refunded.")
+		end
 		return false, "Reroll failed"
 	end
 	return success, msg

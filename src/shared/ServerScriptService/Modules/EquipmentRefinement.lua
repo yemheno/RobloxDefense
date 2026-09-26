@@ -71,7 +71,8 @@ local function CreateRefinementSystem(Config, equipmentType)
     --============================================
     -- §AGX/WC: body split out so System.Attempt can guarantee attemptLock
     -- release even if something throws midway (e.g. GetCalculatedStats).
-    local function attemptBody(player)
+    -- §AGX/D-FIX: S4 — txn records what was spent / whether the item changed, so an error can be refunded exactly.
+    local function attemptBody(player, txn)
         local instance = System.Manager[getEquippedMethod](player)
         if not instance then
             notifyReject(player, "No " .. equipmentType .. " equipped")  -- §AGX/UI-P4
@@ -121,6 +122,7 @@ local function CreateRefinementSystem(Config, equipmentType)
                 notifyReject(player, "Not enough " .. currency)  -- §AGX/UI-P4
                 return false, currentRefinement, "Not enough " .. currency
             end
+            txn.spent, txn.currency = cost, currency  -- §AGX/D-FIX: S4
         end
 
         local successChance = Config.REFINEMENT_SUCCESS[currentRefinement] or 0.01
@@ -136,6 +138,7 @@ local function CreateRefinementSystem(Config, equipmentType)
 
         if success then
             instance.refinement = currentRefinement + 1
+            txn.mutated = true  -- §AGX/D-FIX: S4
 
             -- Reset temper if we reached a new floor
             if Config.IsCeiling(instance.refinement) then
@@ -170,6 +173,7 @@ local function CreateRefinementSystem(Config, equipmentType)
             local temperGainByStep = Config.TEMPER_GAIN_BY_STEP
             local temperThreshold = Config.TEMPER_THRESHOLDS[floor] or 10
             instance.temper = (instance.temper or 0) + (temperGainByStep[step] or 1)
+            txn.mutated = true  -- §AGX/D-FIX: S4 — temper is the first write on the fail path
 
             local pitied = false
             if instance.temper >= temperThreshold then
@@ -236,10 +240,24 @@ local function CreateRefinementSystem(Config, equipmentType)
         -- §AGX/WC: lock held for the whole pcall'd body and released on every
         -- path (was: an error between set and release left it stuck for the session).
         attemptLock[player] = true
-        local ok, success, level, msg = pcall(attemptBody, player)
+        local txn = { spent = 0, currency = nil, mutated = false }  -- §AGX/D-FIX: S4
+        local ok, success, level, msg = pcall(attemptBody, player, txn)
         attemptLock[player] = nil
         if not ok then
             warn(logPrefix, "Attempt errored for", player.Name, ":", success)
+            -- §AGX/D-FIX: S4 — refund exactly what was spent if the item is untouched (raw: no MeritBonus); always tell the player.
+            if txn.mutated then
+                warn(logPrefix, "!!! Attempt errored AFTER the item changed for", player.Name,
+                    "— NOT refunded (spent", txn.spent, tostring(txn.currency) .. ")")
+                pcall(notifyReject, player, "Something went wrong — result applied, reopen the menu.")
+            else
+                if txn.spent > 0 then
+                    local addFn = (txn.currency == "Merits") and CurrencyManager.AddMerits or CurrencyManager.AddEssence
+                    local rOk, rErr = pcall(addFn, player, txn.spent, { raw = true })
+                    if not rOk then warn(logPrefix, "!!! Refund FAILED for", player.Name, ":", rErr) end
+                end
+                pcall(notifyReject, player, "Something went wrong — refunded.")
+            end
             return false, 0, "Refinement failed"
         end
         return success, level, msg

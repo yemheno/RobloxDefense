@@ -170,16 +170,29 @@ local function openGate(reason)
 	if gate.open then return end
 	gate.open = true
 	print("[GameStateManager] §PB-D3 start gate OPEN (" .. reason .. ")")
-	broadcastGate()
+	-- §AGX/D-FIX: N2 — autoStart enters Defending BEFORE the {open=true} broadcast, so no client sees open-while-Idle (Start button flash).
 	if gate.autoStart and currentState == STATES.IDLE then
 		GameStateManager.SetState(STATES.DEFENDING)
 	end
+	broadcastGate()
 	for _, cb in ipairs(gate.callbacks) do
 		task.spawn(cb)
 	end
 end
 
 local evaluateGate  -- forward-declared: the timeout closure calls it
+
+-- §AGX/D-FIX: S2 — true if any in-server player has loaded data (lazy require: PlayerDataManager is required lazily elsewhere in this file too).
+local function anyPresentPlayerDataReady()
+	local mod = Modules:FindFirstChild("PlayerDataManager")
+	if not mod then return false end
+	local ok, pdm = pcall(require, mod)
+	if not ok or not pdm or not pdm.GetAccountData then return false end
+	for _, p in ipairs(Players:GetPlayers()) do
+		if pdm.GetAccountData(p) ~= nil then return true end
+	end
+	return false
+end
 
 evaluateGate = function()
 	if not gate.enabled or gate.open then return end
@@ -188,11 +201,19 @@ evaluateGate = function()
 		openGate(string.format("%d/%d ready", ready, total))
 		return
 	end
-	if ready >= 1 and not gate.timeoutArmed then
+	-- §AGX/D-FIX: S2 — arm on the first PRESENT player too, not only the first ClientReady: one lost handshake must not strand the gate shut.
+	if (ready >= 1 or #Players:GetPlayers() >= 1) and not gate.timeoutArmed then
 		gate.timeoutArmed = true
 		task.delay(START_GATE_TIMEOUT, function()
 			if gate.open then return end
-			local _, _, stillMissing = gateCounts()
+			local readyNow, _, stillMissing = gateCounts()
+			-- §AGX/D-FIX: S2 — nobody ready: open only for a present, data-ready player; otherwise re-arm (never open on an empty server).
+			if readyNow == 0 and not anyPresentPlayerDataReady() then
+				gate.timeoutArmed = false
+				warn("[GameStateManager] §PB-D3 start gate timeout with no ready/data-ready player — re-arming")
+				evaluateGate()  -- re-arms now if someone is present, else on the next PlayerAdded
+				return
+			end
 			for _, name in ipairs(stillMissing) do
 				gate.dropped[name] = true
 			end
@@ -396,6 +417,12 @@ function GameStateManager.RequestStart(player)
 	if gate.enabled then
 		local ns = Modules:FindFirstChild("NotifyService")
 		if gate.autoStart then
+			-- §AGX/D-FIX: N2 — was a silent refusal; closed gate gets the same "Waiting for party" toast as manual-start places.
+			if not gate.open then
+				local ready, total = gateCounts()
+				local msg = string.format("Waiting for party (%d/%d)…", ready, total)
+				if ns and player then pcall(function() require(ns).Toast(player, "warning", msg) end) end
+			end
 			return false, "This mode starts automatically"
 		end
 		if not gate.open then
