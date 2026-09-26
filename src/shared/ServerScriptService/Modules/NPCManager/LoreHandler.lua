@@ -12,14 +12,62 @@
     is sent when the player exits.
 ]]
 
+local Players = game:GetService("Players")
+
 local LoreHandler = {}
 
 local NPCManager    = nil
 local NetworkManager = nil
 
+-- §AGX/WC: lazy PlayerDataManager (same pattern as QuestHandler) so lore
+-- flags persist in data.Account.LoreFlags instead of attributes only.
+local _PlayerDataManager = nil
+local function getPlayerDataManager()
+	if not _PlayerDataManager then
+		local Mods = script.Parent.Parent
+		local ok, pdm = pcall(require, Mods:WaitForChild("PlayerDataManager", 5))
+		if ok then _PlayerDataManager = pdm end
+	end
+	return _PlayerDataManager
+end
+
+--- Returns data.Account.LoreFlags for the player (creating it if a legacy
+--- save somehow lacks it), or nil if data isn't loaded.
+local function getLoreFlags(player)
+	local pdm = getPlayerDataManager()
+	if not pdm then return nil end
+	local data = pdm.GetData(player)
+	if not data or not data.Account then return nil end
+	if type(data.Account.LoreFlags) ~= "table" then
+		data.Account.LoreFlags = {}
+	end
+	return data.Account.LoreFlags
+end
+
+-- §AGX/WC: re-apply persisted flags as TalkedTo_<id> attributes (idempotent).
+local function restoreAttributes(player)
+	local flags = getLoreFlags(player)
+	if not flags then return end
+	for npcId, talked in pairs(flags) do
+		if talked == true then
+			player:SetAttribute("TalkedTo_" .. tostring(npcId), true)
+		end
+	end
+end
+
 function LoreHandler.Init(npcMgr, netMgr)
 	NPCManager    = npcMgr
 	NetworkManager = netMgr
+
+	-- §AGX/WC: restore lore flags when a player's data loads, plus any
+	-- players whose data was already ready before this Init ran.
+	local pdm = getPlayerDataManager()
+	if pdm and pdm.OnPlayerDataReady then
+		pdm.OnPlayerDataReady(restoreAttributes)
+	end
+	for _, player in ipairs(Players:GetPlayers()) do
+		restoreAttributes(player)
+	end
 end
 
 -- ═══════════════════════════════════════════════════════════
@@ -60,6 +108,11 @@ function LoreHandler.OnResponse(player, def, data)
 	if data.action == "Close" then
 		-- Could track "has spoken to" for quest prerequisites
 		player:SetAttribute("TalkedTo_" .. def.id, true)
+		-- §AGX/WC: persist in data.Account.LoreFlags (saved with the profile).
+		local flags = getLoreFlags(player)
+		if flags then
+			flags[tostring(def.id)] = true  -- string keys only (DataStore-safe)
+		end
 	end
 end
 

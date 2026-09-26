@@ -50,6 +50,14 @@ Everything on `dev` since `0e6d15e` was verified statically only: `luau-compile`
 - [ ] Social panel (phone and desktop): orange ribbon header, Party/Guild tabs (LB/RB on pad), member list scrolls, "DISBAND PARTY" and "REFRESH" fit their buttons, leader-only Kick/Lead, and party errors show as a toast.
 - [ ] *Published only:* a public-server bounce shows the return-reason toast in the Lobby.
 
+## 2d. Party start gate, party class, lore, locks (`§AGX/WC`)
+- [ ] **Solo, all three combat places:** Lane/CentralBoss show Start once the HUD is up (a "Waiting for party (1/1)" banner may flash). Horde auto-starts after load; the first supply vote comes ~45 s after `start gate OPEN`, not after server boot.
+- [ ] **Team Test, 2 players:** hold client 2 at loading. Client 1 sees "Waiting for party (1/2)…" and Start is refused. It opens when client 2 is ready, or ~20 s later with a "dropped from the wait" warning. Same for Horde.
+- [ ] Hide and show the HUD while waiting: the banner comes back.
+- [ ] *Published:* queue as an unlocked non-Aegis class → you arrive as that class. A locked class name is ignored with a warning.
+- [ ] Talk to a lobby lore NPC, close, rejoin: `TalkedTo_<id>` is set right after load.
+- [ ] Normal weapon/armor reroll and refinement still work. (Optional: inject an `error()` mid-reroll; the next reroll is not stuck on "already in progress".)
+
 ## 3. Teleports and matchmaking (`X4`, `X6`, `X14`, `X15`)
 Studio can't test reserved servers. Check what it can:
 - [ ] Kick, leave, join or disband during the countdown → "Party changed — queue cancelled".

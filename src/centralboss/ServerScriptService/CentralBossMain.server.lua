@@ -191,6 +191,11 @@ ctx.RequireLoaded("SharedEventHandlers")
 -- ───────────────────────────────────────────────────────────
 ctx.loaded["GameStateManager"].LateInit()
 
+-- §AGX/WC: §PB-D3 — the manual Start button only works once every party
+-- member expected here has sent ClientReady (20 s hard timeout after the
+-- first ready player). Solo Studio opens on your own ClientReady.
+ctx.loaded["GameStateManager"].EnableStartGate({ autoStart = false })
+
 -- §AGX/X28: wire the fight into the Defending state (sets
 -- suppressWaveStart, arena targeting, state/lobby callbacks).
 ctx.loaded["BossEncounter"].Setup({

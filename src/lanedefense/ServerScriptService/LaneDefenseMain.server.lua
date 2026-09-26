@@ -231,6 +231,11 @@ ctx.RequireLoaded("SharedEventHandlers")
 ctx.loaded["GameStateManager"].LateInit()
 ctx.loaded["DefenseLine"].LateInit()
 
+-- §AGX/WC: §PB-D3 — the manual Start button only works once every party
+-- member expected here has sent ClientReady (20 s hard timeout after the
+-- first ready player). Solo Studio opens on your own ClientReady.
+ctx.loaded["GameStateManager"].EnableStartGate({ autoStart = false })
+
 -- Card / vote system
 do
     local vm = ctx.loaded["VoteManager"]

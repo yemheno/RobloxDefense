@@ -53,16 +53,41 @@ end
 -- §AGX/X6: lazy getter for the player's LOADED level (server truth), used
 -- to re-check the difficulty's requiredLevel on arrival.
 local _PlayerDataManager
-local function getLoadedLevel(player)
+-- §AGX/WC: split out of getLoadedLevel so ApplyPlayerData can read the
+-- server-truth active class too.
+local function getPlayerDataManager()
 	if _PlayerDataManager == nil then
 		local mod = SharedModules:FindFirstChild("PlayerDataManager")
 		local ok, result = false, nil
 		if mod then ok, result = pcall(require, mod) end
 		_PlayerDataManager = ok and result or false
 	end
-	if not _PlayerDataManager or not _PlayerDataManager.GetAccountData then return nil end
-	return _PlayerDataManager.GetAccountData(player, "Level")
+	return _PlayerDataManager or nil
 end
+local function getLoadedLevel(player)
+	local pdm = getPlayerDataManager()
+	if not pdm or not pdm.GetAccountData then return nil end
+	return pdm.GetAccountData(player, "Level")
+end
+
+-- §AGX/WC: §T0P2-TPCLASS — lazy ClassManager (it validates + applies the
+-- TeleportClass through the normal class-change path).
+local _ClassManager
+local function getClassManager()
+	if _ClassManager == nil then
+		local mod = SharedModules:FindFirstChild("ClassManager")
+		local ok, result = false, nil
+		if mod then ok, result = pcall(require, mod) end
+		_ClassManager = ok and result or false
+	end
+	return _ClassManager or nil
+end
+
+-- §AGX/WC: §PB-D3 — bound on the roster names we accept from a payload
+-- (lobby parties cap at 5; slack for matchmaking merges). The payload
+-- transits the client, so a padded roster can only stretch the start
+-- gate up to its hard timeout, never block it.
+local MAX_ROSTER_NAMES = 10
 
 -- ── State ──────────────────────────────────────────────────
 local arrivedPlayers  = {}
@@ -247,17 +272,25 @@ end
 -- APPLY PLAYER DATA
 -- §T0P2/X20: sets the "TeleportClass" attribute for the player when the
 -- party payload carries a class different from their current one.
--- NOTE: nothing reads this attribute yet — the intended consumer is the
--- new map's spawn flow (apply the party-selected class on arrival).
--- Tracked in docs/TODO.md (§T0P2-TPCLASS). Any consumer MUST validate
--- the class is actually unlocked for the player before applying it.
+-- §AGX/WC: §T0P2-TPCLASS — consumed right here via
+-- ClassManager.ApplyTeleportClass, which validates the class exists AND
+-- is unlocked for this player (the payload is client-influenced) before
+-- switching through ClassManager.SetClass; otherwise it warns and ignores.
+-- ProcessPlayer runs from the combat places' data-ready extras only, so
+-- this never fires in the Lobby / Plaza.
 -- ═══════════════════════════════════════════════════════════
 function TeleportDataReader.ApplyPlayerData(player, teleportData)
 	local partyData = teleportData.partyData or {}
+	if type(partyData) ~= "table" then return end  -- §AGX/WC: payload is client-influenced
 	for _, member in ipairs(partyData) do
-		if member.name == player.Name then
-			if member.class and member.class ~= "" then
-				local currentClass = player:GetAttribute("ActiveClass")
+		if type(member) == "table" and member.name == player.Name then
+			if type(member.class) == "string" and member.class ~= "" then
+				-- §AGX/WC: compare against server truth (loaded data). The
+				-- ActiveClass attribute was never written server-side, so
+				-- the old attribute compare always differed.
+				local pdm = getPlayerDataManager()
+				local currentClass = (pdm and pdm.GetActiveClass and pdm.GetActiveClass(player))
+					or player:GetAttribute("ActiveClass")
 				if currentClass ~= member.class then
 					player:SetAttribute("TeleportClass", member.class)
 				end
@@ -265,6 +298,44 @@ function TeleportDataReader.ApplyPlayerData(player, teleportData)
 			break
 		end
 	end
+
+	-- §AGX/WC: §T0P2-TPCLASS consumer (no-op when no TeleportClass is set).
+	if player:GetAttribute("TeleportClass") ~= nil then
+		local cm = getClassManager()
+		if cm and cm.ApplyTeleportClass then
+			local ok, err = pcall(cm.ApplyTeleportClass, player)
+			if not ok then
+				warn("[TeleportDataReader] ApplyTeleportClass errored for", player.Name, ":", tostring(err))
+			end
+		else
+			warn("[TeleportDataReader] ClassManager.ApplyTeleportClass unavailable — TeleportClass ignored for", player.Name)
+		end
+	end
+end
+
+--- §AGX/WC: §PB-D3 — the party roster (player names) this player's
+--- TeleportData says is coming to this server. Read straight from join
+--- data so the start gate knows the roster at PlayerAdded, before
+--- ProcessPlayer (which waits for the DataStore load). Returns {} on a
+--- direct join / Studio test / public-server bounce. Sanitised: strings
+--- only, de-duplicated, capped at MAX_ROSTER_NAMES.
+function TeleportDataReader.PeekPartyRoster(player)
+	local names = {}
+	if isRejectedPublicServer() then return names end
+	local ok, joinData = pcall(function() return player:GetJoinData() end)
+	local td = ok and type(joinData) == "table" and joinData.TeleportData
+	local party = type(td) == "table" and td.partyData
+	if type(party) ~= "table" then return names end
+	local seen = {}
+	for _, member in ipairs(party) do
+		local name = type(member) == "table" and member.name
+		if type(name) == "string" and name ~= "" and not seen[name] then
+			seen[name] = true
+			table.insert(names, name)
+			if #names >= MAX_ROSTER_NAMES then break end
+		end
+	end
+	return names
 end
 
 -- ═══════════════════════════════════════════════════════════

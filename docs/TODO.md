@@ -329,7 +329,7 @@
   *(Still open, 2026-09-26: the new `UI/Common/SkillPad.lua` and
   `ActionBar.lua` (610f9ac) dim by cost and cooldown only, with no level
   check.)*
-- `[P1]` **Quest & lore progress not persisted** — quest progress and
+- ✅ *(Done, §AGX/WC: lore flags persist in `data.Account.LoreFlags`.)* **Quest & lore progress not persisted** — quest progress and
   lore flags (`TalkedTo_*`) live in player `Attributes` (lost on
   rejoin). Migrate to `PlayerDataManager`. *(Partial, 2026-09-26
   reconcile: quests ARE persisted in `data.Account.Quests`
@@ -359,7 +359,9 @@
   the next minute). Pure UI — server stays as-is.
 - ~~Class unlock toast~~ **Resolved:** moved to "Already-resolved"
   (2026-09-26 reconcile).
-- `[P1]` **"All players ready" gate before combat starts (§PB-D3)** — today
+- ✅ *(Done 2026-09-26, §AGX/WC: `GameStateManager.EnableStartGate`; waits for
+  every roster member's ClientReady, 20 s timeout after the first; Horde
+  auto-starts, Lane/CentralBoss gate the Start button.)* **"All players ready" gate before combat starts (§PB-D3)** — today
   HordeMode auto-transitions to `Defending` on bootstrap (so the HUD's
   manual "Start Game" button never appears). LaneDefense and CentralBoss
   follow a similar pattern. With multi-player parties this can land
@@ -587,7 +589,9 @@ tags in code).
   Note that `docs/STUDIO_TEST_PLAN.md` §4 now uses
   `DebugCommand("bossHP", …)`, so the console-module replacement must
   keep a boss-HP command.)*
-- `[P1]` **§T0P2-TPCLASS — Wire the TeleportClass consumer.**
+- ✅ *(Done, §AGX/WC: `ClassManager.ApplyTeleportClass`, unlock-checked; also
+  fixed `ActiveClass` never being set, which stamped every party member as
+  Aegis.)* **§T0P2-TPCLASS — Wire the TeleportClass consumer.**
   `TeleportDataReader.ApplyPlayerData` sets the `TeleportClass` player
   attribute (party-selected class) but nothing reads it yet. The new
   map's spawn flow should consume it — and MUST validate the class is

@@ -132,6 +132,10 @@ function ClassManager.Init()
     -- ran for this player.
     PlayerDataManager.OnPlayerDataReady(function(player)
         ClassManager.ApplyInnateBonus(player)
+        -- §AGX/WC: mirror the loaded class into the ActiveClass attribute
+        -- (read by the lobby's TeleportManager for partyData.class and by
+        -- TeleportDataReader's fallbacks). Idempotent.
+        player:SetAttribute("ActiveClass", PlayerDataManager.GetActiveClass(player))
     end)
 
     local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
@@ -314,6 +318,69 @@ function ClassManager.SetClass(player, className)
     -- Apply innate class passives via BonusManager
     ClassManager.ApplyInnateBonus(player, className)
 
+    return true
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- §AGX/WC: §T0P2-TPCLASS — PARTY-SELECTED CLASS ON ARRIVAL
+-- ═══════════════════════════════════════════════════════════
+local _ReadyGate
+local function getReadyGate()
+    if _ReadyGate == nil then
+        local mod = Modules:FindFirstChild("ReadyGate")
+        local ok, result = false, nil
+        if mod then ok, result = pcall(require, mod) end
+        _ReadyGate = ok and result or false
+    end
+    return _ReadyGate or nil
+end
+
+--- Consume the one-shot "TeleportClass" attribute (set by
+--- TeleportDataReader.ApplyPlayerData from the party payload). The payload
+--- transits the client, so it is NEVER trusted: the class must exist in
+--- ClassConfig AND be in this player's Account.UnlockedClasses, and the
+--- run must not be in combat yet. Otherwise it's ignored with a warn.
+--- Applied through ClassManager.SetClass (the normal class-change path).
+--- The 30 s switch cooldown is deliberately not checked: this restores the
+--- class picked in the lobby (usually right before queueing), it isn't a
+--- new switch. Returns true if the player ends up on the requested class.
+function ClassManager.ApplyTeleportClass(player)
+    local requested = player:GetAttribute("TeleportClass")
+    if requested == nil then return false end
+    player:SetAttribute("TeleportClass", nil)  -- one-shot
+
+    if type(requested) ~= "string" or not ClassConfig.Classes[requested] then
+        warn("[ClassManager] Ignoring TeleportClass for", player.Name, "— unknown class:", tostring(requested))
+        return false
+    end
+    if not PlayerDataManager.GetData(player) then
+        warn("[ClassManager] Ignoring TeleportClass for", player.Name, "— data not loaded")
+        return false
+    end
+    if PlayerDataManager.GetActiveClass(player) == requested then
+        return true
+    end
+    if not PlayerDataManager.IsClassUnlocked(player, requested) then
+        warn("[ClassManager] Ignoring TeleportClass for", player.Name, "—", requested, "is not unlocked")
+        return false
+    end
+    local gsm = getGameStateManager()
+    if gsm and gsm.IsInGame() then
+        warn("[ClassManager] Ignoring TeleportClass for", player.Name, "— run already in combat")
+        return false
+    end
+
+    local ok, err = ClassManager.SetClass(player, requested)
+    if not ok then
+        warn("[ClassManager] TeleportClass switch to", requested, "failed for", player.Name, ":", tostring(err))
+        return false
+    end
+    print("[ClassManager]", player.Name, "arrived as party-selected class", requested)
+    -- Same reply the manual switch sends; queued until ClientReady.
+    local rg = getReadyGate()
+    if rg then
+        rg.FireClient(player, "ClassSwitchResult", true, requested)
+    end
     return true
 end
 

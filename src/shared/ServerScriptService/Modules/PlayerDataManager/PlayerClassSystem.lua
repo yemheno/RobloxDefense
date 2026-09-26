@@ -58,6 +58,10 @@ function PlayerClassSystem.SetActiveClass(player, className)
 
 	data.ActiveClass = className
 	data.LastClassSwitch = os.time()
+	-- §AGX/WC: mirror server truth into the ActiveClass attribute. The lobby's
+	-- TeleportManager stamps partyData.class from it (it was never written,
+	-- so every party member travelled as "Aegis").
+	player:SetAttribute("ActiveClass", className)
 
 	return true
 end

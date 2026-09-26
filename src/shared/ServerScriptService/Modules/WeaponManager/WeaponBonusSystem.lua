@@ -95,12 +95,9 @@ end
 --============================================
 -- REROLL BONUSES
 --============================================
-function WeaponBonusSystem.Reroll(player)
-	-- §WB1: reentrancy guard before any state-touching work.
-	if rerollLock[player] then
-		return false, "Reroll already in progress"
-	end
-
+-- §AGX/WC: body split out so the public Reroll can guarantee lock release
+-- even if something throws midway (mirrors EquipmentRefinement.attemptLock).
+local function rerollBody(player)
 	local weaponInstance = WeaponBonusSystem.WeaponManager.GetEquippedWeapon(player)
 	if not weaponInstance then
 		notifyReject(player, "No weapon equipped")  -- §AGX/UI-P4
@@ -116,12 +113,9 @@ function WeaponBonusSystem.Reroll(player)
 		return false, "Not enough Merits (need " .. cost .. ")"
 	end
 
-	rerollLock[player] = true
-
 	-- Deduct cost
 	local success = CurrencyManager.SpendMerits(player, cost)
 	if not success then
-		rerollLock[player] = nil
 		notifyReject(player, "Not enough Merits")  -- §AGX/UI-P4
 		return false, "Failed to deduct Merits"
 	end
@@ -140,8 +134,23 @@ function WeaponBonusSystem.Reroll(player)
 	})
 
 	print("[WeaponBonusSystem]", player.Name, "rerolled for", cost, "Merits")
-	rerollLock[player] = nil
 	return true, "Bonuses rerolled!"
+end
+
+function WeaponBonusSystem.Reroll(player)
+	-- §WB1: reentrancy guard before any state-touching work.
+	if rerollLock[player] then
+		return false, "Reroll already in progress"
+	end
+	-- §AGX/WC: lock held only for the pcall'd body; released on every path, including errors.
+	rerollLock[player] = true
+	local ok, success, msg = pcall(rerollBody, player)
+	rerollLock[player] = nil
+	if not ok then
+		warn("[WeaponBonusSystem] Reroll errored for", player.Name, ":", success)
+		return false, "Reroll failed"
+	end
+	return success, msg
 end
 
 --============================================

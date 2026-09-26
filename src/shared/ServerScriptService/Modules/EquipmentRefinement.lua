@@ -69,12 +69,9 @@ local function CreateRefinementSystem(Config, equipmentType)
     --============================================
     -- ATTEMPT REFINEMENT
     --============================================
-    function System.Attempt(player)
-        -- §ER2: reentrancy guard — must run BEFORE re-reading state.
-        if attemptLock[player] then
-            return false, 0, "Refinement already in progress"
-        end
-
+    -- §AGX/WC: body split out so System.Attempt can guarantee attemptLock
+    -- release even if something throws midway (e.g. GetCalculatedStats).
+    local function attemptBody(player)
         local instance = System.Manager[getEquippedMethod](player)
         if not instance then
             notifyReject(player, "No " .. equipmentType .. " equipped")  -- §AGX/UI-P4
@@ -103,7 +100,6 @@ local function CreateRefinementSystem(Config, equipmentType)
         -- §ER1 fix: SpendMerits / SpendEssence can return false (race lost,
         -- balance changed since CanAfford). Was being ignored — would let
         -- the player roll the refinement for free.
-        attemptLock[player] = true
         if cost > 0 then
             local canAfford
             if currency == "Merits" then
@@ -112,7 +108,6 @@ local function CreateRefinementSystem(Config, equipmentType)
                 canAfford = CurrencyManager.CanAffordEssence(player, cost)
             end
             if not canAfford then
-                attemptLock[player] = nil
                 notifyReject(player, "Not enough " .. currency)  -- §AGX/UI-P4
                 return false, currentRefinement, "Not enough " .. currency
             end
@@ -123,7 +118,6 @@ local function CreateRefinementSystem(Config, equipmentType)
                 spendOk = CurrencyManager.SpendEssence(player, cost)
             end
             if not spendOk then
-                attemptLock[player] = nil
                 notifyReject(player, "Not enough " .. currency)  -- §AGX/UI-P4
                 return false, currentRefinement, "Not enough " .. currency
             end
@@ -158,7 +152,6 @@ local function CreateRefinementSystem(Config, equipmentType)
 
             PlayerDataManager[refreshMethod](player)
             print(logPrefix, player.Name, "SUCCESS: +" .. currentRefinement, "→ +" .. instance.refinement)
-            attemptLock[player] = nil
             return true, instance.refinement, "Success!"
         else
             local newRefinement = currentRefinement
@@ -206,7 +199,6 @@ local function CreateRefinementSystem(Config, equipmentType)
 
                     print(logPrefix, player.Name, "TEMPER PITY: +" .. currentRefinement, "→ +" .. instance.refinement)
                     PlayerDataManager[refreshMethod](player)
-                    attemptLock[player] = nil
                     return true, instance.refinement, "Temper pity!"
                 end
             end
@@ -226,18 +218,31 @@ local function CreateRefinementSystem(Config, equipmentType)
                 if downgraded then
                     print(logPrefix, player.Name, "FAIL+DOWN: +" .. currentRefinement, "→ +" .. newRefinement)
                     PlayerDataManager[refreshMethod](player)
-                    attemptLock[player] = nil
                     return false, newRefinement, "Failed and downgraded!"
                 else
                     print(logPrefix, player.Name, "FAIL: +" .. currentRefinement, "stays")
-                    attemptLock[player] = nil
                     return false, newRefinement, "Failed but held!"
                 end
             end
         end
 
-        -- Defensive: if we somehow fall through without returning, release lock.
+    end
+
+    function System.Attempt(player)
+        -- §ER2: reentrancy guard — must run BEFORE re-reading state.
+        if attemptLock[player] then
+            return false, 0, "Refinement already in progress"
+        end
+        -- §AGX/WC: lock held for the whole pcall'd body and released on every
+        -- path (was: an error between set and release left it stuck for the session).
+        attemptLock[player] = true
+        local ok, success, level, msg = pcall(attemptBody, player)
         attemptLock[player] = nil
+        if not ok then
+            warn(logPrefix, "Attempt errored for", player.Name, ":", success)
+            return false, 0, "Refinement failed"
+        end
+        return success, level, msg
     end
 
     --============================================

@@ -305,11 +305,23 @@ local function startSpawnerOnce()
     end
 end
 
+-- §AGX/WC: §PB-D3 — the spawner now also waits for the all-players-ready
+-- gate (see the EnableStartGate block below). Both conditions must hold:
+-- a loaded player (§3.1 anchor) AND the gate open.
+local hordeGateOpen  = false
+local hordeDataReady = false
+local function tryStartSpawner()
+    if hordeGateOpen and hordeDataReady then startSpawnerOnce() end
+end
+
 if DataManager.OnPlayerDataReady then
-    DataManager.OnPlayerDataReady(startSpawnerOnce)
+    DataManager.OnPlayerDataReady(function()
+        hordeDataReady = true
+        tryStartSpawner()
+    end)
 else
-    warn("[HordeMode] PlayerDataManager.OnPlayerDataReady missing; starting spawner immediately")
-    startSpawnerOnce()
+    warn("[HordeMode] PlayerDataManager.OnPlayerDataReady missing; spawner waits for the start gate only")
+    hordeDataReady = true
 end
 
 HordePauseManager.Setup({
@@ -365,12 +377,17 @@ VoteManager.SetRunState({
     modeId     = "HordeMode",
 })
 
--- §T0P2/X13: run-timing state is initialized at boot (one-run server);
--- no OnStateChanged re-arm exists anymore. The "suppressWaveStart"
--- flag tells the HUD never to show the manual "Start Game" button
--- (Horde auto-starts via the spawner).
+-- §T0P2/X13: one-run server; no OnStateChanged re-arm exists anymore.
+-- "suppressWaveStart" keeps MobSpawner's wave 1 out of Defending (Horde
+-- spawns via HordeModeSpawner).
+-- §AGX/WC: §PB-D3 — no more SetState("Defending") at boot. The shared
+-- start gate enters Defending itself (autoStart) once every party member
+-- expected here has sent ClientReady, or 20 s after the first one did.
+-- No Start button: RequestStartGame is refused in auto-start places and
+-- the HUD shows "Waiting for party (x/y)…" until then. The spawner, vote
+-- cadence and run timer start from the OnStartGateOpen hook below.
 GameStateManager.suppressWaveStart = true
-GameStateManager.SetState("Defending")
+GameStateManager.EnableStartGate({ autoStart = true })
 
 -- ───────────────────────────────────────────────────────────
 -- DEBUG COMMANDS (admin-only)
@@ -421,78 +438,97 @@ Lifecycle.StartVitalsLoop(ctx)
 local SUPPLY_INTERVAL = 45    -- seconds of play-time between votes
 local RUN_DURATION    = 630   -- 10 m 30 s of play time
 
--- Single alternating vote loop.
-task.spawn(function()
-    local voteIndex = 0
-    task.wait(SUPPLY_INTERVAL)
-    while HordeModeSpawner and hordeRunActive do
-        voteIndex = voteIndex + 1
-        local voteType = (voteIndex % 2 == 1) and "supply" or "threat"
+-- §AGX/WC: §PB-D3 — both loops now start when the start gate opens
+-- (startHordeLoops, called from the OnStartGateOpen hook below), not at
+-- boot, so the play clock and vote cadence count from the real start.
+local hordeLoopsStarted = false
+local function startHordeLoops()
+    if hordeLoopsStarted then return end
+    hordeLoopsStarted = true
+    hordeStartTime = os.clock()
+    VoteManager.SetRunState({ difficulty = hordeDifficulty, elapsed = 0, modeId = "HordeMode" })
 
-        if VoteManager and not VoteManager.IsVoteActive() then
-            -- ① 2 s heads-up before the freeze
-            NetworkManager.FireAllClients("VotePending", { voteType = voteType, countdown = 2 })
-            task.wait(2)
-            -- §AGX/SEC: the run can end during the heads-up; don't pause
-            -- the horde and open a vote on top of the victory screen.
-            if not hordeRunActive then break end
-
-            -- ② Pause + start vote
-            pauseStartedAt = os.clock()
-            HordePauseManager.Pause()
-            VoteManager.SetRunState({
-                difficulty = hordeDifficulty,
-                elapsed    = os.clock() - hordeStartTime - totalPauseDuration,
-                modeId     = "HordeMode",
-            })
-            VoteManager.StartVote(voteType)
-
-            -- ③ Wait for vote to finish (incl. §VG4 display+countdown grace)
-            local maxWait = os.clock() + 12  -- VOTE_TIMER_SEC(10) + buffer
-            repeat task.wait(0.1) until not VoteManager.IsVoteActive() or os.clock() > maxWait
-
-            -- ④ Resume combat (§HM12: only if the run hasn't ended during the vote)
-            if pauseStartedAt then
-                totalPauseDuration = totalPauseDuration + (os.clock() - pauseStartedAt)
-                pauseStartedAt = nil
-            end
-            if hordeRunActive then
-                HordePauseManager.Resume()
-            end
-        end
-
+    -- Single alternating vote loop.
+    task.spawn(function()
+        local voteIndex = 0
         task.wait(SUPPLY_INTERVAL)
-    end
-end)
+        while HordeModeSpawner and hordeRunActive do
+            voteIndex = voteIndex + 1
+            local voteType = (voteIndex % 2 == 1) and "supply" or "threat"
 
--- Run timer — stops spawning, waits for mobs to clear, ends the run.
--- §HM1: counts play-time (excludes pauses). §HM11: capped mob-clear wait.
-task.spawn(function()
-    while hordeRunActive do
-        task.wait(1)
-        local pauseExtra = pauseStartedAt and (os.clock() - pauseStartedAt) or 0
-        local elapsedPlay = (os.clock() - hordeStartTime) - totalPauseDuration - pauseExtra
-        if elapsedPlay >= RUN_DURATION then break end
-    end
-    hordeRunActive = false
+            if VoteManager and not VoteManager.IsVoteActive() then
+                -- ① 2 s heads-up before the freeze
+                NetworkManager.FireAllClients("VotePending", { voteType = voteType, countdown = 2 })
+                task.wait(2)
+                -- §AGX/SEC: the run can end during the heads-up; don't pause
+                -- the horde and open a vote on top of the victory screen.
+                if not hordeRunActive then break end
 
-    HordeModeSpawner.Stop()
+                -- ② Pause + start vote
+                pauseStartedAt = os.clock()
+                HordePauseManager.Pause()
+                VoteManager.SetRunState({
+                    difficulty = hordeDifficulty,
+                    elapsed    = os.clock() - hordeStartTime - totalPauseDuration,
+                    modeId     = "HordeMode",
+                })
+                VoteManager.StartVote(voteType)
 
-    -- §HM11: cap mob-clear wait at 30 s so a stuck mob can't hang the
-    -- end-of-run forever. After timeout we proceed; mobs are about to be
-    -- wiped by the lobby teleport anyway.
-    if MobAI then
-        local waitDeadline = os.clock() + 30
-        while MobAI.IsAnyMobAlive() and os.clock() < waitDeadline do
+                -- ③ Wait for vote to finish (incl. §VG4 display+countdown grace)
+                local maxWait = os.clock() + 12  -- VOTE_TIMER_SEC(10) + buffer
+                repeat task.wait(0.1) until not VoteManager.IsVoteActive() or os.clock() > maxWait
+
+                -- ④ Resume combat (§HM12: only if the run hasn't ended during the vote)
+                if pauseStartedAt then
+                    totalPauseDuration = totalPauseDuration + (os.clock() - pauseStartedAt)
+                    pauseStartedAt = nil
+                end
+                if hordeRunActive then
+                    HordePauseManager.Resume()
+                end
+            end
+
+            task.wait(SUPPLY_INTERVAL)
+        end
+    end)
+
+    -- Run timer — stops spawning, waits for mobs to clear, ends the run.
+    -- §HM1: counts play-time (excludes pauses). §HM11: capped mob-clear wait.
+    task.spawn(function()
+        while hordeRunActive do
             task.wait(1)
+            local pauseExtra = pauseStartedAt and (os.clock() - pauseStartedAt) or 0
+            local elapsedPlay = (os.clock() - hordeStartTime) - totalPauseDuration - pauseExtra
+            if elapsedPlay >= RUN_DURATION then break end
         end
-        if MobAI.IsAnyMobAlive() then
-            warn("[HordeMode] Run-end mob clear timed out (30 s); proceeding to lobby return")
-        end
-    end
+        hordeRunActive = false
 
-    if RunModifiers then RunModifiers.Reset() end
-    GameStateManager.TriggerVictory()
+        HordeModeSpawner.Stop()
+
+        -- §HM11: cap mob-clear wait at 30 s so a stuck mob can't hang the
+        -- end-of-run forever. After timeout we proceed; mobs are about to be
+        -- wiped by the lobby teleport anyway.
+        if MobAI then
+            local waitDeadline = os.clock() + 30
+            while MobAI.IsAnyMobAlive() and os.clock() < waitDeadline do
+                task.wait(1)
+            end
+            if MobAI.IsAnyMobAlive() then
+                warn("[HordeMode] Run-end mob clear timed out (30 s); proceeding to lobby return")
+            end
+        end
+
+        if RunModifiers then RunModifiers.Reset() end
+        GameStateManager.TriggerVictory()
+    end)
+end  -- startHordeLoops
+
+-- §AGX/WC: §PB-D3 — the run begins here (the gate already switched the
+-- state to Defending before callbacks fire).
+GameStateManager.OnStartGateOpen(function()
+    hordeGateOpen = true
+    tryStartSpawner()
+    startHordeLoops()
 end)
 
 -- ───────────────────────────────────────────────────────────

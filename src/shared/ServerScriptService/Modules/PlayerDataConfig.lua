@@ -262,6 +262,9 @@ PlayerDataConfig.AccountDefaults = {
 		completed = {},           -- { [questId] = true }
 	},
 
+	-- §AGX/WC: lore NPC "talked to" flags (persistent; mirrored to TalkedTo_<id> attributes by LoreHandler)
+	LoreFlags = {},               -- { [npcId] = true }
+
 	-- Leaderboard tracking
 	Leaderboard = {
 		EssenceSpent  = 0,

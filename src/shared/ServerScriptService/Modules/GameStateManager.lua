@@ -62,6 +62,164 @@ local stateChangedCallbacks = {}
 local returnToLobbyCallbacks = {}
 
 -- ═══════════════════════════════════════════════════════════
+-- §AGX/WC: §PB-D3 "ALL PLAYERS READY" START GATE
+-- ═══════════════════════════════════════════════════════════
+--[[
+    One gate shared by the three combat places. Combat can start only once
+    every party member expected in this server has sent ClientReady (the
+    existing ReadyGate handshake — no new handshake):
+
+      expected = party roster names from TeleportData (PeekPartyRoster, read
+                 at PlayerAdded) ∪ players currently in the server
+                 − members dropped from the wait (left the server, or still
+                 not ready when the hard timeout fires)
+      open     = at least one player ready AND every expected name is an
+                 in-server player that is ready
+      timeout  = START_GATE_TIMEOUT s after the FIRST ready player: opens
+                 anyway and drops whoever is still missing (a stuck or
+                 never-arriving client can't block the party)
+
+    Studio solo: no TeleportData → expected = {you} → opens on your
+    ClientReady, no delay. The roster transits the client, so a padded
+    roster can only delay the start up to the timeout.
+
+    Places call EnableStartGate({ autoStart = bool }) once at boot:
+      autoStart = true   (Horde) the gate opening enters Defending directly
+      autoStart = false  (Lane / CentralBoss) RequestStart is refused until
+                         the gate opens; the Start button does the rest.
+    Places that never call it (none today) keep the old ungated behaviour.
+    The gate opens once per server and stays open (post-run restarts in
+    Lane aren't re-gated).
+]]
+local START_GATE_TIMEOUT = 20
+
+local gate = {
+	enabled   = false,
+	autoStart = false,
+	open      = false,
+	roster    = {},   -- [name] = true (from TeleportData)
+	dropped   = {},   -- [name] = true (no longer waited for)
+	timeoutArmed = false,
+	callbacks = {},
+}
+
+local _ReadyGate
+local function getReadyGate()
+	if _ReadyGate == nil then
+		local mod = Modules:FindFirstChild("ReadyGate")
+		local ok, result = false, nil
+		if mod then ok, result = pcall(require, mod) end
+		_ReadyGate = ok and result or false
+	end
+	return _ReadyGate or nil
+end
+
+local _TeleportDataReader
+local function getTeleportDataReader()
+	if _TeleportDataReader == nil then
+		local mod = Modules:FindFirstChild("TeleportDataReader")
+		local ok, result = false, nil
+		if mod then ok, result = pcall(require, mod) end
+		_TeleportDataReader = ok and result or false
+	end
+	return _TeleportDataReader or nil
+end
+
+--- (readyCount, expectedCount, missingNames) for the current gate inputs.
+local function gateCounts()
+	local rg = getReadyGate()
+	local expected = {}
+	for name in pairs(gate.roster) do
+		if not gate.dropped[name] then expected[name] = true end
+	end
+	for _, p in ipairs(Players:GetPlayers()) do
+		if not gate.dropped[p.Name] then expected[p.Name] = true end
+	end
+	local ready, total, missing = 0, 0, {}
+	for name in pairs(expected) do
+		total += 1
+		local p = Players:FindFirstChild(name)
+		if p and p:IsA("Player") and rg and rg.IsReady(p) then
+			ready += 1
+		else
+			table.insert(missing, name)
+		end
+	end
+	return ready, total, missing
+end
+
+local function gateSnapshot()
+	if not gate.enabled then return nil end
+	local ready, total = gateCounts()
+	return {
+		open      = gate.open,
+		ready     = ready,
+		expected  = total,
+		autoStart = gate.autoStart,
+	}
+end
+
+local function broadcastGate()
+	local snap = gateSnapshot()
+	if snap then
+		NetworkManager.FireAllClients("StartGateUpdate", snap)
+	end
+end
+
+local function openGate(reason)
+	if gate.open then return end
+	gate.open = true
+	print("[GameStateManager] §PB-D3 start gate OPEN (" .. reason .. ")")
+	broadcastGate()
+	if gate.autoStart and currentState == STATES.IDLE then
+		GameStateManager.SetState(STATES.DEFENDING)
+	end
+	for _, cb in ipairs(gate.callbacks) do
+		task.spawn(cb)
+	end
+end
+
+local evaluateGate  -- forward-declared: the timeout closure calls it
+
+evaluateGate = function()
+	if not gate.enabled or gate.open then return end
+	local ready, total, missing = gateCounts()
+	if ready >= 1 and ready >= total then
+		openGate(string.format("%d/%d ready", ready, total))
+		return
+	end
+	if ready >= 1 and not gate.timeoutArmed then
+		gate.timeoutArmed = true
+		task.delay(START_GATE_TIMEOUT, function()
+			if gate.open then return end
+			local _, _, stillMissing = gateCounts()
+			for _, name in ipairs(stillMissing) do
+				gate.dropped[name] = true
+			end
+			if #stillMissing > 0 then
+				warn("[GameStateManager] §PB-D3 start gate timed out after "
+					.. START_GATE_TIMEOUT .. " s — dropped from the wait: "
+					.. table.concat(stillMissing, ", "))
+			end
+			openGate("timeout")
+		end)
+	end
+	if #missing > 0 then
+		print(string.format("[GameStateManager] §PB-D3 waiting for party (%d/%d) — missing: %s",
+			ready, total, table.concat(missing, ", ")))
+	end
+	broadcastGate()
+end
+
+local function addRosterFrom(player)
+	local tdr = getTeleportDataReader()
+	if not tdr or not tdr.PeekPartyRoster then return end
+	for _, name in ipairs(tdr.PeekPartyRoster(player)) do
+		gate.roster[name] = true
+	end
+end
+
+-- ═══════════════════════════════════════════════════════════
 -- INITIALIZATION
 -- ═══════════════════════════════════════════════════════════
 
@@ -70,6 +228,7 @@ function GameStateManager.Init()
 	NetworkManager.GetEvent("GameStateChanged")
 	NetworkManager.GetEvent("RequestStartGame")
 	NetworkManager.GetEvent("CountdownUpdate")
+	NetworkManager.GetEvent("StartGateUpdate")  -- §AGX/WC: §PB-D3
 
 	-- Listen for start requests from clients
 	NetworkManager.OnClientEvent("RequestStartGame", function(player)
@@ -94,6 +253,7 @@ function GameStateManager.Init()
 			timestamp    = stateStartTime,
 			runEnded     = runEnded,
 			betweenWaves = waveFlag,
+			startGate    = gateSnapshot(),  -- §AGX/WC: §PB-D3 (nil when ungated)
 		})
 	end)
 
@@ -230,6 +390,22 @@ function GameStateManager.RequestStart(player)
 		return false, "Game already in progress"
 	end
 
+	-- §AGX/WC: §PB-D3 — no start until the whole party is ready (or the
+	-- gate's timeout dropped the stragglers). Auto-start places never
+	-- accept a manual start.
+	if gate.enabled then
+		local ns = Modules:FindFirstChild("NotifyService")
+		if gate.autoStart then
+			return false, "This mode starts automatically"
+		end
+		if not gate.open then
+			local ready, total = gateCounts()
+			local msg = string.format("Waiting for party (%d/%d)…", ready, total)
+			if ns and player then pcall(function() require(ns).Toast(player, "warning", msg) end) end
+			return false, msg
+		end
+	end
+
 	-- Validate player count
 	local playerCount = #Players:GetPlayers()
 	if playerCount < CONFIG.MinPlayersToStart then
@@ -358,6 +534,61 @@ function GameStateManager.TriggerVictory()
 	if currentState == STATES.DEFENDING then
 		GameStateManager.SetState(STATES.VICTORY)
 	end
+end
+
+-- ═══════════════════════════════════════════════════════════
+-- §AGX/WC: §PB-D3 START GATE API
+-- ═══════════════════════════════════════════════════════════
+
+--- Arm the all-players-ready gate for this place (call once at boot,
+--- after ReadyGate / TeleportDataReader are loaded). opts.autoStart:
+--- true → the gate opening enters Defending (Horde); false → it only
+--- unlocks RequestStart (Lane / CentralBoss).
+function GameStateManager.EnableStartGate(opts)
+	if gate.enabled then return end
+	opts = opts or {}
+	gate.enabled   = true
+	gate.autoStart = opts.autoStart == true
+
+	local rg = getReadyGate()
+	if not rg then
+		warn("[GameStateManager] §PB-D3 ReadyGate missing — start gate opens immediately")
+		openGate("no ReadyGate")
+		return
+	end
+
+	Players.PlayerAdded:Connect(function(player)
+		if not gate.open then gate.dropped[player.Name] = nil end  -- rejoined: wait for them again
+		addRosterFrom(player)
+		evaluateGate()
+	end)
+	Players.PlayerRemoving:Connect(function(player)
+		if gate.open then return end
+		gate.dropped[player.Name] = true  -- left before the start: stop waiting
+		task.defer(evaluateGate)          -- after ReadyGate clears its entry
+	end)
+	rg.OnReady(function()
+		evaluateGate()
+	end)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		addRosterFrom(player)
+	end
+	evaluateGate()
+end
+
+function GameStateManager.IsStartGateOpen()
+	return (not gate.enabled) or gate.open
+end
+
+--- callback() once when the gate opens (fires immediately, spawned, if
+--- it's already open or the place never enabled a gate).
+function GameStateManager.OnStartGateOpen(callback)
+	if GameStateManager.IsStartGateOpen() then
+		task.spawn(callback)
+		return
+	end
+	table.insert(gate.callbacks, callback)
 end
 
 -- ═══════════════════════════════════════════════════════════

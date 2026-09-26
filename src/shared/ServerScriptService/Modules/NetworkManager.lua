@@ -193,6 +193,9 @@ local EVENTS = {
     MatchmakingUpdate      = { rateLimit = nil,  readyGated = false },
     GameStateChanged       = { rateLimit = nil,  readyGated = false },
     CountdownUpdate        = { rateLimit = nil,  readyGated = false },
+    -- §AGX/WC: §PB-D3 start-gate progress (server → client; late HUDs get
+    -- it in the RequestGameState snapshot, so not gated).
+    StartGateUpdate        = { rateLimit = nil,  readyGated = false },
     -- §SCALE/S6: these trigger P-amplified rebroadcasts (party fan-outs)
     -- — cap at menu rate instead of the 30/s default.
     MatchmakingRequest     = { rateLimit = 4,    readyGated = false },
@@ -243,6 +246,7 @@ local EVENTS = {
     EquipAccessory         = { rateLimit = nil,  readyGated = false },
     UnequipAccessory       = { rateLimit = nil,  readyGated = false },
     InventoryUpdate        = { rateLimit = nil,  readyGated = false },
+    UseConsumable          = { rateLimit = 4,    readyGated = false }, -- §AGX/X10b: InventoryUI Use → ConsumableEffects (reply: NotifyService.Inline)
 
     -- ── Daily login ──────────────────────────────────────────────────
     ClaimDailyLogin        = { rateLimit = nil,  readyGated = false },

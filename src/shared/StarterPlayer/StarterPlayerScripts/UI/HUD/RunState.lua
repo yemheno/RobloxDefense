@@ -14,6 +14,10 @@
         defenseHP     { cur, max, pct }?   (Lane defense line; nil = no line)
         defCombo      { level, multiplier, hitCount }?
         combo         number? (personal hit combo; nil = hidden)
+        startGate     { open, ready, expected, autoStart }? (§PB-D3; nil = ungated place)
+        serverState   the server's real state; gameState reads "WaitingForParty"
+                      while the server is Idle behind a closed start gate
+                      (hides Start until the gate opens — §AGX/WC)
 
     Also owns the Notify output that used to live in the HUD effect:
     wave / run-state banners, the killfeed line and the combo summary
@@ -40,13 +44,44 @@ local store = Store.new({
 	defenseHP    = nil,
 	defCombo     = nil,
 	combo        = nil,
+	startGate    = nil,     -- §AGX/WC: §PB-D3
+	serverState  = "Idle",  -- §AGX/WC: §PB-D3
 })
+
+-- §AGX/WC: §PB-D3 — while the server sits in Idle behind a CLOSED start
+-- gate, publish the pseudo-state "WaitingForParty" instead of "Idle": the
+-- HUD only shows Start for "Idle", so the button appears once the gate
+-- opens (Lane / CentralBoss) and never in auto-start places (Horde). A
+-- sticky banner shows "Waiting for party (x/y)…" meanwhile.
+local WAITING = "WaitingForParty"
+local function refreshGate()
+	local st = store.get()
+	local g = st.startGate
+	local waiting = g ~= nil and g.open ~= true and st.serverState == "Idle"
+	local shown = waiting and WAITING or st.serverState
+	if st.gameState ~= shown then
+		store.set("gameState", shown)
+	end
+	if waiting then
+		Notify.banner(string.format("Waiting for party (%d/%d)…", tonumber(g.ready) or 0, tonumber(g.expected) or 0), {
+			key = "partyGate", priority = "runState", sticky = true,
+			color = Color3.fromRGB(255, 200, 90),
+		})
+	else
+		Notify.clearBanner("partyGate")
+	end
+end
 
 -- ── Server events (once, at first require) ───────────────────────────────────
 
 NetworkManager.OnServerEvent("GameStateChanged", function(data)
 	data = data or {}
-	store.set("gameState", data.newState or "Lobby")
+	-- §AGX/WC: §PB-D3 — raw state goes to serverState; refreshGate() below
+	-- derives the published gameState (masked while the gate is closed).
+	store.set("serverState", data.newState or "Lobby")
+	if type(data.startGate) == "table" then
+		store.set("startGate", data.startGate)
+	end
 	-- §AGX/X14: remember that a run ended so Return stays reachable in the
 	-- post-run Idle state if the return teleport fails.
 	if data.newState == "Defeat" or data.newState == "Victory" then
@@ -70,6 +105,14 @@ NetworkManager.OnServerEvent("GameStateChanged", function(data)
 	if data.betweenWaves ~= nil then
 		store.set("betweenWaves", data.betweenWaves == true)
 	end
+	refreshGate()  -- §AGX/WC: §PB-D3
+end)
+
+-- §AGX/WC: §PB-D3 start-gate progress / open.
+NetworkManager.OnServerEvent("StartGateUpdate", function(data)
+	if type(data) ~= "table" then return end
+	store.set("startGate", data)
+	refreshGate()
 end)
 
 NetworkManager.OnServerEvent("CountdownUpdate", function(data)
