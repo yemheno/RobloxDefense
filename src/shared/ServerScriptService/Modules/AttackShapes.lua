@@ -131,9 +131,8 @@ function AttackShapes.GetTargetsInCircle(origin, radius, filterAttribute)
 	local targets = getPotentialTargets(filterAttribute)
 	local hitTargets = {}
 
-	-- §MEM/M9: scalar 2D distance — the old form allocated two Vector3s
-	-- per target per query in the hottest AoE path (every circle skill,
-	-- stun/slow/knockback/pull).
+	-- §MEM/M9: scalar 2D distance — no Vector3 allocations per target in
+	-- the hottest AoE path (every circle skill, stun/slow/knockback/pull).
 	local radiusSq = radius * radius
 	for _, target in ipairs(targets) do
 		local targetPos = getModelPosition(target)

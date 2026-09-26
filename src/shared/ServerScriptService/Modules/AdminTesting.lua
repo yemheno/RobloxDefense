@@ -81,10 +81,9 @@ end
 -- GUARD
 -- ═══════════════════════════════════════════════════════════
 
--- §AGX/SEC: X16 — one admin guard for the whole codebase. The old
--- local copy trusted game.CreatorId without checking CreatorType (a
--- group id for group-owned games). PlaceBootstrap.IsAdmin is Studio-only
--- and CreatorType-aware. Do NOT maintain a separate copy here.
+-- §AGX/SEC, §AGX/X16: one admin guard for the whole codebase.
+-- PlaceBootstrap.IsAdmin is Studio-only and CreatorType-aware (CreatorId
+-- is a group id for group-owned games). Do NOT maintain a separate copy here.
 local PlaceBootstrap = nil
 local function isAdmin(player)
 	if not PlaceBootstrap then
@@ -128,10 +127,9 @@ function actions.ResetData(player, _)
 		end
 	end
 
-	-- §T0P2/X18: the old reset zeroed the DATA but left the APPLIED
-	-- state live — talent bonuses stayed in BonusManager's "talent"
-	-- source and max HP stayed inflated until rejoin, polluting test
-	-- results on exactly the accounts used for tier live-tests.
+	-- §T0P2/X18: reset the APPLIED state too, not just the data —
+	-- otherwise talent bonuses stay in BonusManager's "talent" source and
+	-- max HP stays inflated until rejoin.
 	do
 		local taMod = Modules:FindFirstChild("TalentEffectAggregator")
 		if taMod then
@@ -180,7 +178,7 @@ function actions.SetLevel(player, args)
 	pdm.SetAccountData(player, "Level", level)
 
 	-- §T0P2/X18: unlock any level-gated classes at the new level — the
-	-- natural level-up path does this; SetLevel used to skip it.
+	-- natural level-up path does this too.
 	pdm.CheckUnlockEligibleClasses(player)
 
 	local cfg = getConfig()

@@ -23,7 +23,7 @@ local SharedModules = SSS:WaitForChild("Modules")
 
 -- §AGX/X4: combat places only accept arrivals on the reserved server the
 -- lobby created for the match. A public server here means someone joined
--- the place directly (or via an old public-server teleport) — bounce them.
+-- the place directly (or via a public-server teleport) — bounce them.
 -- Studio (solo play and Team Test) is exempt so playtesting still works.
 local PUBLIC_SERVER_REASON = "Matches run on private servers — returning you to the lobby."
 local function isRejectedPublicServer()
@@ -32,7 +32,7 @@ local function isRejectedPublicServer()
 	return (game.PrivateServerId == "" or game.PrivateServerOwnerId ~= 0) and not RunService:IsStudio()
 end
 
--- §AGX/X4: lazy getter (§5.3) — ReturnTeleporter requires this module in
+-- §AGX/X4: lazy getter (ARCHITECTURE.md#lazy-getter) — ReturnTeleporter requires this module in
 -- its own Init, so no eager require here.
 local _ReturnTeleporter
 local function getReturnTeleporter()
@@ -97,9 +97,8 @@ local matchPartyData  = {}
 
 -- §T0P2/X2 (DQ-B): difficulty is OWNED BY THE LOBBY — it arrives in the
 -- teleport payload and is resolved exactly ONCE, by the first player
--- whose data is processed. Later arrivals cannot change it (the old
--- code let every arrival overwrite matchDifficulty — last-arriver-wins,
--- spoofable, and never re-pushed to the spawner anyway).
+-- whose data is processed. Later arrivals cannot change it (last-arriver-
+-- wins would be spoofable).
 -- Consumers register OnDifficultyResolved to receive the validated
 -- value; callbacks registered after resolution fire immediately.
 local difficultyResolved   = false
@@ -290,9 +289,8 @@ function TeleportDataReader.ApplyPlayerData(player, teleportData)
 	for _, member in ipairs(partyData) do
 		if type(member) == "table" and member.name == player.Name then
 			if type(member.class) == "string" and member.class ~= "" then
-				-- §AGX/WC: compare against server truth (loaded data). The
-				-- ActiveClass attribute was never written server-side, so
-				-- the old attribute compare always differed.
+				-- §AGX/WC: compare against server truth (loaded data), not
+				-- the ActiveClass attribute (never written server-side).
 				local pdm = getPlayerDataManager()
 				local currentClass = (pdm and pdm.GetActiveClass and pdm.GetActiveClass(player))
 					or player:GetAttribute("ActiveClass")

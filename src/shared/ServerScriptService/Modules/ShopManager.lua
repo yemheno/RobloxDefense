@@ -155,7 +155,7 @@ local function withPurchaseLock(player, fn)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- §AGX/D7: ROTATION  (§DISC/D7, BALANCE_NUMBERS §D7)
+-- §AGX/D7: ROTATION  (§DISC/D7, BALANCE_NUMBERS.md#shop-rotation-and-paid-refresh)
 -- ═══════════════════════════════════════════════════════════
 -- A rotating tab's stock is a pure function of
 --   (UserId, tab, periodIndex, roll)
@@ -317,7 +317,7 @@ end
 
 --- §AGX/D7: paid "Refresh now" for one rotating tab. `expect` = { period,
 --- roll } of the rotation the client is looking at: a replayed or
---- double-clicked request no longer matches after the first one lands, so
+--- double-clicked request doesn't match after the first one lands, so
 --- it is refused WITHOUT charging (idempotent). Shares the per-player
 --- purchase lock (§Sh2 / EquipmentRefinement attemptLock pattern), so a
 --- refresh can't interleave with a purchase. Spend first, then write.
@@ -438,10 +438,9 @@ function ShopManager.PurchaseCosmetic(player, itemId)
             return false, "Not enough " .. entry.currency .. "."
         end
 
-        -- §Sh1 fix: DEDUCT FIRST. The previous order granted ownership
-        -- before charging, leaving the player free items if SpendMerits
-        -- /SpendEssence ever returned false (e.g. concurrent spend in
-        -- another shop tab racing the same balance).
+        -- §Sh1: DEDUCT FIRST, then grant. A spend can fail (e.g. a
+        -- concurrent spend racing the same balance); granting first would
+        -- hand out free items.
         if not spendCurrency(player, entry.price, entry.currency) then
             return false, "Payment failed."
         end
@@ -488,13 +487,12 @@ function ShopManager.PurchaseConsumable(player, itemId, quantity)
         if not entry or entry.tab ~= "Consumables" then
             return false, "Item not in consumable shop."
         end
-        -- §AGX/X10: only consumables with a server-side use handler are
-        -- sold (§AGX/X10b: 8 potions/buffs via ConsumableEffects, plus
-        -- respec_scroll; §AGX/D-FIX2: swiftness is live too). ShopConfig derives `enabled` from
-        -- ConsumableConfig.usable; both are checked so a hand-set
-        -- `enabled = true` on an unusable item still can't be bought. This
-        -- covers the global shop AND the NPC ShopHandler path, which both
-        -- land here.
+        -- §AGX/X10, §AGX/X10b, §AGX/D-FIX2: only consumables with a
+        -- server-side use handler (ConsumableEffects, respec_scroll) are
+        -- sold. ShopConfig derives `enabled` from ConsumableConfig.usable;
+        -- both are checked so a hand-set `enabled = true` on an unusable item
+        -- still can't be bought. Covers the global shop AND the NPC
+        -- ShopHandler path, which both land here.
         if entry.enabled == false or not getConsumableConfig().IsUsable(itemId) then
             return false, "Coming soon!"
         end
@@ -528,7 +526,7 @@ function ShopManager.PurchaseConsumable(player, itemId, quantity)
             return false, "Not enough " .. entry.currency .. "."
         end
 
-        -- §Sh1 fix: DEDUCT FIRST.
+        -- §Sh1: DEDUCT FIRST.
         if not spendCurrency(player, totalCost, entry.currency) then
             return false, "Payment failed."
         end
@@ -580,9 +578,9 @@ function ShopManager.PurchasePremium(player, itemId)
         return false, "Coming soon!"
     end
 
-    -- §AGX/X40: was a hard `return false`. MonetizationService re-checks
-    -- enabled, the placeholder id (0), the no-P2W grant allowlist and
-    -- per-product "already owned / unused" rules before prompting.
+    -- §AGX/X40: MonetizationService re-checks enabled, the placeholder id
+    -- (0), the no-P2W grant allowlist and per-product "already owned /
+    -- unused" rules before prompting.
     return withPurchaseLock(player, function()
         return getMonetization().PromptPurchase(player, itemId)
     end)

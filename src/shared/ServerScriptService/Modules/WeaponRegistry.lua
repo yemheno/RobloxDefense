@@ -165,8 +165,7 @@ function WeaponRegistry.CalculateAttackSpeed(weaponId, tier)
 	-- Base attack speed
 	local baseSpeed = weapon.baseAttackSpeed or 1.0
 
-	-- Future: tier could affect attack speed
-	-- For now, just return base
+	-- Tier doesn't affect attack speed (yet).
 	return baseSpeed
 end
 
@@ -191,9 +190,7 @@ function WeaponRegistry.GetScaledShapeParams(weaponId, tier)
 		params[k] = v
 	end
 
-	-- Future: Apply tier scaling to range
-	-- local rangeMultiplier = 1 + (tier - 1) * 0.02  -- 2% per tier
-	-- if params.range then params.range = params.range * rangeMultiplier end
+	-- Tier doesn't scale range (yet); `tier` is accepted for that seam.
 
 	return params
 end

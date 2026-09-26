@@ -16,9 +16,9 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
     local ChapterConfig   = require(Modules:WaitForChild("ChapterConfig"))
     local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 
-    -- §AGX/UI-P4: player-facing rejections used to be silent (return value
-    -- dropped by the caller / warn only). NotifyService pushes a toast; it
-    -- never throws, and a missing module is skipped, so logic is unchanged.
+    -- §AGX/UI-P4: player-facing rejections get a toast (callers drop the
+    -- return value). NotifyService never throws, and a missing module is
+    -- skipped, so logic doesn't depend on it.
     local NotifyService = nil
     local function notifyReject(player, text)
         if not NotifyService then
@@ -37,7 +37,7 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
 
     local BonusSystem = nil  -- filled in Init
 
-    -- §ET2 fix: per-player tier-upgrade lock (same shape as EquipmentRefinement).
+    -- §ET2: per-player tier-upgrade lock (same shape as EquipmentRefinement).
     local upgradeLock = setmetatable({}, { __mode = "k" })
 
     -- Determine naming conventions based on equipment type
@@ -114,9 +114,8 @@ local function CreateTierSystem(Config, RegistryModule, BonusSystemModule, equip
         end
 
         -- Cost check.
-        -- §ET1 fix: was ignoring SpendMerits/SpendEssence return value, so a
-        -- losing race could grant the upgrade for free. Now we abort if the
-        -- spend fails after CanAfford passed.
+        -- §ET1: abort if SpendMerits/SpendEssence fails after CanAfford
+        -- passed (a lost race), or the upgrade is free.
         upgradeLock[player] = true
         local cost     = Config.GetTierCost(currentTier)
         local currency = Config.TIER_CURRENCY

@@ -1,6 +1,6 @@
 -- ServerScriptService/Modules/ChapterConfig
 --[[
-    Chapter progression configuration per BALANCE_REWORK_SPEC.md §4, §12, §13
+    Chapter progression configuration (numbers: BALANCE_NUMBERS.md#chapters)
     ═══════════════════════════════════════════════════════════════════════════
     Defines chapter boundaries, gear caps, and progression gates.
 ]]

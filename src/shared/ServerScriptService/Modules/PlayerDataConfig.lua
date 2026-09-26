@@ -144,7 +144,7 @@ PlayerDataConfig.BonusStats = {
 PlayerDataConfig.StatCaps = {
 	CritChance = { min = 0, max = 200 },
 	CritDamage = { min = 1.0, max = 1.80 },
-	DamageReduction = { min = 0, max = 75 },  -- cap raised from 60 → 75 (§DR-2)
+	DamageReduction = { min = 0, max = 75 },  -- §DR-2
 	Penetration = { min = 0, max = 60 },
 	CooldownReduction = { min = 0, max = 40 },
 	CastTimeReduction = { min = 0, max = 40 },
@@ -187,7 +187,7 @@ PlayerDataConfig.AccountDefaults = {
 	-- Talent tree (allocated node ids stored as { [nodeId] = true })
 	AllocatedTalents = {},
 
-	-- §T1.2/D5: Classes unlocked at first spawn are now derived from
+	-- §T1.2/D5: Classes unlocked at first spawn are derived from
 	-- ClassConfig.Classes[name].default. The literal list below is filled
 	-- in at the bottom of this file via ClassConfig.GetDefaultUnlockedClasses().
 	-- Authoring a new class is a one-file change in ClassConfig.
@@ -260,10 +260,9 @@ PlayerDataConfig.AccountDefaults = {
 
 	-- Inventory: accessories, consumables, tokens
 	Inventory = {},               -- { { itemId, quantity, metadata? }, ... }
-	-- §4.3: RespecTokens counter removed — respecs now consume the
-	-- `respec_scroll` inventory item. Legacy saves still carrying
-	-- Account.RespecTokens are cleaned up by the deprecated-key sweep
-	-- in PlayerDataManager/init.lua.
+	-- §4.3: no RespecTokens counter — respecs consume the `respec_scroll`
+	-- inventory item. Saves still carrying Account.RespecTokens are cleaned
+	-- up by PlayerDataManager's deprecated-key sweep.
 
 	-- §AGX/D7: shop rotation. Paid refreshes used on UTC day `day` (cap: ShopConfig.Refresh) + per-tab re-roll count for the current period. The rotation itself is derived from (UserId, period), never stored.
 	ShopRotation = {
@@ -388,14 +387,12 @@ end
 -- RESPEC COST (§18)
 -- §AGX/X42: flat 25 Essence at every level (or 1 respec_scroll, which the
 -- shop also sells for 25 Essence). Free respec on each ascension boss clear.
---   • The Merit option (20,000 / 50,000) was never read by either respec
---     path, so it is removed rather than wired: Merit income grows ~10×
---     from level 10 to 200, so a Merit price is either a wall early or
---     free late, and it would drain the Essence sink respec exists for.
---   • HIGH was 40: Essence income is flat (not level-scaled), so a level
---     step made respec pricier for no economic reason, and it made the
---     scroll price incoherent (a 25 E scroll would undercut it).
---   • 25 E ≈ 6,250 Merits at the 250:1 anchor (BALANCE_NUMBERS §33), the
+--   • No Merit price: Merit income grows ~10× from level 10 to 200, so a
+--     Merit price is either a wall early or free late, and it would drain
+--     the Essence sink respec exists for.
+--   • No level step: Essence income is flat (not level-scaled), and HIGH
+--     above the scroll price would make the scroll undercut it.
+--   • 25 E ≈ 6,250 Merits at the 250:1 anchor (BALANCE_NUMBERS.md#economy-anchor), the
 --     same as the wipe-revive price.
 -- LOW/HIGH are kept so GetRespecCost callers (.essence) keep working.
 --============================================

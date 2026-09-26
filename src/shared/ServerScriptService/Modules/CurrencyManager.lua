@@ -68,7 +68,6 @@ end
 -- §AGX/X32: optional `opts` table. `{ raw = true }` credits the exact
 -- amount: no MeritBonus multiplier and no merit-earned callbacks. Use it
 -- for money the player already owned (shop refunds), which is not income.
--- Every existing caller passes no opts and keeps the old behaviour.
 function CurrencyManager.AddMerits(player, amount, opts)
 	local data = DataManager.GetData(player)
 	if not data then return end
@@ -154,8 +153,8 @@ end
 
 -- SPEND CURRENCIES
 function CurrencyManager.SpendMerits(player, amount)
-	-- §AGX/X33: mirror the Add-side guard — a negative/NaN amount used to
-	-- pass the `>=` check and MINT currency. Latent (no caller does it today).
+	-- §AGX/X33: mirror the Add-side guard — a negative/NaN amount would
+	-- pass the `>=` check and MINT currency.
 	if type(amount) ~= "number" or amount ~= amount or amount < 0 or amount == math.huge then
 		warn("[CurrencyManager] SpendMerits rejected invalid amount:", tostring(amount))
 		return false
@@ -182,8 +181,8 @@ function CurrencyManager.SpendMerits(player, amount)
 end
 
 function CurrencyManager.SpendEssence(player, amount)
-	-- §AGX/X33: mirror the Add-side guard — a negative/NaN amount used to
-	-- pass the `>=` check and MINT currency. Latent (no caller does it today).
+	-- §AGX/X33: mirror the Add-side guard — a negative/NaN amount would
+	-- pass the `>=` check and MINT currency.
 	if type(amount) ~= "number" or amount ~= amount or amount < 0 or amount == math.huge then
 		warn("[CurrencyManager] SpendEssence rejected invalid amount:", tostring(amount))
 		return false

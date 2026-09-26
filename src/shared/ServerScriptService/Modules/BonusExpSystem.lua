@@ -29,8 +29,8 @@ local bonuses = {}
 -- ═══════════════════════════════════════════════════════════
 
 -- §DISC/D4: per-source and total restraints. Server-side callers only,
--- so these are typo insurance, not anti-exploit — a stray SetBonus
--- (player, "party", 100) used to mean +10,000% XP silently.
+-- so these are typo insurance, not anti-exploit (a stray SetBonus
+-- (player, "party", 100) would otherwise mean +10,000% XP).
 local MAX_ADDEND_PER_SOURCE = 1.0   -- any single source caps at +100%
 local MAX_TOTAL_BONUS       = 2.0   -- total caps at +200% (3.0× multiplier)
 

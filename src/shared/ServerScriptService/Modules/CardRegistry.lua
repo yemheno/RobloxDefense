@@ -39,9 +39,8 @@ local CardRegistry = {}
 -- ─────────────────────────────────────────────────────────────────────
 -- LAZY MODULE CACHES
 -- ─────────────────────────────────────────────────────────────────────
--- §VM4 fix: cache InventoryManager at module scope. Card apply functions
--- run on the hot vote-resolution path; without this cache, the Respec
--- Fragment card was calling WaitForChild + require on every invocation.
+-- §VM4: cache InventoryManager at module scope. Card apply functions
+-- run on the hot vote-resolution path (no WaitForChild + require per call).
 local _InventoryManager = nil
 local function getInventoryManager()
     if _InventoryManager then return _InventoryManager end
@@ -79,8 +78,7 @@ end
 -- Nightmare ≈ 1.0 / 1.25 / 2.0, the same ratio as DifficultyConfig's
 -- essenceMult, which is NOT applied again on top). Shared by Scavenge (Lane)
 -- and EssenceDrop (Horde, which then takes the Horde ×0.6 below).
--- Was 15–25 / 20–30 / 25–35(40): ≈70 Essence/run from Scavenge alone vs
--- ≈3.6 from Lane drops (19×). Now ≈12/run (≈3× drops); see BALANCE_NUMBERS §29.
+-- Budget: BALANCE_NUMBERS.md#essence-card-budget.
 local ESSENCE_CARD_RANGE = { Normal = {8,12}, Hard = {10,15}, Nightmare = {16,24} }
 
 -- §AGX/X41: Horde reward multiplier for card Essence, read from
@@ -659,7 +657,7 @@ CARDS.Scavenge = {
     id          = "Scavenge",
     name        = "Scavenge",
     cardType    = "tactical",
-    -- §AGX/X41: description matches the code (was "15–30", code 15–35).
+    -- §AGX/X41: keep the description in sync with ESSENCE_CARD_RANGE.
     description = "Each player receives 8–12 essence (more on Hard/Nightmare). Danger +1–3%.",
     -- §AGX/X41: only offered every third wave (3/6/9/12), so ≈1.2 offers per
     -- run instead of ≈3.5. EliteBounty uses the same eligible() pattern.

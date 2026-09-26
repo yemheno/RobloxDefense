@@ -32,7 +32,7 @@ SkillEffects.SkillManager   = nil
 SkillEffects.StatsManager   = nil
 SkillEffects.DamageHandler  = nil  -- §AGX/X12: DoT kills route through ApplyRawDamage
 
--- §PB-D5: WeaponManager is now lazy-loaded instead of injected by the
+-- §PB-D5: WeaponManager is lazy-loaded, not injected by the
 -- place bootstrap. SkillEffects is a "leaf" module (nothing else
 -- requires it), and WeaponManager doesn't require SkillEffects, so
 -- there's no cycle. Used to grant weapon XP to healer/support classes
@@ -78,10 +78,10 @@ local activePlayerEffects = {}
 -- Slow → Stun → remove Stun from restoring a slow-modified speed.
 local mobBaseSpeeds = setmetatable({}, { __mode = "k" })  -- §MEM/M11
 
--- §SCALE/S5: DoT/HoT/heal numbers used to fire one RemoteEvent per tick
--- PER TARGET, bypassing the §PERF/F5 batch (one player DoT-ing 30 horde
--- mobs = 30 events/s to that client). Queue + flush on a 0.25 s window —
--- coarser than combat's 0.1 s is fine at 1-2 Hz tick rates.
+-- §SCALE/S5, §PERF/F5: DoT/HoT/heal numbers are batched too (one event
+-- per tick PER TARGET would be 30 events/s for one player DoT-ing 30 horde
+-- mobs). Queue + flush on NUMBER_FLUSH_WINDOW — coarser than combat's
+-- window is fine at 1-2 Hz tick rates.
 local NUMBER_FLUSH_WINDOW = 0.25
 local pendingDamageNumbers = {}  -- [player] = { entry, ... }
 local pendingHealNumbers   = {}  -- [player] = { entry, ... }
@@ -427,7 +427,7 @@ function SkillEffects.TickDoT(mob, entry)
 
 	local tickDamage = baseDamage * damageCoef * stacks
 	-- §AGX/X12: capture the number position BEFORE damage — a killing tick
-	-- now Destroy()s the mob, after which its parts are gone.
+	-- Destroy()s the mob, after which its parts are gone.
 	local rootPart = mob:FindFirstChild("HumanoidRootPart") or mob.PrimaryPart
 	local pos = rootPart and rootPart.Position or mob:GetPivot().Position
 	-- §AGX/X12: route through DamageHandler so a DoT kill runs the normal
@@ -441,7 +441,7 @@ function SkillEffects.TickDoT(mob, entry)
 	end
 
 	-- Fire DoT damage number to the player (small, side-positioned)
-	-- §SCALE/S5: batched — was one RemoteEvent per DoT tick per mob.
+	-- §SCALE/S5: batched, not one RemoteEvent per DoT tick per mob.
 	if player and SkillEffects.NetworkManager then
 		queueNumber(pendingDamageNumbers, player, {
 			position      = pos,
@@ -593,9 +593,8 @@ function SkillEffects.ApplyVulnerabilityToMob(mob, effect)
 
 	-- §T2/Z9 (§T1P2-STACKS rule): non-stacking debuff — a re-application
 	-- keeps the STRONGER multiplier and the LONGER remaining duration;
-	-- it can never weaken or shorten what's already on the mob. (The old
-	-- code replaced the entry unconditionally, so a weaker/shorter cast
-	-- from another player could downgrade an active debuff.)
+	-- it can never weaken or shorten what's already on the mob (e.g. a
+	-- weaker cast from another player).
 	local newEnd = os.clock() + (effect.duration or 3)
 	local existing = activeMobEffects[mob][key]
 	if existing then
@@ -970,8 +969,8 @@ function SkillEffects.SendHealNumber(target, amount, healer, wasCrit, critProcs)
 		isHoT      = false,
 	}
 
-	-- §SCALE/S5: batched — an AoE heal over 6 allies used to cost 12
-	-- immediate RemoteEvents (target + healer echo each).
+	-- §SCALE/S5: batched — otherwise an AoE heal costs two immediate
+	-- RemoteEvents per ally (target + healer echo).
 	queueNumber(pendingHealNumbers, target, healData)
 	if healer and healer ~= target then
 		queueNumber(pendingHealNumbers, healer, healData)
@@ -1130,9 +1129,8 @@ function SkillEffects.TickHoT(target, entry)
 	elseif healer and SkillEffects.StatsManager and SkillEffects.StatsManager.CalculateHeal then
 		-- §AGX/BAL (§T1.3-BAL1): HoT ticks go through the heal pipeline
 		-- (Damage + flat HealingPower, × HealingPercent) like every other
-		-- heal. They used to read raw Damage only, so LifeSteward's innate
-		-- +15% HealingPercent and all HealingPower gear skipped the HoT.
-		-- Still no crit on ticks (unchanged).
+		-- heal, so innate HealingPercent and HealingPower gear apply to
+		-- HoTs. No crit on ticks.
 		local r = SkillEffects.StatsManager.CalculateHeal(healer, {
 			healMultiplier = healCoef,
 			canCrit        = false,

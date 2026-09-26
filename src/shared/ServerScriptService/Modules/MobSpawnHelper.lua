@@ -124,8 +124,8 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 -- §AGX/X45: which tiers get their physics pinned to the server. Default:
--- ALL tiers, normal included. SCALING_AUDIT's Humanoid budget (~100-150
--- live, 0.05-0.15 ms each) is already a server-side cost; Horde's
+-- ALL tiers, normal included. The Humanoid budget
+-- (ARCHITECTURE.md#scaling) is already a server-side cost; Horde's
 -- aliveCap = 72 sits well inside it, so server-owning trash adds only
 -- the assembly integration and removes the ownership hand-off churn.
 -- Auto ownership let a nearby client own a mob: the client's sim fought

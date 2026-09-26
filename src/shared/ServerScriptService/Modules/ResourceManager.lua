@@ -3,7 +3,7 @@
 local ResourceManager = {}
 
 local Players = game:GetService("Players")
--- §2.7a: RunService no longer required; regen loop uses task.wait at fixed rate.
+-- §2.7a: no RunService; the regen loop uses task.wait at a fixed rate.
 
 local Modules = script.Parent
 local NetworkManager = require(Modules:WaitForChild("NetworkManager"))
@@ -30,9 +30,8 @@ local function _voteManagerCheck()
 end
 
 -- §T1.4/R1: HitTracker hot-path cache. ResourceManager.Update runs at
--- 10 Hz per player and used to call Modules:FindFirstChild("HitTracker")
--- on every tick. Resolve once, cache function refs, then it's a plain
--- table read forever after.
+-- 10 Hz per player, so resolve HitTracker once and cache the function refs
+-- (ARCHITECTURE.md#hot-path-ref-cache).
 local _htResolved          = false
 local _htGetTimeSinceDealt  = nil
 local _htGetTimeSinceRcvd   = nil
@@ -76,8 +75,8 @@ local _PlayerDataManager = nil
 
 -- §AGX/D-FIX2: per-class resource bonus key in PlayerDataConfig.BonusStats
 -- (Determination / Aether / KillerInstinct / LifeEnergy). Talent nodes
--- ("+5 Aether") and gear rolls write these, but nothing read them, so
--- every "+N <resource>" was void. Derived from the behavior's
+-- ("+5 Aether") and gear rolls write these; this is their only reader.
+-- Derived from the behavior's
 -- CONFIG.ResourceName minus spaces ("Life Energy" → "LifeEnergy"),
 -- cached per class. Unknown keys just read 0 via GetBonus.
 local _resourceBonusKey = {}  -- { [className] = bonusKey | false }
@@ -152,13 +151,11 @@ function ResourceManager.Init()
 				if success then
 					ClassBehaviors[className] = behavior
 					if behavior.Init then behavior.Init() end
-					-- §T1.4/Y12: removed the per-behavior "Loaded" print.
+					-- §T1.4/Y12: no per-behavior "Loaded" print (boot noise).
 				else
-					-- §T1.4/Y4: a behavior that fails to load used to leave its
-					-- class with NO regen and only a quiet warn. Install a
-					-- documented zero-regen fallback so the class still
-					-- functions, and shout loudly so the broken module is
-					-- obvious at boot rather than mid-playtest.
+					-- §T1.4/Y4: a behavior that fails to load gets a documented
+					-- zero-regen fallback so the class still functions, and a
+					-- loud warn so the broken module is obvious at boot.
 					ClassBehaviors[className] = ResourceManager._FallbackBehavior(className)
 					warn(string.format(
 						"[ResourceManager] ⚠ FAILED to load behavior '%s' — class '%s' falls back to " ..
@@ -184,8 +181,7 @@ function ResourceManager.Init()
 	end
 
 	-- §T1.4/R6: register hit hooks via HitTracker's existing callback API
-	-- instead of relying on HitTracker.NotifyResourceManager. Hit-tracker
-	-- no longer needs to know ResourceManager exists; any future
+	-- so HitTracker doesn't need to know ResourceManager exists; any future
 	-- per-hit consumer (achievements, runes, future stat tracking)
 	-- registers the same way.
 	local htMod = Modules:FindFirstChild("HitTracker")
@@ -219,13 +215,9 @@ function ResourceManager.Init()
 		end)
 	end
 
-	-- §2.7a: fixed-tick regen scheduler.
-	-- Previously this was a Heartbeat connection, which fired at 60Hz and
-	-- then internally throttled to UpdateRate (0.1s). That wastes 59 out of
-	-- every 60 frames on a no-op iteration of every player. Use a dedicated
-	-- task.wait loop at exactly UpdateRate instead — we still pass the real
-	-- elapsed delta to Update() so behaviors that care about wall time still
-	-- see accurate values even if the scheduler slips.
+	-- §2.7a: fixed-tick regen scheduler. A task.wait loop at UpdateRate,
+	-- not a throttled 60 Hz Heartbeat; the real elapsed delta is still passed
+	-- to Update() so wall-time behaviors stay accurate if the scheduler slips.
 	task.spawn(function()
 		local lastTick = os.clock()
 		while true do
@@ -354,8 +346,7 @@ function ResourceManager.SetResource(player, value)
 	-- Force-notify at boundaries so the client always sees exactly 100 % / 0 %
 	-- even when fractional regen means the delta is smaller than NotifyThreshold.
 	-- §AGX/X20: only when the value actually moved — regen clamping at max
-	-- (and knockdown drain at 0) used to force a push on EVERY tick
-	-- (~10/s per full player, ~60/s while downed), each re-rendering the HUD.
+	-- (and knockdown drain at 0) must not push (and re-render the HUD) every tick.
 	local atBoundary = (data.current >= effectiveMax) or (data.current <= 0)
 	ResourceManager.NotifyClient(player, atBoundary and data.current ~= data.lastNotifiedValue)
 	return true
@@ -588,10 +579,8 @@ function ResourceManager.NotifyClient(player, force)
 	data.lastNotifiedValue = data.current
 	data.lastNotifiedMax = effectiveMax
 
-	-- §T1.4/R3: single getEffectiveMax + locally computed percent.
-	-- Avoids the redundant second evaluation that GetResourcePercent's
-	-- internal getEffectiveMax call used to introduce on every push.
-	-- (§AGX/X20: now computed above, before the early-out.)
+	-- §T1.4/R3, §AGX/X20: single getEffectiveMax (computed above, before the
+	-- early-out) + locally computed percent; no GetResourcePercent call.
 	local percent = (effectiveMax > 0) and (data.current / effectiveMax) * 100 or 0
 
 	NetworkManager.FireClient(player, "ResourceUpdate", {

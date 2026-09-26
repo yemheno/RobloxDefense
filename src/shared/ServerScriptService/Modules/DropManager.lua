@@ -170,7 +170,7 @@ end
 function DropManager.RollDrops(dropTable, mobLevel, delta)
 	local results = {}
 	local levelMultiplier = 1 + ((mobLevel or 1) - 1) * 0.1
-	-- §AGX/X44: resolved once per roll instead of per entry — RollDrops now
+	-- §AGX/X44: resolved once per roll instead of per entry — RollDrops
 	-- runs once per party member per kill, and an unresolved lookup retries
 	-- a pcall(require) each call.
 	local modeMults = getModeMults()
@@ -350,7 +350,7 @@ end
 ---@param playerLevel number? – recipient's account level (for §6 delta window)
 ---@param scaleLevel number?  – §AGX/X44: level for the +10%/level amount
 ---                             scaling; the recipient's own reward level.
----                             Defaults to mobLevel (old behaviour).
+---                             Defaults to mobLevel.
 function DropManager.ProcessKill(player, mobId, mobTier, worldPos, mobLevel, playerLevel, scaleLevel)
 	-- §Dr1: bail if the killer disconnected between the killing-blow
 	-- damage event and this drop-processing call. Without this, FireClient
@@ -367,8 +367,7 @@ function DropManager.ProcessKill(player, mobId, mobTier, worldPos, mobLevel, pla
 	end
 
 	-- §AGX/X44: amounts scale with the recipient's own level (scaleLevel),
-	-- not the party's highest — a level-5 carried by a level-100 used to
-	-- get ~3.9× the Merits of a solo level-5.
+	-- not the party's highest, so a carried low-level player earns like a solo one.
 	local drops = DropManager.RollDrops(dropTable, scaleLevel or mobLevel, delta)
 	if #drops == 0 then return end
 

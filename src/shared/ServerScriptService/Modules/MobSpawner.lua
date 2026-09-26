@@ -31,25 +31,15 @@ local CosmeticManager = nil
 -- CONFIGURATION
 -- ═══════════════════════════════════════════════════════════
 
--- §2.2e: Wave cap and future infinite mode.
---
---   MaxWave = 12 is the current Horde Mode alpha design. A run is twelve
---   authored waves with anchored party-level scaling; the run ends at wave 12
---   and AllWavesCompleted fires so HordeModeMain can award victory rewards.
---
---   Setting MaxWave = nil disables the cap and the spawner will keep
---   auto-advancing indefinitely. This is the intended hook for a future
---   "Endless / Infinite Horde" mode. When that ships we should:
---     1. Let the mode select its own cap (nil = endless, N = capped).
---     2. Promote MaxWave from this CONFIG table into a mode-scoped setting
---        (e.g. HordeMode vs EndlessMode pass their own value via Setup()).
---     3. Make sure WaveConfig has a fallback for wave numbers beyond the
---        authored list (procedural difficulty curve).
---     4. Revisit reward pacing — current merit/xp payouts assume a 12-wave
---        ceiling.
+-- §2.2e: Wave cap. MobSpawner is the LANE (WaveConfig) spawner; Horde uses
+-- HordeModeSpawner. A run is MaxWave authored waves with anchored party-level
+-- scaling; past the cap AllWavesCompleted fires and GameStateManager
+-- triggers Victory. MaxWave = nil disables the cap (auto-advance forever);
+-- an endless mode would also need a WaveConfig fallback past the authored
+-- list and new reward pacing (BACKLOG §4-ENDLESS).
 local CONFIG = {
 	AutoAdvanceWaves = true,
-	AutoAdvanceDelay = 7,    -- 7s between waves (was 3)
+	AutoAdvanceDelay = 7,    -- seconds between waves
 	MaxWave = 12,            -- fixed 12-wave run; set to nil for endless (see §2.2e note above)
 }
 
@@ -65,10 +55,9 @@ local currentWave = 0
 local waveState = "idle"
 -- §AGX/T11-JAN: run generation. Reset() bumps it so a wave thread from the
 -- previous run (parked in the pre-spawn hook, the spawn loop, the clear
--- poll or the auto-advance delay) exits instead of resuming. The old
--- `waveState == "idle"` check alone missed Reset → StartWave (state back to
--- "spawning", two spawn threads) and Reset during AutoAdvanceDelay (state
--- "idle", so it restarted at wave 1).
+-- poll or the auto-advance delay) exits instead of resuming. `waveState`
+-- alone can't tell: Reset → StartWave puts it back to "spawning", and a
+-- Reset during AutoAdvanceDelay leaves it "idle" like a normal gap.
 local waveGeneration = 0
 local function waveAborted(gen)
 	return waveState == "idle" or gen ~= waveGeneration
@@ -105,9 +94,8 @@ local rewardLevel = nil
 -- ═══════════════════════════════════════════════════════════
 
 function MobSpawner.Init()
-	-- §2.2a fix: hard-error if the mobs folder never arrives. Previously Init
-	-- would warn and fall through, letting CacheTemplates crash later on a nil
-	-- FindFirstChild and masking the real cause behind a zero template count.
+	-- §2.2a: hard-error if the mobs folder never arrives, so the real cause
+	-- isn't masked by a later nil crash in CacheTemplates.
 	mobsFolder = ReplicatedStorage:WaitForChild("Mobs", 10)
 	if not mobsFolder then
 		error("[MobSpawner] ReplicatedStorage/Mobs folder not found after 10s — " ..
@@ -119,8 +107,8 @@ function MobSpawner.Init()
 	-- hard-error here. HordeMode loads this module for type sharing but
 	-- never calls StartWave — it uses HordeModeSpawner instead. Failing
 	-- Init in that place would cascade-fail every later module load. The
-	-- real hard-fail moves into StartWave, which only runs in places that
-	-- actually need a MobSpawn part (LaneDefense, CentralBoss).
+	-- hard-fail lives in StartWave, which only runs in places that need a
+	-- MobSpawn part (LaneDefense, CentralBoss).
 	spawnPoint = workspace:FindFirstChild("MobSpawn")
 	if not spawnPoint then
 		warn("[MobSpawner] workspace/MobSpawn not found at Init — wave-driven " ..
@@ -143,12 +131,10 @@ function MobSpawner.Init()
 
 	NetworkManager.OnClientEvent("RequestNextWave", function(_player)
 		if MobSpawner.ClientWaveRequestsDisabled then return end  -- §AGX/X28: off in CentralBoss (X5)
-		-- §AGX/X5: only while a run is actually in progress. A request from
-		-- Idle used to start an unlosable wave farm (no line damage, wipes
-		-- ignored, XP still paid, forced Victory at the end).
+		-- §AGX/X5: only while a run is actually in progress; a request from
+		-- Idle would start an unlosable wave farm.
 		local gsmMod = Modules:FindFirstChild("GameStateManager")
-		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-		-- so this getter always returned nil. Two-step form keeps both.
+		-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 		local okGsm, gsm = false, nil
 		if gsmMod then okGsm, gsm = pcall(require, gsmMod) end
 		if not (okGsm and gsm and gsm.IsDefending and gsm.IsDefending()) then return end
@@ -259,8 +245,8 @@ function MobSpawner.SetPreSpawnHook(fn)
 	preSpawnHook = fn
 end
 
--- §LD-V2 fix: split the wave-started signal into two parts.
--- FireWaveStarted now ONLY fires server-side callbacks (used by
+-- §LD-V2: the wave-started signal has two parts.
+-- FireWaveStarted ONLY fires server-side callbacks (used by
 -- LaneDefenseMain to start the tactical vote — needs to run BEFORE the
 -- preSpawnHook waits for that vote to resolve).
 -- BroadcastWaveStarted fires the network event the HUD listens to for
@@ -349,13 +335,9 @@ end
 function MobSpawner.SpawnWave(waveData, gen)
 	gen = gen or waveGeneration  -- §AGX/T11-JAN
 	-- Wait for pre-spawn hook (e.g. tactical vote) before spawning.
-	-- §2.2d: pcall the hook so a thrown error can't dead-lock the wave,
-	-- and log the actual elapsed time on both success and timeout so we
-	-- can tell whether 10s is a reasonable budget in practice.
-	-- §LD-V2 fix: bumped budget from 10s → 20s. Vote timer is 10s and the
-	-- §LD-V1 card-display hold adds 3.5s more, so realistic vote-driven
-	-- pre-spawns are ~13–14s; the old 10s budget would have started
-	-- timing out spuriously after the V1 fix.
+	-- §2.2d, §LD-V2: pcall the hook so a thrown error can't dead-lock the
+	-- wave, and log the elapsed time on success and timeout. The budget must
+	-- exceed the vote timer plus the §LD-V1 card-display hold.
 	if preSpawnHook then
 		local PRE_SPAWN_HOOK_TIMEOUT = 20
 		local hookDone = false
@@ -394,12 +376,9 @@ function MobSpawner.SpawnWave(waveData, gen)
 	-- §AGX/T11-JAN: Reset during the hook wait → don't announce a dead wave.
 	if waveAborted(gen) then return end
 
-	-- §LD-V2: now that the pre-spawn hook (vote / card display / etc.) has
-	-- resolved, broadcast the WaveStarted client event so the HUD banner
-	-- appears in sync with mobs actually arriving. Server-side
-	-- onWaveStartedCallbacks already fired earlier in StartWave so any
-	-- mode-specific wave-trigger logic (vote start, danger reset) ran on
-	-- time.
+	-- §LD-V2: the pre-spawn hook has resolved, so broadcast WaveStarted now
+	-- and the HUD banner lines up with mobs arriving. Server-side
+	-- onWaveStartedCallbacks already fired in StartWave (vote start, danger reset).
 	BroadcastWaveStarted(currentWave, mobsToSpawnThisWave, waveData.level)
 
 	-- Compute effective mob level.
@@ -599,7 +578,7 @@ function MobSpawner.SpawnMob(mobId, level, overridesArg)
 	mob:SetAttribute("Armor", mobData.armor or 0)
 	mob:SetAttribute("KnockbackResist", mobData.knockbackResist or 0)
 
-	-- §2.2c fix: spawnPoint is resolved eagerly in Init(); no lazy fallback here.
+	-- §2.2c: spawnPoint is resolved eagerly in Init(); no lazy fallback here.
 
 	local humanoid = mob:FindFirstChild("Humanoid")
 	if humanoid then
@@ -613,9 +592,9 @@ function MobSpawner.SpawnMob(mobId, level, overridesArg)
 	-- (the root cause of the "phantom box at spawn" intermittent bug).
 	mob.Parent = workspace
 	if spawnPoint then
-		-- §T3/W9b: uniform scatter across the WHOLE spawn part (was a
-		-- fixed-X, ±5-stud-Z line). Resize the spawn part in Studio to
-		-- reshape the area. Keeps the §LD-MS1 3-stud ground-clip lift.
+		-- §T3/W9b: uniform scatter across the WHOLE spawn part. Resize the
+		-- spawn part in Studio to reshape the area. Keeps the §LD-MS1
+		-- ground-clip lift.
 		mob:PivotTo(MobSpawnHelper.GetSpawnCFrame(spawnPoint, 3))
 	end
 
@@ -629,8 +608,7 @@ function MobSpawner.SpawnMob(mobId, level, overridesArg)
 	return mob
 end
 
--- §T3/W9: delegates to the shared helper (was a verbatim copy of the
--- same algorithm living in HordeModeSpawner too).
+-- §T3/W9: delegates to the shared helper (MobSpawnHelper, also used by HordeModeSpawner).
 function MobSpawner.GetRandomMobId(weights)
 	return MobSpawnHelper.PickWeightedId(weights)
 end

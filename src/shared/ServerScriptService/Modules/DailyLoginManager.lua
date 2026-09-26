@@ -66,7 +66,7 @@ local function getCurrencyManager()
     return CurrencyManager
 end
 
--- §DL1 fix: per-player claim lock so two simultaneous "ClaimDailyLogin"
+-- §DL1: per-player claim lock so two simultaneous "ClaimDailyLogin"
 -- packets in the same network frame can't both pass CanClaim and grant
 -- duplicate rewards.
 local claimLock = setmetatable({}, { __mode = "k" })

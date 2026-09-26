@@ -13,9 +13,9 @@ local function CreateRefinementSystem(Config, equipmentType)
     local ChapterConfig   = require(Modules:WaitForChild("ChapterConfig"))
     local PlayerDataManager = require(Modules:WaitForChild("PlayerDataManager"))
 
-    -- §AGX/UI-P4: player-facing rejections used to be silent (return value
-    -- dropped by the caller / warn only). NotifyService pushes a toast; it
-    -- never throws, and a missing module is skipped, so logic is unchanged.
+    -- §AGX/UI-P4: player-facing rejections get a toast (callers drop the
+    -- return value). NotifyService never throws, and a missing module is
+    -- skipped, so logic doesn't depend on it.
     local NotifyService = nil
     local function notifyReject(player, text)
         if not NotifyService then
@@ -31,7 +31,7 @@ local function CreateRefinementSystem(Config, equipmentType)
     -- Will be set by the manager
     System.Manager = nil
 
-    -- §ER2 fix: per-player attempt lock so two concurrent Attempt() calls
+    -- §ER2: per-player attempt lock so two concurrent Attempt() calls
     -- can't both pass the cost check, both call SpendMerits/SpendEssence,
     -- and both apply rolls. Weak keys so disconnecting players are GC'd.
     local attemptLock = setmetatable({}, { __mode = "k" })
@@ -98,9 +98,8 @@ local function CreateRefinementSystem(Config, equipmentType)
         local cost     = Config.GetRefinementCost(currentRefinement)
         local currency = Config.REFINEMENT_CURRENCY
 
-        -- §ER1 fix: SpendMerits / SpendEssence can return false (race lost,
-        -- balance changed since CanAfford). Was being ignored — would let
-        -- the player roll the refinement for free.
+        -- §ER1: SpendMerits / SpendEssence can return false (race lost,
+        -- balance changed since CanAfford); abort then, or the roll is free.
         if cost > 0 then
             local canAfford
             if currency == "Merits" then
@@ -238,7 +237,7 @@ local function CreateRefinementSystem(Config, equipmentType)
             return false, 0, "Refinement already in progress"
         end
         -- §AGX/WC: lock held for the whole pcall'd body and released on every
-        -- path (was: an error between set and release left it stuck for the session).
+        -- path, so an error can't leave it stuck for the session.
         attemptLock[player] = true
         local txn = { spent = 0, currency = nil, mutated = false }  -- §AGX/D-FIX: S4
         local ok, success, level, msg = pcall(attemptBody, player, txn)

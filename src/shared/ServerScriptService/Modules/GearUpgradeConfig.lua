@@ -58,8 +58,8 @@ GearUpgradeConfig.TEMPER_THRESHOLDS = {
 	[3]  = 10,  -- band +3→+6  (rates 90/80/70%)
 	[6]  = 18,  -- band +6→+9  (rates 60/50/40%)
 	[9]  = 28,  -- band +9→+12 (rates 30/22/20%)
-	-- §AGX/X43: 36 → 18. With the softer band-12 rates below, pity is the
-	-- backstop, not the main route: expected +12→+15 cost ≈ 0.51M (was 1.9M).
+	-- §AGX/X43: with the softer band-12 rates below, pity is the
+	-- backstop, not the main route.
 	[12] = 18,  -- band +12→+15 (rates 18/14/10%)
 }
 
@@ -86,12 +86,10 @@ GearUpgradeConfig.REFINEMENT_SUCCESS = {
 }
 
 -- Refinement attempt cost in Merits (per §13).
--- §AGX/X43: +11..+14 were 40k/60k/90k/140k. With the rates above and the
--- band-12 threshold of 18, the Chapter 4 ladder per piece (T10 to +12, T11
--- to +13, T12 to +15; exact DP of EquipmentRefinement's rules, incl. the
--- §AGX/X9 cap clamp) drops from ≈3.96M to ≈2.06M Merits: ≈25 h on Hard or
--- ≈16 h on Nightmare at level 175 (was ≈48 h / ≈32 h). +12: 494k → 454k;
--- +15: 2.39M → 0.96M. +0..+10 unchanged (Chapters 1–2 identical).
+-- §AGX/X43, §AGX/X9: +11 and up are tuned together with the band-12 rates
+-- and threshold (Chapter 4 ladder costed by an exact DP of
+-- EquipmentRefinement's rules, incl. the cap clamp). Numbers and hours:
+-- BALANCE_NUMBERS.md#refinement-system.
 GearUpgradeConfig.REFINEMENT_COST = {
 	[0]  = 300,    [1]  = 500,    [2]  = 800,    [3]  = 1200,
 	[4]  = 1800,   [5]  = 3000,   [6]  = 5000,   [7]  = 8000,

@@ -49,12 +49,10 @@ end
 -- §T1.4/Y5: CreateTierStats / CreateReceivedTierStats / CreateStatsBlock
 -- removed with the lifetime/session blocks they fed (see below).
 --
--- §T1.4/Y5: the lifetime/session dealt+received accumulation blocks were
--- removed. They were written every hit but never read anywhere, and they
--- DUPLICATED the authoritative lifetime stats that AchievementManager
--- keeps in PlayerData (via the OnHitDealt callback below). HitTracker now
--- owns only what's actually consumed: live combo state + combat
--- timestamps (for ResourceManager's in-combat checks).
+-- §T1.4/Y5: HitTracker owns only what's consumed: live combo state +
+-- combat timestamps (for ResourceManager's in-combat checks). Lifetime
+-- dealt/received stats live in PlayerData via AchievementManager's
+-- OnHitDealt callback; don't duplicate them here.
 local function CreatePlayerStats()
 	return {
 		combo = {
@@ -138,8 +136,8 @@ function HitTracker.RecordHitDealt(player, hitData)
 	-- Update combo
 	HitTracker.UpdateComboOnHit(player, hitData, now)
 
-	-- §T1.4/R6: ResourceManager now registers via OnHitDealt() like every
-	-- other consumer. No bespoke dispatcher path required here.
+	-- §T1.4/R6: ResourceManager registers via OnHitDealt() like every
+	-- other consumer; no bespoke dispatcher path.
 	for _, cb in ipairs(hitDealtCallbacks) do
 		task.spawn(cb, player, hitData)
 	end
@@ -278,8 +276,8 @@ function HitTracker.ResetSession(player)
 	local stats = playerStats[player]
 	if not stats then return end
 
-	-- §T1.4/Y5: only combo session state remains to reset (the session
-	-- stat block was removed). Lifetime-best combo is preserved.
+	-- §T1.4/Y5: only combo session state is reset here. Lifetime-best
+	-- combo is preserved.
 	stats.combo.current = 0
 	stats.combo.best = 0
 	stats.combo.damageInCombo = 0

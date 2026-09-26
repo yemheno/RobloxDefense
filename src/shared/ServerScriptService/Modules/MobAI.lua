@@ -18,7 +18,7 @@ local Janitor        = require(Modules:WaitForChild("Janitor"))  -- §AGX/T11-JA
 local HitTracker = nil
 local MonitoringSystem = nil
 
--- §AGX/X12: DamageHandler, lazy (§5.3 pattern, `false` = looked, not found).
+-- §AGX/X12: DamageHandler, lazy (ARCHITECTURE.md#lazy-getter, `false` = looked, not found).
 -- Thorns kills route through DamageHandler.ApplyRawDamage and the Died
 -- safety net asks IsDeathHandled. Lazy so there's no load-order coupling
 -- with AttackHandler.
@@ -48,9 +48,8 @@ local UNHANDLED_CORPSE_TIMEOUT = 2
 -- CONSTANTS
 -- ═══════════════════════════════════════════════════════════
 
--- §2.1d: debug-log gate. Flip to true locally when diagnosing MobAI issues.
--- Production default: false — registering a single wave spews hundreds of
--- lines otherwise.
+-- §2.1d: debug-log gate. Flip to true locally when diagnosing MobAI issues;
+-- keep false in production (one wave registers hundreds of log lines).
 local DEBUG_MOB_AI = false
 
 local STATES = {
@@ -102,15 +101,15 @@ end
 --- Each mob's WalkSpeed is set to baseSpeed × mult.
 --- No-op when hordeModeTargeting is false (safety guard).
 --- @param mult number  new multiplier (e.g. 1.15 for +15% on top of registered speed)
--- §T3/W6 note: only ever called with 1.0 today (HordeModeSpawner.Stop
--- reset) — phase speed boosts are baked into each mob's baseSpeed at
--- spawn instead. Kept as the seam for a future live global speed lever.
+-- §T3/W6: only ever called with 1.0 today (HordeModeSpawner.Stop reset);
+-- phase speed boosts are baked into each mob's baseSpeed at spawn. Kept as
+-- the seam for a live global speed lever.
 function MobAI.SetHordeGlobalSpeedMult(mult)
 	if not hordeModeTargeting then return end
 	hordeGlobalSpeedMult = mult
 	for _, data in pairs(activeMobs) do
 		if data.state ~= STATES.DEAD and data.humanoid and not paused then
-			-- §T3/W6: preserve frenzyMult (was dropped, same as SetPaused).
+			-- §T3/W6: preserve frenzyMult (same product as SetPaused).
 			data.humanoid.WalkSpeed = (data.baseSpeed or data.config.speed)
 				* (data.frenzyMult or 1) * mult
 		end
@@ -133,9 +132,8 @@ local castIdCounter = 0
 function MobAI.SetPaused(isPaused)
 	paused = isPaused == true
 	-- Immediately freeze or unfreeze walk speed for every active mob.
-	-- §T3/W6: restore includes frenzyMult — the old restore dropped it,
-	-- so a resumed mob ran at pre-frenzy speed for up to 5 s until the
-	-- next frenzy tick happened to rewrite WalkSpeed.
+	-- §T3/W6: restore includes frenzyMult; the frenzy tick only rewrites
+	-- WalkSpeed when the mult changes, so it won't correct a bare restore.
 	for mob, data in pairs(activeMobs) do
 		if data.state ~= STATES.DEAD and data.humanoid then
 			local restoreSpeed = (data.baseSpeed or data.config.speed)
@@ -296,7 +294,7 @@ function MobAI.RegisterMob(mob, mobId, level, difficultyOverrides)
 		frenzyMult   = 1.0,  -- last applied mult; cached so we only push WalkSpeed when it changes
 	}
 
-	-- §AGX/T11-JAN: a re-register of the same model used to overwrite the
+	-- §AGX/T11-JAN: a re-register of the same model must not overwrite the
 	-- entry and orphan the previous Died/AncestryChanged conns.
 	local previous = activeMobs[mob]
 	if previous and previous.janitor then
@@ -325,11 +323,10 @@ function MobAI.RegisterMob(mob, mobId, level, difficultyOverrides)
 		end
 	end
 
-	-- §T3/W4 (§14b): track the per-mob connections so UnregisterMob can
-	-- disconnect them explicitly — a mob :Destroy()ed without firing Died
-	-- no longer leaves dangling closures holding the mob table alive.
-	-- §AGX/T11-JAN: the two conns live on a per-mob Janitor (house pattern,
-	-- counted as "MobAI.mob" in the JAN2 telemetry). UnregisterMob destroys it.
+	-- §T3/W4, §14b, §AGX/T11-JAN: the per-mob connections live on a per-mob
+	-- Janitor (counted as "MobAI.mob" in the JAN2 telemetry) that
+	-- UnregisterMob destroys, so a mob :Destroy()ed without firing Died
+	-- leaves no closures holding the mob table alive.
 	local mobJan = Janitor.new("MobAI.mob")
 	mobData.janitor = mobJan
 	mobJan:Add(humanoid.Died:Connect(function()
@@ -382,11 +379,8 @@ function MobAI.UnregisterMob(mob)
 		end
 
 		-- Clean up pending skill hits and basic attacks for this mob.
-		-- §2.1b fix: match by mob reference, NOT by castId substring. The old
-		-- substring approach would misfire when two mobs had hierarchical name
-		-- collisions (e.g. "Workspace.Mobs.Zombie" is a prefix of
-		-- "Workspace.Mobs.Zombie.Variant") — a short-named mob dying could clear
-		-- cast entries for a longer-named mob still alive.
+		-- §2.1b: match by mob reference, NOT by castId substring (a
+		-- short-named mob's path can prefix another live mob's).
 		for castId, entry in pairs(pendingSkillHits) do
 			if entry.mobData and entry.mobData.mob == mob then
 				pendingSkillHits[castId] = nil
@@ -407,9 +401,9 @@ end
 -- ═══════════════════════════════════════════════════════════
 
 -- §FRENZY1: per-mob alive-time speed curve.
---   * 0–10 s    : base speed (grace window).
---   * 10 s→      : +5 % every 5 s.
---   * Cap        : +60 % over base (12 ticks = max at 70 s alive).
+--   * < FRENZY_GRACE_SEC : base speed (grace window).
+--   * then       : +FRENZY_PER_TICK at the grace mark and every tick after.
+--   * Cap        : FRENZY_MAX_BONUS over base.
 -- Returns the multiplier (>= 1.0). Cheap arithmetic, no allocations.
 local FRENZY_GRACE_SEC      = 10
 local FRENZY_TICK_SEC       = 5
@@ -450,14 +444,12 @@ function MobAI.FireNearbyClients(origin, alwaysInclude, eventName, payload)
 end
 
 -- ═══════════════════════════════════════════════════════════
--- §PERF/F1 (task #17): per-frame player snapshot
+-- §PERF/F1: per-frame player snapshot
 -- ═══════════════════════════════════════════════════════════
--- FindTarget used to call Players:GetPlayers() and redo ~4 attribute /
--- FindFirstChild lookups per player for EVERY mob AI tick (~360 calls/s
--- at 72 mobs — the hottest redundant work on a busy combat server).
--- All mobs ticking in the same Heartbeat frame now share one snapshot
--- containing only VALID targets (character + root + humanoid alive +
--- DeathState "Alive"), in GetPlayers() order.
+-- Per-player target lookups on EVERY mob AI tick are the hottest redundant
+-- work on a busy combat server, so all mobs ticking in the same Heartbeat
+-- frame share one snapshot containing only VALID targets (character +
+-- root + humanoid alive + DeathState "Alive"), in GetPlayers() order.
 local snapshotList     = {}   -- array of entries
 local snapshotByPlayer = {}   -- [player] = entry
 local snapshotStamp    = -1   -- `now` of the frame this snapshot is for
@@ -669,9 +661,8 @@ function MobAI.ExecuteBasicAttack(data, target, now)
 	local animationId = config.animations and config.animations.attack
 	local damageDelay = config.damageDelay or 0.25
 	castIdCounter = castIdCounter + 1
-	-- §MEM/M7: cast ids are opaque match tokens (never parsed — grep
-	-- verified). GetFullName() walked the whole ancestry building a string
-	-- on every attack; the counter alone already guarantees uniqueness.
+	-- §MEM/M7: cast ids are opaque match tokens (never parsed); the
+	-- counter alone guarantees uniqueness, no GetFullName() string needed.
 	local attackCastId = "b_" .. castIdCounter
 
 	-- Store pending attack for client-auth resolution
@@ -683,10 +674,10 @@ function MobAI.ExecuteBasicAttack(data, target, now)
 		resolved = false,
 	}
 
-	-- §SCALE/S2: broadcast only to players near the mob (animation is
-	-- invisible from across the map; was FireAllClients = O(M·P) sends/s
-	-- under siege). The TARGET is always included — client-auth hit
-	-- detection depends on this event reaching them.
+	-- §SCALE/S2: broadcast only to players near the mob (the animation is
+	-- invisible from across the map; FireAllClients is O(M·P) sends/s under
+	-- siege). The TARGET is always included — client-auth hit detection
+	-- depends on this event reaching them.
 	MobAI.FireNearbyClients(data.rootPart.Position, target, "MobBasicAttackCast", {
 		attackCastId = attackCastId,
 		mob = data.mob,
@@ -763,9 +754,8 @@ function MobAI.ExecuteSkill(data, skill, target, now)
 	data.humanoid:MoveTo(data.rootPart.Position)
 
 	local origin = data.rootPart.Position
-	-- §MEM/M7: same as attackCastId — counter-based opaque token. Bonus:
-	-- the old timestamp-only id could collide for two same-skill casts in
-	-- one clock print; the counter cannot.
+	-- §MEM/M7: same as attackCastId — counter-based opaque token (a
+	-- timestamp id could collide for two same-skill casts).
 	castIdCounter = castIdCounter + 1
 	local skillCastId = "s_" .. skill.id .. "_" .. castIdCounter
 
@@ -902,9 +892,9 @@ function MobAI.ResolveSkillHits(skillCastId)
 	local mobData = pending.mobData
 	local origin = pending.origin
 
-	-- §2.1a fix: race guard. A skill cast can be queued just as the mob
+	-- §2.1a: race guard. A skill cast can be queued just as the mob
 	-- dies; resolving after death would apply damage from a corpse.
-	-- ResolveBasicAttack (line 793) already has this check; mirror it here.
+	-- Mirrors the same check in MobAI.ResolveBasicAttack.
 	if not mobData or mobData.state == STATES.DEAD then
 		pendingSkillHits[skillCastId] = nil
 		return
@@ -962,11 +952,10 @@ end
 -- EFFECTS
 -- ═══════════════════════════════════════════════════════════
 
--- §AGX/X13: player Stun/Slow used to capture WalkSpeed and restore it via
--- task.delay. Overlaps (Roar slow → GroundSlam stun) restored the SLOWED
--- speed last and left players at half speed until respawn. Now each effect
--- stores an expiry on the humanoid and every expiry recomputes speed from
--- the character's natural speed ("BaseWalkSpeed", stamped by DeathSystem).
+-- §AGX/X13: player Stun/Slow never capture-and-restore WalkSpeed
+-- (overlapping effects would restore a slowed speed). Each effect stores an
+-- expiry on the humanoid and every expiry recomputes speed from the
+-- character's natural speed ("BaseWalkSpeed", stamped by DeathSystem).
 -- Knocked-down players and movement-locked casts own WalkSpeed; they read
 -- "MoveFxSpeed" / "BaseWalkSpeed" when they restore.
 -- Active slows per humanoid: { { mult, expires }, ... } (weak keys —
@@ -1051,7 +1040,7 @@ MobAI.RecomputePlayerMoveSpeed = recomputePlayerMoveSpeed
 
 -- §AGX/STATS: StatusResistance shortens mob-applied Stun/Slow durations.
 -- Hot-ish path (every mob skill hit on a player): the GetTotalStat and
--- CapStat function refs are resolved ONCE (Audit_4.7 §5.4).
+-- CapStat function refs are resolved ONCE (ARCHITECTURE.md#hot-path-ref-cache).
 local _srResolved = false
 local _getTotalStat = nil
 local _capStat = nil
@@ -1059,14 +1048,12 @@ local function getStatusResistance(player)
 	if not _srResolved then
 		_srResolved = true
 		local pdm = Modules:FindFirstChild("PlayerDataManager")
-		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-		-- so this getter always returned nil. Two-step form keeps both.
+		-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 		local ok, mod = false, nil
 		if pdm then ok, mod = pcall(require, pdm) end
 		if ok and mod then _getTotalStat = mod.GetTotalStat end
 		local cfgMod = Modules:FindFirstChild("PlayerDataConfig")
-		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-		-- so this getter always returned nil. Two-step form keeps both.
+		-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 		local okC, cfg = false, nil
 		if cfgMod then okC, cfg = pcall(require, cfgMod) end
 		if okC and cfg then _capStat = cfg.CapStat end
@@ -1091,7 +1078,7 @@ function MobAI.ApplyEffectToPlayer(player, effect, origin)
 
 		local now      = os.clock()
 		local duration = effect.duration or (effect.type == "Stun" and 1 or 2)
-		-- §AGX/STATS: StatusResistance % (capped 60) shortens the effect.
+		-- §AGX/STATS: StatusResistance % (capped via StatCaps) shortens the effect.
 		local resist = getStatusResistance(player)
 		if resist > 0 then duration = duration * (1 - resist / 100) end
 		if duration <= 0 then return end
@@ -1187,17 +1174,16 @@ end
 -- TARGET FINDING
 -- ═══════════════════════════════════════════════════════════
 
--- §PERF/F1: iterates the shared per-frame snapshot (built in Update)
--- instead of GetPlayers() + per-player lookups. Filter semantics are
--- identical — the snapshot already excludes characterless / dead /
--- non-"Alive" players, in the same GetPlayers() order.
+-- §PERF/F1: iterates the shared per-frame snapshot (built in Update),
+-- which already excludes characterless / dead / non-"Alive" players, in
+-- GetPlayers() order.
 function MobAI.FindTarget(data)
 	local mobPos = data.rootPart.Position
 	local config = data.config
 	local mobX = mobPos.X
 
 	if data.forcedTarget then
-		-- Snapshot membership == exactly the old validity checks
+		-- Snapshot membership = the validity checks
 		-- (character + humanoid alive + DeathState "Alive").
 		if snapshotByPlayer[data.forcedTarget] then
 			return data.forcedTarget
@@ -1285,8 +1271,7 @@ function MobAI.DamagePlayer(player, baseDamage, mobData, skillId)
 			local reflectDamage = math.floor(finalDamage * thorns / 100)
 			if reflectDamage > 0 then
 				-- §AGX/X12: route through DamageHandler so a Thorns kill
-				-- credits the player and runs the normal death path (was a
-				-- bare TakeDamage: corpse left behind, no rewards).
+				-- credits the player and runs the normal death path.
 				local dh = getDamageHandler()
 				if dh and dh.ApplyRawDamage then
 					dh.ApplyRawDamage(mobData.mob, reflectDamage, player)
@@ -1340,7 +1325,7 @@ function MobAI.GetMobData(mob)
 end
 
 function MobAI.IsAnyMobAlive()
-	-- §MEM/M8: first-key test instead of counting all 70+ mobs.
+	-- §MEM/M8: first-key test instead of counting every mob.
 	return next(activeMobs) ~= nil
 end
 

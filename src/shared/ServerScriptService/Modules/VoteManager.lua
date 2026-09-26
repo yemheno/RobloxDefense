@@ -80,7 +80,7 @@ local FRAGMENT_CARD_ID     = "RespecFragment"
 -- ─────────────────────────────────────────────────────────────────────
 local voteActive       = false
 -- §AGX/X30b: set once _Resolve runs; voteActive stays true through the
--- result grace window, and a late VoteCast used to re-run _Resolve and
+-- result grace window, so a late VoteCast must not re-run _Resolve and
 -- apply a SECOND card.
 local voteResolved     = false
 local voteOptions      = {}     -- { cardId, cardId, cardId }
@@ -93,10 +93,9 @@ local voteListenerConn  = nil
 local voteListenerConnPersonal = nil
 
 -- §AGX/T11-JAN: run-scoped Janitor for the post-resolve timers (VoteCountdown
--- broadcast + the voteActive=false grace flip). They used to be bare
--- task.delays that outlived Reset(): a Reset followed by a new vote inside
--- VOTE_RESULT_GRACE_SEC let the OLD timer clear voteActive mid-vote
--- (unpausing the world) and send a stray VoteCountdown. Reset destroys it.
+-- broadcast + the voteActive=false grace flip). Reset destroys it, so after
+-- a Reset + new vote inside VOTE_RESULT_GRACE_SEC an OLD timer can't clear
+-- voteActive mid-vote (unpausing the world) or send a stray VoteCountdown.
 local Janitor = require(script.Parent:WaitForChild("Janitor"))
 local runJanitor = Janitor.new("VoteManager.run")
 
@@ -180,11 +179,9 @@ function VoteManager.Setup(deps)
         VoteManager._OnVoteCastPersonal(player, cardIndex)
     end)
 
-    -- §T5/S1: mid-run leaver cleanup. These four tables are Player-keyed
-    -- and were only cleared by the between-run Reset(), so every mid-run
-    -- leaver left entries behind for the rest of the run. (Rejoiners get
-    -- a NEW Player instance, so stale entries never blocked anyone —
-    -- pure leak, now closed at the source.)
+    -- §T5/S1: mid-run leaver cleanup. These four tables are Player-keyed;
+    -- the between-run Reset() alone would leak every mid-run leaver's
+    -- entries for the rest of the run.
     Players.PlayerRemoving:Connect(function(player)
         playersVoted[player]          = nil
         personalVote[player]          = nil
@@ -511,7 +508,7 @@ function VoteManager._OnVoteCast(player, cardIndex)
     if not voteActive or voteResolved then return end
     if playersVoted[player] then return end  -- one vote per player
 
-    -- §AGX/X30: integer index only (1.5 / NaN used to slip past the bounds
+    -- §AGX/X30: integer index only (1.5 / NaN would slip past the bounds
     -- check and burn the player's vote), and only eligible voters count.
     cardIndex = tonumber(cardIndex)
     if not cardIndex or cardIndex ~= math.floor(cardIndex)
@@ -527,7 +524,7 @@ function VoteManager._OnVoteCast(player, cardIndex)
         totalVoted = VoteManager._CountVoted(),
     })
 
-    -- §VM1 fix: count CURRENTLY-CONNECTED eligible players, not the
+    -- §VM1: count CURRENTLY-CONNECTED eligible players, not the
     -- snapshot taken at StartVote time. If a player leaves mid-vote the
     -- threshold should drop with them; otherwise the vote can never
     -- early-resolve and always runs to full timeout.
@@ -560,7 +557,7 @@ function VoteManager._OnVoteCastPersonal(player, cardIndex)
     cardIndex = tonumber(cardIndex)
     if not cardIndex or cardIndex < 1 or cardIndex > #slot.cards then return end
 
-    -- §VM2 fix: guard against nil cardId. Bounds check above protects
+    -- §VM2: guard against nil cardId. Bounds check above protects
     -- against client-side tampering on cardIndex, but `slot.cards` could
     -- be cleared by a concurrent Reset() right before this read.
     local cardId = slot.cards[cardIndex]
@@ -641,10 +638,8 @@ function VoteManager._ApplyPersonalPick(player, cardId, cardIndex)
         return  -- §VM3: don't burn the cooldown if apply failed
     end
 
-    -- §VM3 fix: only record the cooldown AFTER a successful apply.
-    -- Previously the cooldown was set before the pcall; an erroring
-    -- apply left the player with a burned cooldown for a card they
-    -- never actually received.
+    -- §VM3: only record the cooldown AFTER a successful apply, so an
+    -- erroring apply doesn't burn the cooldown.
     if card.cooldownKey then
         local pcd = personalCooldowns[player] or {}
         pcd[card.cooldownKey] = os.clock()
@@ -658,7 +653,7 @@ function VoteManager._ClosePersonal()
     -- the countdown event still uses FireAllClients — every player gets
     -- the same 'Get ready!' counter regardless of who picked first.
     personalVote = {}
-    schedulePostResolve()  -- §AGX/T11-JAN: run-scoped (was two bare task.delays)
+    schedulePostResolve()  -- §AGX/T11-JAN: run-scoped timers
 end
 
 -- ─────────────────────────────────────────────────────────────────────
@@ -697,10 +692,10 @@ function VoteManager._Resolve()
     local winnerCard   = CardRegistry.GetCard(winnerCardId)
 
     -- §T5/S2: nil-guard. voteOptions were valid at StartVote, but if the
-    -- registry ever loses the card between start and resolve, the old
-    -- code crashed here — leaving voteActive stuck true (vote system
-    -- deadlocked for the run). Complete the lifecycle with a stub result
-    -- instead: clients close their vote UI, no reward applies.
+    -- registry ever loses the card between start and resolve, a crash here
+    -- would leave voteActive stuck true (vote system deadlocked for the
+    -- run). Complete the lifecycle with a stub result instead: clients close
+    -- their vote UI, no reward applies.
     if not winnerCard then
         warn("[VoteManager] Winner card missing from registry:", tostring(winnerCardId),
             "— resolving vote with no reward")
@@ -712,7 +707,7 @@ function VoteManager._Resolve()
         }
     end
 
-    -- §VM3: cooldown is now recorded AFTER a successful apply (see below).
+    -- §VM3: cooldown is recorded AFTER a successful apply (see below).
 
     -- Broadcast result
     NetworkManager.FireAllClients("VoteResult", {
@@ -768,7 +763,7 @@ function VoteManager._Resolve()
     --   t=GRACE   : voteActive = false → world resumes.
     -- All three are scheduled deterministically; clients align off
     -- the same broadcast events.
-    schedulePostResolve()  -- §AGX/T11-JAN: run-scoped (was two bare task.delays)
+    schedulePostResolve()  -- §AGX/T11-JAN: run-scoped timers
 end
 
 -- ─────────────────────────────────────────────────────────────────────

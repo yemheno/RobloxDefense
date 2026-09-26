@@ -22,12 +22,13 @@
                      Studio. Outside Studio it is never created (Init
                      skips it, GetEvent refuses it and returns nil), so
                      live servers expose no admin/debug remote at all.
-      • readyGated — informational. `true` means the producer side should
-                     fire it via ReadyGate.FireClient instead of plain
+      • readyGated — informational only (IsReadyGated has no callers).
+                     `true` means the producer side should fire it via
+                     ReadyGate.FireClient instead of plain
                      NetworkManager.FireClient. We don't auto-route
-                     because that'd circular-require ReadyGate; the flag
-                     is here so the manifest is self-documenting and a
-                     future lint pass can catch drift.
+                     because that'd circular-require ReadyGate. The call
+                     site is the source of truth; see ARCHITECTURE.md
+                     #readygate-events (§DOCS/C11 lists the lagging flags).
 
     Adding a new event
     ------------------
@@ -39,9 +40,8 @@
     ------------------------------
     Combat is fast. A late-game Aegis swinging into a dense pack of mobs
     can legitimately fire ~50 PlayerHitReports/sec; a Hunter with a
-    3-pierce + skill burst lands ~30. The old uniform 30/sec cap dropped
-    legit hits and the player saw "I swung but no damage." Per-event
-    limits sit on top of the AttackHandler ticket system (which already
+    3-pierce + skill burst lands ~30, so a uniform 30/sec cap would drop
+    legit hits. Per-event limits sit on top of the AttackHandler ticket system (which already
     bounds maxHits-per-attack and per-target dedup), so even the higher
     caps still block exploit floods.
 
@@ -85,7 +85,7 @@ local BUCKET_MAX_AGE          = 60
 -- Order matters only for legibility, not behavior.
 local EVENTS = {
     -- ── Server lifecycle ─────────────────────────────────────────────
-    ServerReady            = { rateLimit = nil,  readyGated = false },
+    ServerReady            = { rateLimit = nil,  readyGated = false }, -- flag lags: ReadyGate-routed at the call site (PlaceLifecycle), §DOCS/C11
     ClientReady            = { rateLimit = 2,    readyGated = false }, -- one per session, anti-spam
 
     -- ── Player data / info ───────────────────────────────────────────
@@ -191,7 +191,7 @@ local EVENTS = {
     SceneChanged           = { rateLimit = nil,  readyGated = false },
     RequestSceneInfo       = { rateLimit = nil,  readyGated = false },
     MatchmakingUpdate      = { rateLimit = nil,  readyGated = false },
-    GameStateChanged       = { rateLimit = nil,  readyGated = false },
+    GameStateChanged       = { rateLimit = nil,  readyGated = false }, -- flag lags: Horde late-join push is ReadyGate-routed at the call site (HordeModeMain), §DOCS/C11
     CountdownUpdate        = { rateLimit = nil,  readyGated = false },
     -- §AGX/WC: §PB-D3 start-gate progress (server → client; late HUDs get
     -- it in the RequestGameState snapshot, so not gated).
@@ -276,11 +276,9 @@ local EVENTS = {
     AdminAction            = { rateLimit = nil,  readyGated = false, studioOnly = true },
     AdminActionResult      = { rateLimit = nil,  readyGated = false, studioOnly = true },
     DebugCommand           = { rateLimit = nil,  readyGated = false, studioOnly = true },
-    ModifySystemStat       = { rateLimit = nil,  readyGated = false, studioOnly = true }, -- §T0P2/X10: was created ad-hoc by SharedEventHandlers
+    ModifySystemStat       = { rateLimit = nil,  readyGated = false, studioOnly = true }, -- §T0P2/X10: fired by SharedEventHandlers
 
-    -- ── §T0P2/X10: previously used but missing from the manifest ─────
-    -- These were created ad-hoc via GetEvent AFTER the pre-register
-    -- pass, undocumented and invisible to the planned lint pass.
+    -- ── Misc producers (§T0P2/X10: every GetEvent name must be listed here) ──
     DeathState             = { rateLimit = nil,  readyGated = false }, -- DeathSystem push
     RequestRespawn         = { rateLimit = 4,    readyGated = false }, -- DeathSystem; one per death, 4× headroom
     WipeReviveOffer        = { rateLimit = nil,  readyGated = false }, -- §DISC/D3b: wipe grace window opened
@@ -297,10 +295,8 @@ local EVENTS = {
     Notify                 = { rateLimit = 1,    readyGated = false },
 }
 
--- §T0P2/X10 → §T0P2-ORPHANS (§AGX/SEC): the four equipment events are
--- NOT orphans — fired by name (EquipmentRefinement / EquipmentTierSystem
--- `eventName`). HealNumber (never fired; heals use HealNumberBatch) and
--- its dead client listener were removed.
+-- §T0P2/X10, §T0P2-ORPHANS, §AGX/SEC: the four equipment events are NOT
+-- orphans — EquipmentRefinement / EquipmentTierSystem fire them by `eventName`.
 
 -- ─────────────────────────────────────────────────────────────────────
 -- RATE LIMITER (per-event)
@@ -446,13 +442,12 @@ function NetworkManager.OnClientEvent(eventName, callback)
 end
 
 -- ─────────────────────────────────────────────────────────────────────
--- INTROSPECTION  (used by ReadyGate + future lint pass)
+-- INTROSPECTION  (IsStudioOnly guards GetEvent; the others are for lint / debug)
 -- ─────────────────────────────────────────────────────────────────────
 
---- Returns true if the manifest marks this event as ready-gated.
---- ReadyGate-aware producers should consult this to decide whether to
---- queue or fire directly. (The flag is informational; routing is still
---- callsite-explicit to avoid circular requires.)
+--- Returns true if the manifest marks this event as ready-gated. The flag
+--- is informational; routing is callsite-explicit to avoid circular
+--- requires, and the call site wins when they disagree (§DOCS/C11).
 function NetworkManager.IsReadyGated(eventName)
     local entry = EVENTS[eventName]
     return entry ~= nil and entry.readyGated == true

@@ -69,13 +69,10 @@ function EquipmentHandler.BuildSnapshot(player)
 	end
 
 	-- ── Armor snapshot ───────────────────────────────────
-	-- §EH1 fix: armor has NO XP system — `ArmorManager.GetSystems()` only
-	-- returns { Refinement, Tier, Bonus } (init.lua:285), and the comment at
-	-- the top of ArmorManager confirms "Armor XP was removed — only weapons
-	-- level up". The previous `.XP.GetXPProgress(player)` call indexed nil
-	-- and threw on every GetEquipmentInfo packet, so the EquipmentUI client
-	-- never received its initial armor snapshot. Pull the level/xp fields
-	-- directly off the armor instance and skip the XP-progress lookup.
+	-- §EH1: armor has NO XP system — `ArmorManager.GetSystems()` only
+	-- returns { Refinement, Tier, Bonus } (no `.XP`). Read the level/xp
+	-- fields directly off the armor instance; an XP-progress lookup would
+	-- index nil and break the GetEquipmentInfo reply.
 	local aInst = ArmorManager.GetEquippedArmor(player)
 	if aInst then
 		local aDef   = ArmorManager.GetEquippedArmorDef(player)

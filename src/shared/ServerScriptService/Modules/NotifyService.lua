@@ -1,6 +1,6 @@
 -- ServerScriptService/Modules/NotifyService
 --[[
-    §AGX/UI-P4: server side of Notify (UI_REVAMP §3 "Notify", P4;
+    §AGX/UI-P4: server side of Notify (ARCHITECTURE.md#notify, P4;
     structure-and-flow UX-11 / §3.4). One server→client push event,
     "Notify", so a player-facing rejection is SEEN instead of only
     `warn`ed (closes the §DISC/D8 "no server→client feedback channel" gap).

@@ -261,8 +261,8 @@ function PlaceLifecycle.StartVitalsLoop(ctx, opts)
     -- §LD4: GearRating hoisted out of the broadcast loop.
     local gr = getGearRating()
 
-    -- §T0P2/X5: same pcall-per-tick protection as the regen loop — an
-    -- error here used to kill the HUD vitals feed for the whole server.
+    -- §T0P2/X5: same pcall-per-tick protection as the regen loop, so one
+    -- error can't kill the HUD vitals feed for the whole server.
     task.spawn(function()
         while true do
             task.wait(VITALS_INTERVAL)

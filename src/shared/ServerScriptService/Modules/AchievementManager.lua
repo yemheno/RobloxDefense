@@ -124,9 +124,8 @@ local dirtyPlayers  = {}   -- [player] = true
 local evalScheduled = {}   -- [player] = true
 
 -- Guard against re-entrant unlock chains (Unlock → AddMerits → Evaluate → Unlock)
--- §AM1 fix: was a single module-level boolean, which meant if PlayerA was in
--- the middle of unlocking when PlayerB also qualified for an unlock, PlayerB's
--- unlock silently no-op'd. Per-player guard table.
+-- §AM1: per-player guard, so one player's unlock chain can't swallow
+-- another player's simultaneous unlock.
 local isUnlocking = {} -- [player] = true
 
 -- ═══════════════════════════════════════════════════════════
@@ -212,7 +211,7 @@ function AchievementManager.Init()
     end)
 
     -- Player lifecycle
-    -- §AM7 fix: subscribe to OnPlayerDataReady so SetupPlayer runs immediately
+    -- §AM7: subscribe to OnPlayerDataReady so SetupPlayer runs immediately
     -- when player data is loaded, not after a polling delay. PlayerAdded is
     -- still wired as a fallback in case OnPlayerDataReady is missing on the
     -- currently loaded PlayerDataManager build.
@@ -321,10 +320,10 @@ function AchievementManager.SetupPlayer(player)
 
     task.spawn(function()
         if playerCache[player] then return end
-        -- §AM7 fix: use a short bounded poll. Init also registers
+        -- §AM7: short bounded poll. Init also registers
         -- AchievementManager.SetupPlayer with PlayerDataManager.OnPlayerDataReady
         -- so for normal joins the callback fires this function with data already
-        -- loaded; the loop below only protects the legacy already-in-game path.
+        -- loaded; the loop below only protects the already-in-game path.
         local account = nil
         local data = PlayerDataManager.GetData(player)
         if data and data.Account then

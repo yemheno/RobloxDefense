@@ -45,11 +45,7 @@ DropTableConfig.TierDefaults = {
 -- ───────────────────────────────────────────────────────────
 
 DropTableConfig.MobOverrides = {
-	-- Example:
-	-- Ogre = {
-	--     { type = "Merits", chance = 1.0, min = 12, max = 20 },
-	--     { type = "Essence", chance = 0.40, min = 1, max = 3 },
-	-- },
+	-- [mobId] = { { type, chance, min, max, noScale? }, ... }  (same shape as TierDefaults)
 }
 
 -- ───────────────────────────────────────────────────────────

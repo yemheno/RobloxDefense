@@ -46,7 +46,7 @@ GameModeConfig.Modes = {
 		name         = "Central Boss",
 		description  = "Fight a powerful boss with your party.",
 		icon         = "rbxassetid://0",          -- placeholder
-		-- §AGX/X19: off until the arena has content (TODO §17 / §CB1).
+		-- §AGX/X19: off until the arena has content (BACKLOG §AGX/X28-NEXT, §CB1).
 		-- Matchmaking checks this server-side, so crafted queues fail too.
 		-- §AGX/X28: core boss fight is authored (BossEncounter). FLIP HERE
 		-- (and in lobby MainMenu.lua MODES) to `true` after Studio testing.

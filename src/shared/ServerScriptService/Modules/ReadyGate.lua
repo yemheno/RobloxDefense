@@ -4,13 +4,11 @@
     =========
     Per-player handshake + outbound message queue.
 
-    The races we keep hitting in playtests follow the same shape: the
-    server fires a state event during boot (CombatConfig, AchievementsData,
-    PartyState, etc.) BEFORE the client's matching `OnServerEvent` listener
-    has registered. Roblox does NOT queue server→client events for missing
-    listeners — the packet is dropped. We've patched several of these
-    case-by-case with idempotent re-request loops; ReadyGate is the
-    universal answer.
+    Boot race: the server fires a state event during boot (CombatConfig,
+    AchievementsData, PartyState, etc.) BEFORE the client's matching
+    `OnServerEvent` listener has registered. Roblox does NOT queue
+    server→client events for missing listeners — the packet is dropped.
+    ReadyGate is the universal answer (instead of per-event re-request loops).
 
     ─── Two complementary race defenses ───────────────────────────────────
     There are TWO orthogonal boot races and they need separate fixes:
@@ -55,14 +53,14 @@
     (MarkReady is intentionally private — the only legitimate trigger is
     the ClientReady RemoteEvent. See §RG-D8 below.)
 
-    Migration
-    ---------
-    The migration is opt-in. Every place's existing `FireClient` calls
-    KEEP WORKING (the underlying RemoteEvent is unchanged). To make a
-    specific server-push race-proof, route it through ReadyGate instead
-    of NetworkManager.FireClient. Useful targets first: CombatConfig,
-    AchievementsData, EquipmentInfo, ServerReady, TalentState,
-    WardrobeUpdate, and anything fired in response to PlayerAdded.
+    Routing
+    -------
+    Opt-in per call site: plain `NetworkManager.FireClient` keeps working
+    (same RemoteEvent). A boot-time server push that must not drop goes
+    through ReadyGate.FireClient instead. Request/response events
+    (EquipmentInfo, WardrobeUpdate) don't need it. The routed events are
+    listed in ARCHITECTURE.md#readygate-events; the call site, not the
+    NetworkManager `readyGated` flag, is the source of truth (§DOCS/C11).
 ]]
 
 local ReadyGate = {}

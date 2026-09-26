@@ -44,8 +44,8 @@ end
 -- BonusManager: used by the admin ModifySystemStat path so debug stat
 -- changes survive BonusManager.Recalculate (which is the single writer
 -- into data.Bonus). PlayerBonusSystem.SetBonus / ModifyBonus also route
--- through BonusManager "other" source now (§PDM-D3) — direct data.Bonus
--- writes are no longer a thing.
+-- through BonusManager "other" source (§PDM-D3) — nothing writes
+-- data.Bonus directly.
 local _BonusManager = nil
 local function getBonusManager()
 	if not _BonusManager then
@@ -69,7 +69,7 @@ end
 -- It lives under StarterPlayerScripts (client folder) but is pure data
 -- (names + Enum values), and StarterPlayer's contents exist on the
 -- server too, so we read it from there rather than keep a second copy.
--- `false` = looked, not found (house lazy-getter pattern, Audit §5.3).
+-- `false` = looked, not found (ARCHITECTURE.md#lazy-getter).
 local _InputActions = nil
 local function getInputActions()
 	if _InputActions ~= nil then
@@ -252,11 +252,10 @@ function SharedEventHandlers.Register(deps)
 	end
 
 	-- ── GetPlayerInfo ─────────────────────────────────────
-	-- §T0P2/X11: no retry loop. The old 40×0.25 s wait parked a thread
-	-- per request — at the default 30/s rate limit one client could
-	-- stack ~300 yielding threads. The data-ready auto-push above
-	-- already covers the load race; if data isn't there yet, the push
-	-- will arrive the moment it is.
+	-- §T0P2/X11: no retry loop — a wait per request lets one client stack
+	-- hundreds of yielding threads. The data-ready auto-push above already
+	-- covers the load race; if data isn't there yet, the push arrives the
+	-- moment it is.
 	NetworkManager.GetEvent("GetPlayerInfo")
 	NetworkManager.OnClientEvent("GetPlayerInfo", function(player)
 		if not DataManager.GetData(player) then return end
@@ -327,7 +326,7 @@ function SharedEventHandlers.Register(deps)
 
 	-- ── ModifySystemStat (admin only) ─────────────────────
 	-- §AGX/SEC: §T0P2-ADMIN — Studio only; the remote is never created
-	-- in a live server. A missing IsAdmin dep now fails closed.
+	-- in a live server. A missing IsAdmin dep fails closed.
 	if RunService:IsStudio() then
 		NetworkManager.OnClientEvent("ModifySystemStat", function(player, statName, delta)
 			if type(statName) ~= "string" or type(delta) ~= "number" then return end
@@ -358,7 +357,7 @@ function SharedEventHandlers.Register(deps)
 	-- §AGX/X8: allowlist actions (InputActions catalog) and platforms (that
 	-- action's defaults), require real KeyCode names (plus mouse buttons),
 	-- cap lengths/counts and rate-limit. Invalid entries are dropped, not
-	-- the whole table. The old type-only check let a client store any
+	-- the whole table. A type-only check would let a client store any
 	-- table, including non-UTF-8 strings that break every profile save.
 	NetworkManager.OnClientEvent("SaveKeybindings", function(player, serialized)
 		if type(serialized) ~= "table" then return end

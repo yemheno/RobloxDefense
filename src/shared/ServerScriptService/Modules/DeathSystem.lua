@@ -20,8 +20,10 @@
     Network Events:
         Server → Client:
             "DeathState"   { state = "KnockedDown" | "Dead" | "Alive" }
+            "WipeReviveOffer" / "WipeReviveResolved"  (§DISC/D3b)
         Client → Server:
             "RequestRespawn"
+            "WipeReviveAccept"
 ]]
 
 local DeathSystem = {}
@@ -45,14 +47,12 @@ local CONFIG = {
 	ResourceDrainRate   = -10,      -- per second
 	RespawnDelay        = 1,        -- brief delay after clicking respawn
 
-	-- §DISC/D3b: party-wipe revive failsafe (Pablo). On full wipe the
-	-- game pauses (mobs + spawns) and players get a decision window to
-	-- buy a revive-in-place; otherwise the run ends. Essence-priced for
-	-- now — Robux Developer Product later (TODO §DISC/D3b).
-	-- §AGX/X40 (Pablo): free wipe-revives per run by difficulty, then
-	-- ONE paid revive per run. The window is longer and the paid option
-	-- only shows to players who can already afford it (no upsell under a
-	-- countdown — Roblox: "never pressured into purchases").
+	-- §DISC/D3b, §AGX/X40 (Pablo): party-wipe revive failsafe. On full wipe
+	-- the game pauses (mobs + spawns) and players get a decision window to
+	-- revive in place; otherwise the run ends. Free wipe-revives per run by
+	-- difficulty, then ONE Essence-paid revive, shown only to players who can
+	-- already afford it (no upsell under a countdown). Never a Robux product
+	-- (DESIGN_DECISIONS.md#disc-decisions, DISC-D3b: won't do).
 	WipeGraceSeconds    = 15,
 	WipeReviveEssence   = 25,       -- placeholder price, tune freely
 	WipeInvulnSeconds   = 3,        -- invulnerability after wipe-revive
@@ -87,8 +87,7 @@ local _CurrencyManager
 local function getCurrencyManager()
 	if _CurrencyManager ~= nil then return _CurrencyManager or nil end
 	local mod = Modules:FindFirstChild("CurrencyManager")
-	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-	-- so this getter always returned nil. Two-step form keeps both.
+	-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 	local ok, result = false, nil
 	if mod then ok, result = pcall(require, mod) end
 	_CurrencyManager = (ok and result) or false
@@ -99,22 +98,20 @@ local _MobAI
 local function getMobAI()
 	if _MobAI ~= nil then return _MobAI or nil end
 	local mod = Modules:FindFirstChild("MobAI")
-	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-	-- so this getter always returned nil. Two-step form keeps both.
+	-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 	local ok, result = false, nil
 	if mod then ok, result = pcall(require, mod) end
 	_MobAI = (ok and result) or false
 	return _MobAI or nil
 end
 
--- §AGX/STATS: MovementSpeed bonus → BaseWalkSpeed. Lazy (§5.3); only
+-- §AGX/STATS: MovementSpeed bonus → BaseWalkSpeed. Lazy (ARCHITECTURE.md#lazy-getter); only
 -- touched on spawn and on a MovementSpeed change, never per frame.
 local _BonusManager
 local function getBonusManager()
 	if _BonusManager ~= nil then return _BonusManager or nil end
 	local mod = Modules:FindFirstChild("BonusManager")
-	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-	-- so this getter always returned nil. Two-step form keeps both.
+	-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 	local ok, result = false, nil
 	if mod then ok, result = pcall(require, mod) end
 	_BonusManager = (ok and result) or false
@@ -125,8 +122,7 @@ local _DataConfig
 local function getDataConfig()
 	if _DataConfig ~= nil then return _DataConfig or nil end
 	local mod = Modules:FindFirstChild("PlayerDataConfig")
-	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-	-- so this getter always returned nil. Two-step form keeps both.
+	-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 	local ok, result = false, nil
 	if mod then ok, result = pcall(require, mod) end
 	_DataConfig = (ok and result) or false
@@ -149,8 +145,7 @@ end
 -- §AGX/X40 helpers (after the lazy getters they use).
 local function getRunDifficulty()
 	local mod = Modules:FindFirstChild("TeleportDataReader")
-	-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-	-- so this getter always returned nil. Two-step form keeps both.
+	-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 	local ok, tdr = false, nil
 	if mod then ok, tdr = pcall(require, mod) end
 	local diff = ok and tdr and tdr.GetDifficulty and tdr.GetDifficulty()
@@ -230,8 +225,7 @@ function DeathSystem.Init()
 	-- Deferred so GameStateManager (combat places only) is loaded first.
 	task.defer(function()
 		local gsmMod = Modules:FindFirstChild("GameStateManager")
-		-- §AGX/D-FIX: `x and pcall(...)` keeps only ONE value (ok=true, result=nil),
-		-- so this getter always returned nil. Two-step form keeps both.
+		-- §AGX/D-FIX: two-step pcall; `x and pcall(...)` keeps only ONE value.
 		local ok, gsm = false, nil
 		if gsmMod then ok, gsm = pcall(require, gsmMod) end
 		if ok and gsm and gsm.OnStateChanged then
@@ -320,17 +314,13 @@ function DeathSystem.SetupPlayer(player)
 		diedConnection = nil,
 	}
 
-	-- §LD-DS1 fix: set DeathState BEFORE the first character spawn so the
-	-- attribute is replicated to the client by the time it tries to fire
-	-- its first attack. Previously this only happened inside
-	-- OnCharacterAdded after WaitForChild("Humanoid", 5), which left a
-	-- ~0.5–1 s window where the client read DeathState=nil and silently
-	-- aborted PlayerAttack.DoAttack ("not Alive" guard).
+	-- §LD-DS1: set DeathState BEFORE the first character spawn so the
+	-- attribute has replicated by the client's first attack; a nil
+	-- DeathState fails PlayerAttack.DoAttack's "not Alive" guard.
 	player:SetAttribute("DeathState", "Alive")
 
 	-- Spawn the character manually (since AutoLoads is off)
-	-- §T4/V1 (§14b): tracked so CleanupPlayer can disconnect it —
-	-- diedConnection was cleaned but this one leaked per leaver.
+	-- §T4/V1, §14b: tracked so CleanupPlayer can disconnect it.
 	playerStates[player].characterAddedConn = player.CharacterAdded:Connect(function(character)
 		DeathSystem.OnCharacterAdded(player, character)
 	end)
@@ -381,12 +371,10 @@ function DeathSystem.OnCharacterAdded(player, character)
 
 	-- §LD-DS2: disable EVERY way Roblox can tear down the character on
 	-- death. Pablo's spec: the same Character must persist across
-	-- knockdown → death → respawn. Recreating it via LoadCharacter is
-	-- too risky — every visual (weapon, hair, armor, cosmetics) has to
-	-- re-attach in the right order against the new model, and any
-	-- timing race leaves the player without a weapon (which we hit
-	-- yesterday). Keep the same character; just freeze it on death and
-	-- teleport-in-place on respawn.
+	-- knockdown → death → respawn. Recreating it via LoadCharacter would
+	-- re-attach every visual (weapon, hair, armor, cosmetics) against a new
+	-- model, and a timing race there leaves the player without a weapon.
+	-- Keep the same character; freeze it on death, teleport on respawn.
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Dead, false)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Physics, false)
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Ragdoll, false)
@@ -465,8 +453,8 @@ function DeathSystem.EnterKnockdown(player)
 	humanoid.Health = 1
 
 	-- Slow movement to crawl speed
-	-- §AGX/X13: capture the natural speed, not a mob-slowed/stunned one —
-	-- otherwise revive restored the debuffed speed permanently.
+	-- §AGX/X13: capture the natural speed, not a mob-slowed/stunned one,
+	-- or revive would restore the debuffed speed permanently.
 	data.originalSpeed = humanoid:GetAttribute("BaseWalkSpeed") or humanoid.WalkSpeed
 	humanoid:SetAttribute("StunUntil", nil)
 	humanoid:SetAttribute("MoveFxSpeed", nil)
@@ -528,14 +516,10 @@ function DeathSystem.EnterDeath(player)
 		humanoid.JumpPower = 0
 		humanoid.JumpHeight = 0
 		-- §LD-DS5: pin Health at 1, NOT 0. Even with Dead state and
-		-- BreakJointsOnDeath disabled, Roblox's humanoid still tries to
-		-- transition into Physics / PlatformStanding when Health hits 0,
-		-- which leaves the humanoid in a state where :Move() input no
-		-- longer translates the character (Pablo's "only moves via attack
-		-- recoil"). Keeping Health > 0 keeps the humanoid in Running/
-		-- GettingUp the entire time. The DeathState attribute is now the
-		-- single source of truth for "is this player dead?" — every
-		-- damage / interaction system reads it instead of humanoid.Health.
+		-- BreakJointsOnDeath disabled, a humanoid at Health 0 drops into
+		-- Physics / PlatformStanding and :Move() input stops working.
+		-- The DeathState attribute is the single source of truth for "is
+		-- this player dead?"; damage / interaction systems read it, not Health.
 		humanoid.Health = 1
 	end
 
@@ -549,17 +533,17 @@ function DeathSystem.EnterDeath(player)
 
 	print("[DeathSystem]", player.Name, "is dead — waiting for respawn")
 
-	-- §DISC/D3 (was DQ-T4A): full party wipe ends the run.
+	-- §DISC/D3: full party wipe ends the run.
 	DeathSystem.CheckPartyWipe()
 end
 
 -- §DISC/D3 + §DISC/D3b (Pablo): when EVERY player in the server is
 -- Dead, the game pauses immediately (mobs AND spawns — same freeze the
--- card votes use) and players get CONFIG.WipeGraceSeconds to buy a
--- revive-in-place. If someone revives: they come back where they died
--- with brief invulnerability and the fight resumes. If nobody does,
--- the run ends — everyone back to the lobby. Free respawn is disabled
--- during the window (the paid revive is the only out).
+-- card votes use) and players get CONFIG.WipeGraceSeconds to take a
+-- revive-in-place (free or paid, §AGX/X40). If someone revives: they come
+-- back where they died with brief invulnerability and the fight resumes.
+-- If nobody does, the run ends — everyone back to the lobby. Free respawn
+-- is disabled during the window (the wipe-revive is the only out).
 -- NOTE: a SOLO death triggers this immediately (no teammate to outlive).
 function DeathSystem.CheckPartyWipe()
 	if wipeGraceActive then return end
@@ -619,8 +603,8 @@ function DeathSystem.CheckPartyWipe()
 end
 
 -- §AGX/X50: forward-declared — defined below (search `function performRevive`).
--- Without this HandleWipeRevive hit a nil global AFTER spending Essence
--- and invalidating the defeat timer, soft-locking the run.
+-- HandleWipeRevive calls it after spending Essence; an undeclared local
+-- would be a nil global there and soft-lock the run.
 local performRevive
 
 -- §DISC/D3b: a dead player accepts the wipe-revive offer. First
@@ -768,8 +752,8 @@ local function findSpawnLocation()
 	if explicit and explicit:IsA("BasePart") then
 		return explicit.CFrame + Vector3.new(0, 4, 0)
 	end
-	-- §AGX/X36: cache the SpawnLocation — the full GetDescendants() walk
-	-- used to run on every respawn (hitch when several respawn together).
+	-- §AGX/X36: cache the SpawnLocation; the full GetDescendants() walk
+	-- hitches when several players respawn together.
 	if not (cachedSpawnLocation and cachedSpawnLocation:IsDescendantOf(workspace)) then
 		cachedSpawnLocation = nil
 		for _, inst in ipairs(workspace:GetDescendants()) do
@@ -786,8 +770,7 @@ local function findSpawnLocation()
 end
 
 -- §DISC/D3b: revive core, shared by the normal respawn (teleports to
--- spawn) and the wipe-revive (revives IN PLACE). Extracted verbatim
--- from the old HandleRespawnRequest delayed body.
+-- spawn) and the wipe-revive (revives IN PLACE).
 function performRevive(player, teleportToSpawn)
 	if not player or not player.Parent then return end
 	local data = playerStates[player]
@@ -805,12 +788,10 @@ function performRevive(player, teleportToSpawn)
 		return
 	end
 
-	-- §LD-DS4: order matters. The Heartbeat Update loop pins
-	-- humanoid.Health = 0 while data.state == "Dead". So we MUST
-	-- flip data.state to "Alive" BEFORE writing Health = MaxHealth,
-	-- otherwise the very next Heartbeat tick wipes the heal we just
-	-- did and the player ends up at HP 0 with state = Alive (which
-	-- our re-attached HealthChanged listener then re-knocks-down).
+	-- §LD-DS4, §LD-DS5: order matters. The Heartbeat Update loop pins
+	-- humanoid.Health = 1 while data.state == "Dead", so flip data.state
+	-- to "Alive" BEFORE writing Health = MaxHealth, or the next tick
+	-- overwrites the heal.
 	data.state = "Alive"
 	data.knockdownTime = 0
 
@@ -841,7 +822,7 @@ function performRevive(player, teleportToSpawn)
 		if hrp then hrp.Anchored = false end
 
 		-- Restore HP. With state already "Alive" the Update loop won't
-		-- pin it back to 0 on the next Heartbeat.
+		-- pin it back to 1 on the next Heartbeat.
 		humanoid.Health = humanoid.MaxHealth
 
 		-- Force a clean state transition out of Physics / PlatformStand
@@ -874,16 +855,16 @@ function DeathSystem.HandleRespawnRequest(player)
 	if data.state ~= "Dead" then return end
 
 	-- §DISC/D3b: during a wipe-grace window the free respawn is OFF the
-	-- table — the run is ending; the only out is the paid wipe-revive.
+	-- table — the run is ending; the only out is the wipe-revive.
 	if wipeGraceActive then return end
 
-	-- §T4/V2: dedup — spamming RequestRespawn while dead used to queue
-	-- one delayed respawn thread per packet (each full-healing on fire).
+	-- §T4/V2: dedup — one queued respawn per death, however many
+	-- RequestRespawn packets arrive.
 	if data.respawnQueued then return end
 	data.respawnQueued = true
 
-	-- §EASY/§2.4d: per-run respawn counter. Consumers pending (end-of-run
-	-- panel + "Die N times" achievements — see TODO §5).
+	-- §EASY, §2.4d: per-run respawn counter. Nothing reads it yet
+	-- (TODO: BACKLOG §2.4d — end-of-run panel, "Die N times" achievements).
 	data.respawnCount = (data.respawnCount or 0) + 1
 
 	task.delay(CONFIG.RespawnDelay, function()
@@ -928,7 +909,7 @@ function DeathSystem.Update(dt)
 			-- catches anything else (a heal effect, admin command) that
 			-- would push Health up while the player is still in the Dead
 			-- state. Damage is blocked via the DeathState attribute check
-			-- in MobAI/DamageHandler, not via Health ≤ 0 anymore.
+			-- in MobAI/DamageHandler, not via Health ≤ 0.
 			local character = player.Character
 			local humanoid = character and character:FindFirstChild("Humanoid")
 			if humanoid and humanoid.Health ~= 1 then

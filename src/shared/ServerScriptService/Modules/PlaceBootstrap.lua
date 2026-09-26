@@ -103,7 +103,7 @@ function PlaceBootstrap.MakeContext(placeName)
             return nil
         end
         -- §T0P2/X15: a module returning a non-table (stray `return true`)
-        -- used to crash the whole place boot on the `result.Init` index.
+        -- must not crash the whole place boot on the `result.Init` index.
         if type(result) ~= "table" then
             warn(string.format("[%sMain] %s returned a %s (expected table) — loaded without Init",
                 placeName, tostring(name), typeof(result)))

@@ -217,7 +217,7 @@ end
 -- §AGX/STATS: AttackSpeed bonus (percent points; gear rolls, Frenzy card,
 -- Eagle Eye's -X%, talents) scales the weapon's attacks/sec, clamped by
 -- StatCaps.AttackSpeed. Per-attack path: one table read + one clamp, and
--- the clamp function is resolved once (Audit_4.7 §5.4).
+-- the clamp function is resolved once (ARCHITECTURE.md#hot-path-ref-cache).
 local _capStat = nil
 local function capAttackSpeed(pct)
     if not _capStat then

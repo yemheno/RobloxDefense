@@ -1,10 +1,8 @@
 -- ServerScriptService/Modules/ConsumableEffects.lua
 --[[
-    §AGX/X10b: server-side use path for inventory consumables
-    (AGENCY_CHECKS X10). Before this, 9 of the 10 ConsumableConfig items
-    could be bought but never used; X10 turned them off. This module applies
-    the effect each ConsumableConfig entry already describes, so they are
-    usable and buyable again.
+    §AGX/X10b, §AGX/X10: server-side use path for inventory consumables.
+    Applies the effect each ConsumableConfig entry describes, so the items
+    are usable (and therefore buyable).
 
     Flow
     ────
@@ -51,7 +49,7 @@
       PlayerRemoving, so a buff ends on leave / teleport. A config with
       `persistAcrossTeleport = true` is not supported yet (warned at Init).
       Per-player state (cooldowns, HoT threads, expiry notices) lives in a
-      Janitor destroyed on PlayerRemoving (Audit_4.7 §5.1).
+      Janitor destroyed on PlayerRemoving (ARCHITECTURE.md#janitor-per-player).
 
     Network
     ───────
@@ -78,7 +76,7 @@ local TAG_PREFIX    = "consumable_"   -- BonusManager source = "timed_consumable
 local HOT_TICK      = 0.25            -- s between heal-over-time ticks
 
 -- ═══════════════════════════════════════════════════════════
--- LAZY MODULES  (Audit_4.7 §5 lazy getters)
+-- LAZY MODULES  (ARCHITECTURE.md#lazy-getter)
 -- ═══════════════════════════════════════════════════════════
 
 local _net, _inv, _bonus, _data, _dataCfg, _cons, _janitor, _notify = nil, nil, nil, nil, nil, nil, nil, nil
@@ -143,7 +141,7 @@ end
 -- §AGX/STATS (review item 3): consumables are run items. Only combat
 -- places (LaneDefense, HordeMode, CentralBoss) load + Init DeathSystem, so
 -- DeathSystem.IsActive() is the place gate. Works in Studio, where
--- game.PlaceId doesn't match Shared.PlaceIds. Resolved once (§5.3).
+-- game.PlaceId doesn't match Shared.PlaceIds. Resolved once (ARCHITECTURE.md#lazy-getter).
 local _dsResolved, _ds = false, nil
 local function isCombatPlace()
 	if not _dsResolved then
@@ -423,7 +421,7 @@ function ConsumableEffects.Use(player, itemId)
 	if not okCheck then return false, reason or "You can't use that right now." end
 
 	-- §AGX/STATS (S3): the reply is built BEFORE anything is spent, so a
-	-- formatting error can no longer throw after the effect landed.
+	-- formatting error can't throw after the effect landed.
 	local okMsg, message = pcall(handler.message or usedMessage, def)
 	if not okMsg or type(message) ~= "string" then
 		warn("[ConsumableEffects] " .. itemId .. " message failed: " .. tostring(message))

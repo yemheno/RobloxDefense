@@ -65,9 +65,9 @@ local function getCurrencyManager()
 	return _CurrencyManager
 end
 
--- §AGX/UI-P4: player-facing rejections used to be silent (return value
--- dropped by the caller / warn only). NotifyService pushes a toast; it
--- never throws, and a missing module is skipped, so logic is unchanged.
+-- §AGX/UI-P4: player-facing rejections get a toast (callers drop the
+-- return value). NotifyService never throws, and a missing module is
+-- skipped, so logic doesn't depend on it.
 local NotifyService = nil
 local function notifyReject(player, text)
 	if not NotifyService then
@@ -110,8 +110,8 @@ end
     Talent points = SUM of every owned weapon's level across EVERY class.
     Each class has 2 weapons, each weapon caps at 50, so the per-class
     ceiling is 100 points.  Alpha launches with 4 classes (Aegis, Arcanist,
-    Hunter, LifeSteward) = 8 weapons × 50 = 400 points at full endgame.
-    -- §AGX/X25: was "= 320" (8 × 50 is 400).
+    Hunter, LifeSteward) = 8 weapons × 50 = 400 points at full endgame
+    (§AGX/X25).
     Budget grows linearly as new classes ship.
 
     BonusTalentPoints (data.Account) can be granted by events/quests
@@ -220,7 +220,7 @@ function TalentManager.Init()
 		local success, msg = TalentManager.AllocateNode(player, nodeId)
 		if not success then
 			warn("[TalentManager] Allocate failed for", player.Name, ":", msg)
-			-- §AGX/UI-P4: the warn was the only trace; tell the player why
+			-- §AGX/UI-P4: tell the player why, not just the log
 			-- (not for the double-click lock, which isn't a real rejection).
 			if msg ~= "Concurrent allocation request" then
 				notifyReject(player, msg or "Can't allocate that talent.")
@@ -232,8 +232,8 @@ function TalentManager.Init()
 
 	-- Client → Server: full respec (costs 1 respec_scroll, else
 	-- PlayerDataConfig.GetRespecCost(level).essence = 25 Essence).
-	-- §AGX/X42: was "500 Essence or 1 RespecToken" (stale). Essence-only by
-	-- design; the unused Merit option was removed from PlayerDataConfig.
+	-- §AGX/X42: Essence-only by design (no Merit price; see PlayerDataConfig
+	-- RESPEC COST).
 	net.GetEvent("RespecResult")
 	net.OnClientEvent("RespecTalents", function(player)
 		local dm   = getDataManager()
@@ -254,10 +254,8 @@ function TalentManager.Init()
 			return
 		end
 
-		-- §T1 fix: deduct the cost FIRST. Previously the respec wiped
-		-- talents before consuming the cost; if the consume failed the
-		-- player ended up with no talents AND no charge taken — losing
-		-- progression silently. Now we lose nothing if the deduct fails.
+		-- §T1: deduct the cost FIRST, then wipe talents, so a failed
+		-- deduct loses nothing.
 		local consumed = false
 		if hasScroll then
 			consumed = inv.ConsumeItem(player, "respec_scroll", 1) and true or false
@@ -309,7 +307,7 @@ end
 -- ALLOCATE
 -- ═══════════════════════════════════════════════════════════
 
--- §T2 fix: per-player allocation lock. Two AllocateTalent packets in
+-- §T2: per-player allocation lock. Two AllocateTalent packets in
 -- the same network frame would otherwise both pass the points check
 -- before either mutates `allocated`, double-spending the same point.
 local allocateLock = setmetatable({}, { __mode = "k" })

@@ -20,12 +20,12 @@ function SkillRegistry.Init()
 		return
 	end
 
-	-- §SR1 fix: SkillRegistry runs BEFORE SkillManager.Init in every place
+	-- §SR1: SkillRegistry runs BEFORE SkillManager.Init in every place
 	-- bootstrap (Lobby loads SkillRegistry but never loads SkillManager at
 	-- all). The class skill modules expose their `GetAllSkills` /
 	-- `GetSkillCount` / `GetSkillBySlot` functions only after
 	-- BaseSkills.InjectGetters has been called from inside their own Init.
-	-- That meant CacheClassSkills below would nil-deref on a fresh boot.
+	-- Without that, CacheClassSkills below would nil-deref on a fresh boot.
 	-- Pre-load BaseSkills here and inject the getters ourselves so the
 	-- registry is self-sufficient. Re-injection by SkillManager later is
 	-- idempotent (it just rewrites the same closures).
@@ -83,7 +83,7 @@ function SkillRegistry.Init()
 end
 
 function SkillRegistry.CacheClassSkills(className, classModule)
-	-- §SR1 fix: tolerate missing GetAllSkills by falling back to the static
+	-- §SR1: tolerate missing GetAllSkills by falling back to the static
 	-- `Skills` table that every class module declares at module-load time.
 	local skills
 	if classModule.GetAllSkills then

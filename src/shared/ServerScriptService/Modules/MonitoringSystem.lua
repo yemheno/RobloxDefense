@@ -69,10 +69,9 @@ function MonitoringSystem.Init()
 	end
 
 	-- Clean up when players leave
-	-- §MEM/M2: the old "keep stats for session review" retention pinned the
-	-- Player instance (plus its ever-growing pendingHits — §MEM/M1) for the
-	-- server's lifetime, once per join. Review intent preserved: flagged
-	-- players' reports are snapshotted into the capped eventLog instead.
+	-- §MEM/M2, §MEM/M1: drop per-player stats on leave (keeping them would
+	-- pin the Player and its pendingHits for the server's lifetime). Flagged
+	-- players' reports are snapshotted into the capped eventLog for review.
 	Players.PlayerRemoving:Connect(function(player)
 		local stats = playerStats[player]
 		if stats then
@@ -145,11 +144,9 @@ end
     - player: Player who was in range
     - skillData: { skillId, mobId, origin, range, timestamp }
 ]]
--- §SCALE/S4: monitoring cost is (mob casts/s) × (players in range) — at a
--- world boss with 25 clustered players that used to mean hundreds of
--- GenerateGUID strings + task.delay closures PER SECOND. Now: monotonic
--- integer ids, no per-hit closure (one amortized sweep in Init resolves
--- dodges), and a sampling dial for extreme scenarios.
+-- §SCALE/S4: monitoring cost is (mob casts/s) × (players in range), so it
+-- uses monotonic integer ids, no per-hit closure (one amortized sweep in
+-- Init resolves dodges), and a sampling dial for extreme scenarios.
 local hitIdCounter = 0
 
 -- 1 = record every potential hit (current behavior). Raise to N to record

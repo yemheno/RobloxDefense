@@ -45,8 +45,8 @@ local stateStartTime = 0
 local MobSpawner = nil  -- Lazy loaded
 local countdownThread = nil  -- Thread spawned by StartCountdown
 -- §AGX/T11-JAN: bumped on every SetState. The Victory/Defeat auto-return
--- delay only re-checked the state NAME, so Victory → Idle → new run →
--- Victory inside ReturnToLobbyDelay let the first run's timer fire early.
+-- delay checks the epoch, not just the state NAME: Victory → Idle → new
+-- run → Victory inside ReturnToLobbyDelay must not fire the first timer.
 local stateEpoch = 0
 -- §AGX/UX-02: flags the HUD can't rebuild from transitions alone; sent in
 -- the RequestGameState snapshot so a (re)mounted HUD shows the right buttons.
@@ -87,7 +87,7 @@ local returnToLobbyCallbacks = {}
       autoStart = true   (Horde) the gate opening enters Defending directly
       autoStart = false  (Lane / CentralBoss) RequestStart is refused until
                          the gate opens; the Start button does the rest.
-    Places that never call it (none today) keep the old ungated behaviour.
+    Places that never call it (none today) stay ungated.
     The gate opens once per server and stays open (post-run restarts in
     Lane aren't re-gated).
 ]]
@@ -138,11 +138,10 @@ local function getPlayerDataManager()
 	return _PlayerDataManager or nil
 end
 
--- §AGX/D-FIX2: a ClientReady that beats the DataStore load used to count
--- as ready — Horde then opened with no difficulty/level/party class
--- applied (and ApplyTeleportClass refused once IsInGame()). Ready now
--- means ReadyGate.IsReady AND the player's data is loaded.
--- No PlayerDataManager in this place → ReadyGate alone (old behaviour).
+-- §AGX/D-FIX2: ready = ReadyGate.IsReady AND the player's data is loaded.
+-- A ClientReady that beats the DataStore load must not count, or Horde
+-- opens with no difficulty/level/party class applied.
+-- No PlayerDataManager in this place → ReadyGate alone.
 local function isDataReady(player)
 	local pdm = getPlayerDataManager()
 	if not pdm then return true end
@@ -206,8 +205,8 @@ end
 
 local evaluateGate  -- forward-declared: the timeout closure calls it
 
--- §AGX/D-FIX: S2 — true if any in-server player has loaded data (lazy require: PlayerDataManager is required lazily elsewhere in this file too).
--- §AGX/D-FIX2: via the shared lazy getter / isDataReady.
+-- §AGX/D-FIX, §AGX/D-FIX2: true if any in-server player has loaded data
+-- (via the shared lazy getter / isDataReady).
 local function anyPresentPlayerDataReady()
 	if not getPlayerDataManager() then return false end
 	for _, p in ipairs(Players:GetPlayers()) do
@@ -279,9 +278,9 @@ function GameStateManager.Init()
 	end)
 
 	-- §AGX/UX-02: per-player state snapshot. GameStateChanged is otherwise
-	-- only broadcast on transitions, so a HUD mounted mid-run defaulted to
-	-- "Idle" and offered Start Game. Same payload shape as a transition
-	-- (oldState == newState), plus the optional run flags.
+	-- only broadcast on transitions, so a HUD mounted mid-run would default
+	-- to "Idle". Same payload shape as a transition (oldState == newState),
+	-- plus the optional run flags.
 	NetworkManager.GetEvent("RequestGameState")
 	NetworkManager.OnClientEvent("RequestGameState", function(player)
 		-- nil when MobSpawner doesn't drive waves (e.g. HordeMode): the HUD
@@ -306,15 +305,14 @@ end
 function GameStateManager.LateInit()
 	MobSpawner = require(Modules:WaitForChild("MobSpawner"))
 
-	-- §AGX/UX-02: mirror the between-waves flag for RequestGameState.
-	-- (Public MobSpawner callbacks only; MobSpawner itself is unchanged.)
+	-- §AGX/UX-02: mirror the between-waves flag for RequestGameState
+	-- (public MobSpawner callbacks only).
 	MobSpawner.OnWaveStarted(function() betweenWaves = false end)
 	MobSpawner.OnWaveCompleted(function() betweenWaves = true end)
 
 	-- Listen for wave completion
 	MobSpawner.OnAllWavesCompleted(function(finalWave)
-		-- §AGX/X5: via TriggerVictory so it only fires from DEFENDING
-		-- (was SetState from any state).
+		-- §AGX/X5: via TriggerVictory so it only fires from DEFENDING.
 		GameStateManager.TriggerVictory()
 	end)
 
@@ -439,7 +437,7 @@ function GameStateManager.RequestStart(player)
 	if gate.enabled then
 		local ns = Modules:FindFirstChild("NotifyService")
 		if gate.autoStart then
-			-- §AGX/D-FIX: N2 — was a silent refusal; closed gate gets the same "Waiting for party" toast as manual-start places.
+			-- §AGX/D-FIX: N2 — a closed gate gets the same "Waiting for party" toast as manual-start places, never a silent refusal.
 			if not gate.open then
 				local ready, total = gateCounts()
 				local msg = string.format("Waiting for party (%d/%d)…", ready, total)
@@ -512,9 +510,9 @@ function GameStateManager.StartCountdown()
 	end)
 end
 
--- §G2 fix: idempotency guard. Both the auto-return delays (Victory and
--- Defeat) and any manual ReturnToLobby caller could otherwise queue
--- multiple teleport sweeps and double-reset the run state.
+-- §G2: idempotency guard. The auto-return delays (Victory and Defeat)
+-- and any manual ReturnToLobby caller must not queue multiple teleport
+-- sweeps or double-reset the run state.
 local _returnInFlight = false
 
 function GameStateManager.ReturnToLobby()
@@ -537,8 +535,6 @@ function GameStateManager.ReturnToLobby()
 	-- the same frame (we ignore the second; this clears the latch for next run).
 	task.delay(2, function() _returnInFlight = false end)
 end
-
--- Add to GameStateManager.ResetGame()
 
 function GameStateManager.ResetGame()
 	-- Reset MobSpawner
@@ -667,10 +663,10 @@ end
 -- ═══════════════════════════════════════════════════════════
 -- §AGX/X27: HIGHEST WAVE RECORD
 -- ═══════════════════════════════════════════════════════════
--- Account.HighestWaveReached was never written, so the HighestWave board
--- and the wave part of Power's prestige bonus (GearRating) were always 0.
--- The mode Mains call this on each wave/level completion (Lane: MobSpawner
--- OnWaveCompleted; Horde: its level watcher) — no MobSpawner edit needed.
+-- Writes Account.HighestWaveReached, which feeds the HighestWave board and
+-- the wave part of Power's prestige bonus (GearRating). The mode Mains call
+-- this on each wave/level completion (Lane: MobSpawner OnWaveCompleted;
+-- Horde: its level watcher).
 -- `wave` is the highest wave/level COMPLETED (not merely reached; §AGX/SEC).
 -- Stores max(current, wave) for every player in the server. In-memory only;
 -- it rides the normal PlayerDataManager saves, and LeaderboardManager

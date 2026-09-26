@@ -8,10 +8,9 @@
 
     Problem it solves
     ─────────────────
-    Before BonusManager, weapons, skill buffs, and (future) talents all
-    wrote directly to `data.Bonus[stat]`. ApplyWeaponBonuses() would
-    zero-out weapon stats and re-add them, silently clobbering any buff
-    that happened to share the same stat key.
+    Weapons, skill buffs and talents must not write `data.Bonus[stat]`
+    directly: a source that zeroes and re-adds its own stats would clobber
+    every other source sharing the same stat key.
 
     Architecture
     ────────────
@@ -42,6 +41,11 @@
                         auras on a MEMBER, keyed by the keystone OWNER's
                         UserId — StatsManager/PartyAura. Created on first
                         write like timed_<tag>; ClearSource on range/death/leave.
+        "keystone"    — Last Bastion move penalty          — StatsManager/KeystoneRules
+
+    "keystone", "aura_<UserId>" and "timed_*" are not pre-created by
+    SetupPlayer; the first write creates them. See ARCHITECTURE.md
+    #bonusmanager-sources (§DOCS/C12).
 
     Write-time validation  (§T1.3/B1)
     ─────────────────────────────────
@@ -56,8 +60,6 @@
       1. Walk every source table once, building `aggregate[stat] = sum`.
       2. Walk every key in BonusStats: write `aggregate[stat]` (or the
          catalog default if no source has it) into `data.Bonus[stat]`.
-    Replaces the previous quadratic dual-loop that also leaked
-    stale-after-clear values for stats not in BonusStats.
 
     Public API
     ──────────
@@ -370,9 +372,8 @@ function BonusManager.Recalculate(player)
 
     -- ── Pass 2: write every BonusStats key into data.Bonus ────────────
     -- Walking the catalog (not the aggregate) guarantees that a stat
-    -- which used to have a value but has been cleared from every source
-    -- gets reset to its default — fixes the previous stale-after-clear
-    -- bug where data.Bonus held the last non-zero total forever.
+    -- cleared from every source is reset to its default instead of keeping
+    -- its last non-zero total.
     -- §AGX/STATS: remember which values moved; `changed` is allocated
     -- only when something actually changed and someone listens.
     local bonus = data.Bonus

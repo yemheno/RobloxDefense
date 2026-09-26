@@ -69,14 +69,11 @@ end
       statDerivation    table    — derived = base + Σ((PrimaryBase+allocated) × coeff)
 
     §AGX/BAL (§T1.2-BAL1) — CritDamage rule: NO class scales CritDamage from a
-    primary stat. The only headroom is 1.50× base → 1.80× cap (+0.30×), and
-    gear rolls, accessories (up to +0.5 on one piece), talents (+0.28 total)
-    and Hunter's innate +0.15 already fill it by mid-game, so primary-stat
-    scaling only ever competed for that sliver and double-dipped the stat
-    that already drives Damage (Arcanist MAG ×4) or CritChance (Hunter PRE
-    ×0.65). Arcanist's MAG ×0.001 was worth +0.04× at L60 = +0.5% DPS.
-    Class crit identity lives in CritChance coefficients + innateBonuses
-    (Hunter +10% CritChance, +0.15× CritDamage). Numbers: BALANCE_NUMBERS §Combat.
+    primary stat. The base→cap headroom is small and gear, accessories,
+    talents and Hunter's innate already fill it by mid-game, so primary-stat
+    scaling would only double-dip the stat that already drives Damage or
+    CritChance. Class crit identity lives in CritChance coefficients +
+    innateBonuses. Numbers: BALANCE_NUMBERS.md#crit-damage-no-class-scaling.
 
     Projectile shapes — for `ranged = true` classes:
       type = "Pierce"  goes through targets
@@ -163,7 +160,7 @@ ClassConfig.Classes = {
             Armor             = { MIG = 0.3  },
             Penetration       = { MAG = 0.45 },
             CritChance        = { PRE = 0.18 },
-            CritDamage        = {},                       -- §AGX/BAL: was { MAG = 0.001 } (≈ −0.5% DPS removed, T1.2-BAL1)
+            CritDamage        = {},                       -- §AGX/BAL, §T1.2-BAL1: no class scales CritDamage (see header)
             CastTimeReduction = { PRE = 0.35 },           -- §T1.2/DQ1 — caster-only, by design (optional in DerivedStats)
             CooldownReduction = { RSV = 0.55 },
             StatusResistance  = { RSV = 0.8  },
@@ -265,10 +262,8 @@ ClassConfig.DefaultClass = "Aegis"
 
 -- ═══════════════════════════════════════════════════════════
 -- DERIVED CONFIG  (§T1.2/D5 — single source of truth)
--- Build the two parallel tables PlayerDataConfig used to author by
--- hand: the default-unlocked list and the unlock-requirements map.
--- Both are now derived from ClassConfig.Classes, so adding a class
--- is a one-file change.
+-- Derives the default-unlocked list and the unlock-requirements map
+-- from ClassConfig.Classes, so adding a class is a one-file change.
 -- ═══════════════════════════════════════════════════════════
 
 --- Ordered list of class names that should be unlocked for every new

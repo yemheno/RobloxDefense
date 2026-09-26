@@ -293,7 +293,7 @@ function CharacterManager.ApplyTemplate(player)
     -- injected items, and we have to re-apply Motor6D on every wait.
     -- This pattern is what made hair AND weapons reliable — do not
     -- "simplify". When porting to other accessories (cosmetics), reuse
-    -- exactly this shape (see TODO: standardize accessory weld pipeline).
+    -- exactly this shape (shared helper: BACKLOG §T1.1-AE1).
     jan:Add(character.ChildAdded:Connect(function(child)
         if child:IsA("Accessory") and not child:GetAttribute(TEMPLATE_TAG) then
             child:Destroy()

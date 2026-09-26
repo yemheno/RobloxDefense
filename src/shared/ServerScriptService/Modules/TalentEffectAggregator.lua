@@ -5,7 +5,7 @@
 
     Keystone rules are stored separately and can be queried by other
     systems. §AGX/X11: StatsManager/KeystoneRules is the single caller of
-    HasRule (it caches the function ref, Audit_4.7 §5.4) and holds the rule
+    HasRule (it caches the function ref, ARCHITECTURE.md#hot-path-ref-cache) and holds the rule
     gameplay; TalentTreeConfig.IMPLEMENTED_RULES lists the live ones.
 
     API
@@ -176,7 +176,7 @@ function TalentEffectAggregator.OnNodeRefunded(player, nodeDef, _allocatedSet)
 		if eff.rule then
 			playerRules[player][eff.stat] = nil
 		elseif isNeutralisedPenalty(eff, ruleUnimplemented) then
-			-- §AGX/X11: was never applied, so nothing to remove.
+			-- §AGX/X11: never applied, so nothing to remove.
 		elseif eff.primary then
 			bm.ModifySourceBonus(player, "talent", "Bonus" .. eff.primary, -eff.value)
 			addTotal(player, "Bonus" .. eff.primary, -eff.value) -- §AGX/X11

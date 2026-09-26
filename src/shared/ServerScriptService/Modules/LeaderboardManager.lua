@@ -167,9 +167,9 @@ end
 -- READING
 -- ═══════════════════════════════════════════════════════════
 
--- §T5-T9/S4: per-board TTL cache for the sorted page. Every client
--- GetLeaderboard used to hit OrderedDataStore:GetSortedAsync directly —
--- a quota burn under concurrent requests. The RAW page is cached; the
+-- §T5-T9/S4: per-board TTL cache for the sorted page, so concurrent
+-- GetLeaderboard requests don't burn OrderedDataStore:GetSortedAsync
+-- quota. The RAW page is cached; the
 -- §LB3 viewer-row substitution still runs per request on a copy, so
 -- each viewer keeps seeing their live score.
 local BOARD_CACHE_TTL = 30

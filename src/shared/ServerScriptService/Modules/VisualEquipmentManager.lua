@@ -54,9 +54,9 @@ function VisualEquipmentManager.Init()
 	end
 
 	-- Armors folder loaded when armor assets are available.
-	-- §EASY/E3 (§V2): assets actually live under ServerStorage.Models.Armors
-	-- (DefaultArmor.rbxmx) — the old lookup only checked ServerStorage.Armors,
-	-- which no project maps, so armor visuals could never resolve.
+	-- §EASY/E3, §V2: assets live under ServerStorage.Models.Armors
+	-- (DefaultArmor.rbxmx); ServerStorage.Armors is checked first but no
+	-- project maps it.
 	ArmorsFolder = ServerStorage:FindFirstChild("Armors")
 	if not ArmorsFolder then
 		local models = ServerStorage:FindFirstChild("Models")
@@ -66,13 +66,10 @@ function VisualEquipmentManager.Init()
 		warn("[VisualEquipmentManager] No Armors folder (ServerStorage.Armors or .Models.Armors) — armor visuals disabled")
 	end
 
-	-- §T5-T9/S6 (§14b + §VEM-DEDUPE root cause): single wire-per-player.
-	-- The old code wired CharacterAdded from BOTH the PlayerAdded handler
-	-- AND the existing-players loop — a player joining during Init got
-	-- two connections, so every respawn ran ReattachAll twice (the
-	-- long-standing AttachClassWeapon 2× double-attach). Connections are
-	-- also tracked now and disconnected on leave.
-	-- §AGX/T11-JAN: [player] = Janitor (house pattern, Audit_4.7 §5.1). It
+	-- §T5-T9/S6, §14b, §VEM-DEDUPE: single wire-per-player. PlayerAdded and
+	-- the existing-players loop can both see a player joining during Init;
+	-- wiring twice would run ReattachAll twice per respawn (double-attach).
+	-- §AGX/T11-JAN: [player] = Janitor (ARCHITECTURE.md#janitor-per-player). It
 	-- also owns the 0.5 s settle thread, keyed so a quick re-respawn replaces
 	-- the older pass (both reattach to player.Character anyway) and a leave
 	-- cancels it.
@@ -245,8 +242,7 @@ local function attachWeldWithWatcher(clone, character, fallbackPartName)
 	-- default (true) — Pablo's working Female+Staff reference keeps it
 	-- true and the TouchInterest object that Roblox auto-creates lives
 	-- harmlessly alongside the AccessoryWeld; it does not replace it.
-	-- The previous over-defensive CanTouch=false was changing model
-	-- semantics needlessly.
+	-- Don't force CanTouch=false (needlessly changes model semantics).
 	cloneHandle.CanCollide = false
 	cloneHandle.Anchored   = false
 	cloneHandle.Massless   = true
@@ -362,15 +358,11 @@ function VisualEquipmentManager.AttachClassWeapon(player, className, weaponSlot)
 		end
 	end
 
-	-- §LD-VE8: WAIT for the character. Previously this was a hard early
-	-- return — but our primary caller (WeaponManager.Init's
-	-- ensureWeaponSetup) is PlayerAdded-driven and only polls for
-	-- CLASS DATA, not character readiness. DataStore async loads tend
-	-- to finish before Roblox finishes spawning the character, so the
-	-- old "if not character then return end" path was effectively a
-	-- silent drop on first spawn. Hair worked because CharacterManager
-	-- triggers from CharacterAdded directly (character always present).
-	-- Polling here makes AttachClassWeapon usable from either trigger.
+	-- §LD-VE8: WAIT for the character, don't return early. The primary
+	-- caller (WeaponManager.Init's ensureWeaponSetup) is PlayerAdded-driven
+	-- and only polls for CLASS DATA; the DataStore load usually finishes
+	-- before the character spawns. Polling here makes AttachClassWeapon
+	-- usable from either PlayerAdded or CharacterAdded.
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 	if not character or not humanoid then
@@ -417,23 +409,20 @@ function VisualEquipmentManager.AttachClassWeapon(player, className, weaponSlot)
 		return
 	end
 
-	-- §LD-VE5: Hard sanity. The previous truncation bug meant nothing
-	-- was ever logged when a weapon failed to parent — it just
-	-- silently went missing. Print every step so a future "weapon
-	-- not in player model" report can be diagnosed from output alone.
+	-- §LD-VE5: hard sanity. Print every step so a "weapon not in player
+	-- model" report can be diagnosed from output alone.
 	print(string.format(
 		"[VisualEquipmentManager] AttachClassWeapon: cloning %s for %s (slot %d)",
 		assetName, player.Name, weaponSlot))
 
-	-- §LD-VE6 fix: stamp the template-tag attribute BEFORE parenting.
+	-- §LD-VE6: stamp the template-tag attribute BEFORE parenting.
 	-- CharacterManager wires a 15-second character.ChildAdded watcher
 	-- that destroys any Accessory without this attribute (it's how
 	-- Roblox's avatar-loader-injected accessories get cleared). Setting
 	-- the tag AFTER `clone.Parent = character` is too late: ChildAdded
 	-- fires synchronously on the assignment, the watcher reads the
-	-- (still-untagged) accessory, and instantly :Destroy()s it.
-	-- Pablo's "manual paste" experiment hit the exact same path —
-	-- nothing he pasted ever had the tag, so the watcher always won.
+	-- (still-untagged) accessory, and instantly :Destroy()s it (a manually
+	-- pasted accessory hits the same path).
 	clone:SetAttribute(CHAR_TEMPLATE_TAG, true)
 	local cloneHandlePre = clone:FindFirstChild("Handle")
 	if cloneHandlePre then

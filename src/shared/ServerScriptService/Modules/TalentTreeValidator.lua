@@ -143,7 +143,7 @@ function TalentTreeValidator.Validate()
 	return { ok = ok, errors = errors }
 end
 
--- §T10/LIVE1: the §S5 auto-run was removed — TalentManager.Init already
--- calls Validate() at boot (it was printing every report twice).
+-- §T10/LIVE1, §S5: no auto-run here — TalentManager.Init calls
+-- Validate() at boot (a second run would print every report twice).
 
 return TalentTreeValidator

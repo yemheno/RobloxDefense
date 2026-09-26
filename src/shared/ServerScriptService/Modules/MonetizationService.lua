@@ -19,7 +19,7 @@
       • MonetizationService.PromptPurchase(player, itemId): the only way to
         open a Robux prompt (ShopManager.PurchasePremium routes here).
 
-    Receipt idempotency (AGENCY_CHECKS "Receipts checklist"):
+    Receipt idempotency (DESIGN_DECISIONS.md#monetization, Receipts rules):
       PlayerDataManager has no "update one field inside UpdateAsync" API,
       so the grant and the PurchaseId are written into the in-memory data
       together (no yield in between), then a forced SavePlayer writes both

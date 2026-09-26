@@ -20,11 +20,11 @@ local SharedModules = SSS:WaitForChild("Modules")
 local Shared = require(game:GetService("ReplicatedStorage"):WaitForChild("Shared"))
 
 -- Dependencies (set in Init)
--- §AGX/X6: TeleportDataReader dependency dropped — it was only read for
--- the payload lobbyPlaceId, which is no longer trusted.
+-- §AGX/X6: no TeleportDataReader dependency — the payload lobbyPlaceId
+-- is not trusted.
 local NetworkManager     = nil
 
--- §AGX/X6: the one lobby PlaceId (was the "fallback" behind a payload value).
+-- §AGX/X6: the one lobby PlaceId.
 local LOBBY_PLACE_ID = Shared.PlaceIds.Lobby
 
 -- §AGX/X14: one retry for a failed return teleport, both for synchronous
