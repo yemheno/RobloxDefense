@@ -23,6 +23,8 @@ local React = require(ReplicatedStorage.Packages.React)
 local Common        = script.Parent
 local Theme         = require(Common:WaitForChild("Theme"))
 local useFormFactor = require(Common:WaitForChild("useFormFactor"))
+-- §AGX/UI-P7: gamepad focus ring when tappable.
+local GamepadFocus  = require(Common:WaitForChild("GamepadFocus"))
 
 local e = React.createElement
 local R = Theme.Roles
@@ -71,6 +73,9 @@ local function CurrencyPill(props)
 		ZIndex                 = z,
 		Text                   = tappable and "" or nil,
 		AutoButtonColor        = if tappable then false else nil,
+		-- §AGX/UI-P7: explicit (a TextButton defaults to Selectable anyway).
+		Selectable             = if tappable then true else nil,
+		SelectionImageObject   = if tappable then GamepadFocus.ring("pill") else nil,
 		[React.Event.Activated] = props.onActivated,
 	}, {
 		corner  = e("UICorner", { CornerRadius = Theme.Radius.pill }),

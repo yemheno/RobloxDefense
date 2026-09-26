@@ -21,6 +21,7 @@ local Theme  = require(Common:WaitForChild("Theme"))
 local Button = require(Common:WaitForChild("Button"))
 local Text   = require(Common:WaitForChild("Text"))
 local Layout = require(script.Parent:WaitForChild("Layout"))
+local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-P7
 
 local e = React.createElement
 local R = Theme.Roles
@@ -56,6 +57,17 @@ local function RunControlsRegion(props)
 		end
 	end, {})
 
+	-- §AGX/UI-P7: gamepad only: select Start / Next Wave / Return when it
+	-- appears (a new key per button). Never steals from an open panel; B
+	-- (engine) drops the selection and the stick drives the character again.
+	local rootRef = React.useRef(nil)
+	-- §AGX/UI-P7: Next Wave is NOT auto-focused — between waves the player
+	-- is still fighting/moving, and a selected button steals the left stick.
+	local focusKey = (show.start and "start")
+		or (show.returnBtn and "return") or nil
+	GamepadFocus.useAutoSelect(rootRef, focusKey,
+		{ prefer = { "StartGame", "NextWave", "ReturnToLobby" }, steal = false })
+
 	local r = L.run
 	local function btn(name, label, variant, y, onActivated)
 		return e(Button, {
@@ -76,6 +88,7 @@ local function RunControlsRegion(props)
 		Size                   = UDim2.fromScale(1, 1),
 		BackgroundTransparency = 1,
 		ZIndex                 = 3,
+		ref                    = rootRef,   -- §AGX/UI-P7
 	}, {
 		start = show.start and btn("StartGame", "▶ Start Game", "primary", r.y, function()
 			NetworkManager.FireServer("RequestStartGame")

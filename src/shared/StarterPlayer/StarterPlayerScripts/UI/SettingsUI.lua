@@ -20,6 +20,7 @@
 
 local Players           = game:GetService("Players")
 local UserInputService  = game:GetService("UserInputService")
+local GuiService        = game:GetService("GuiService")   -- §AGX/UI-P7
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local React             = require(ReplicatedStorage.Packages.React)
 
@@ -40,6 +41,7 @@ local Text        = require(Common:WaitForChild("Text"))
 local Button      = require(Common:WaitForChild("Button"))
 local Panel       = require(Common:WaitForChild("Panel"))
 local Tabs        = require(Common:WaitForChild("Tabs"))
+local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-P7
 
 -- §AGX/UI-P3: PanelStack hooks, nil-safe (no-ops without UI/Shell or
 -- outside a PanelHost, so Wave 1 behaves exactly as before).
@@ -103,6 +105,32 @@ local function VolumeSlider(props)
 	local value = props.value or 0.5
 	local onChange = props.onChange
 	local sliderRef = React.useRef(nil)
+
+	-- §AGX/UI-P7: gamepad: the grab band is selectable; while it is the
+	-- selected object D-pad Left / Right step the value by 5 % (Left / Right
+	-- navigation is pinned to itself, Up / Down still move between rows).
+	-- Mouse / touch never select it, so they are unaffected.
+	local grabRef = React.useRef(nil)
+	local valueRef = React.useRef(value)
+	valueRef.current = value
+	local changeRef = React.useRef(onChange)
+	changeRef.current = onChange
+	React.useEffect(function()
+		local grab = grabRef.current
+		if not grab then return nil end
+		grab.NextSelectionLeft = grab
+		grab.NextSelectionRight = grab
+		local conn = UserInputService.InputBegan:Connect(function(input)
+			if GuiService.SelectedObject ~= grab then return end
+			local k = input.KeyCode
+			local d = (k == Enum.KeyCode.DPadRight and 1) or (k == Enum.KeyCode.DPadLeft and -1) or 0
+			local f = changeRef.current
+			if d ~= 0 and f then
+				f(math.clamp((math.floor((valueRef.current or 0) * 20 + 0.5) + d) / 20, 0, 1))
+			end
+		end)
+		return function() conn:Disconnect() end
+	end, {})
 
 	local function onInputBegan(_, input)
 		if input.UserInputType ~= Enum.UserInputType.MouseButton1
@@ -185,6 +213,9 @@ local function VolumeSlider(props)
 				Size                   = UDim2.new(1, TAP, 0, TAP),
 				BackgroundTransparency = 1,
 				ZIndex                 = 3,
+				ref                    = grabRef,                       -- §AGX/UI-P7
+				Selectable             = true,
+				SelectionImageObject   = GamepadFocus.ring("pill"),
 				[React.Event.InputBegan] = onInputBegan,
 			}),
 		}),

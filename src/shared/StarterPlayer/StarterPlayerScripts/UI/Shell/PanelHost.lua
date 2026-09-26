@@ -26,6 +26,13 @@
     • Attaches to PanelStack on mount (enables the UI context token, the B
       sink and UI_HudMode) and preloads every entry module of the place, so
       render never yields on a require.
+    • §AGX/UI-P7: gamepad (Shell/GamepadNav, inert unless FormFactor input
+      == "Gamepad"): the visible top entry gets first focus (its own
+      useFirstFocus target, else the first selectable), re-focus when the
+      selection is lost, LB/RB tab cycling, right-stick scrolling and the
+      A/B(/LB-RB) hint strip. PanelStack restores the pre-push selection on
+      pop; when the stack empties a selection left inside PanelGui is
+      cleared, so the pad goes back to the character.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -37,6 +44,9 @@ local UI         = script.Parent.Parent
 local Theme      = require(UI:WaitForChild("Common"):WaitForChild("Theme"))
 local PanelStack = require(script.Parent:WaitForChild("PanelStack"))
 local Registry   = require(script.Parent:WaitForChild("Registry"))
+-- §AGX/UI-P7: gamepad focus / tabs / scroll / hints for the top entry.
+local GamepadNav   = require(script.Parent:WaitForChild("GamepadNav"))
+local GamepadFocus = require(UI:WaitForChild("Common"):WaitForChild("GamepadFocus"))
 
 local e = React.createElement
 
@@ -95,6 +105,13 @@ local function EntryWrapper(props)
 	local component = props.component
 	local _, _, dim = Registry.spec(entry, place)
 
+	-- §AGX/UI-P7: hooks stay unconditional; they are inert unless this is the
+	-- visible top stacked entry and the input is Gamepad.
+	local frameRef = React.useRef(nil)
+	local gamepad = GamepadFocus.useGamepad()
+	local navOn = gamepad and props.inStack == true and props.isTop == true and props.visible ~= false
+	local nav = GamepadNav.useEntryNav(frameRef, { enabled = navOn, entryId = id })
+
 	local ctx = {
 		id           = id,
 		presentation = props.presentation,
@@ -110,6 +127,7 @@ local function EntryWrapper(props)
 		BackgroundTransparency = 1,
 		ZIndex                 = props.zIndex or 1,
 		Visible                = props.visible ~= false,
+		ref                    = frameRef,   -- §AGX/UI-P7
 		SelectionGroup         = true,
 		SelectionBehaviorUp    = Enum.SelectionBehavior.Stop,
 		SelectionBehaviorDown  = Enum.SelectionBehavior.Stop,
@@ -139,6 +157,13 @@ local function EntryWrapper(props)
 		}) or nil,
 		content = component and e(PanelStack.EntryContext.Provider, { value = ctx },
 			e(component, props.componentProps)) or nil,
+		-- §AGX/UI-P7: A Select · B Back (· LB/RB Tabs), gamepad only. The
+		-- radial draws its own hint under the wheel.
+		gamepadHints = (navOn and id ~= "menuRadial") and e(GamepadNav.Hints, {
+			tabs   = nav.hasTabs,
+			side   = props.presentation == "side",
+			zIndex = 1000,
+		}) or nil,
 	})
 end
 
@@ -229,6 +254,16 @@ local function PanelHost(props)
 
 	local _ = loadedVersion   -- re-render trigger only
 
+	-- §AGX/UI-P7: everything closed -> drop a selection left in PanelGui so
+	-- the gamepad drives the character again (a selection PanelStack
+	-- restored outside PanelGui, e.g. a HUD button, is kept).
+	local guiRef = React.useRef(nil)
+	React.useEffect(function()
+		if state.depth == 0 then
+			GamepadNav.clearIfInside(guiRef.current)
+		end
+	end, { state.depth })
+
 	local playerGui = Players.LocalPlayer:FindFirstChildOfClass("PlayerGui")
 	if not playerGui then return nil end
 
@@ -239,6 +274,7 @@ local function PanelHost(props)
 			ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
 			DisplayOrder   = DISPLAY_ORDER,
 			ScreenInsets   = Enum.ScreenInsets.DeviceSafeInsets,
+			ref            = guiRef,   -- §AGX/UI-P7
 		}, {
 			Panels = e("Frame", {
 				Name                   = "PanelLayer",

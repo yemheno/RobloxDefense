@@ -13,6 +13,11 @@
     }
     44 design px tall. On Phone with more than 4 items it becomes a
     horizontally scrolling chip row (each chip >= 88 x 44).
+
+    §AGX/UI-P7: each tab carries the gamepad focus ring, and every mounted
+    Tabs registers with GamepadFocus so PanelHost's LB / RB (only while the
+    bar is inside the top panel and the input is Gamepad) cycles it,
+    skipping locked items, through the same onChange a tap uses.
 ]]
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -21,6 +26,7 @@ local React = require(ReplicatedStorage.Packages.React)
 local Common        = script.Parent
 local Theme         = require(Common:WaitForChild("Theme"))
 local useFormFactor = require(Common:WaitForChild("useFormFactor"))
+local GamepadFocus  = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-P7
 
 local e = React.createElement
 local R = Theme.Roles
@@ -40,6 +46,7 @@ local function Tab(props)
 		AutoButtonColor        = false,
 		Active                 = not locked,
 		Selectable             = not locked,
+		SelectionImageObject   = GamepadFocus.ring("sm"),   -- §AGX/UI-P7
 		Text                   = "",
 		LayoutOrder            = props.order,
 		ZIndex                 = props.zIndex,
@@ -81,6 +88,34 @@ local function Tabs(props)
 	local fill = props.fill ~= false and not chips
 	local z = props.zIndex or 1
 
+	-- §AGX/UI-P7: LB / RB target (registration only; nothing is bound here).
+	local rootRef = React.useRef(nil)
+	local live = React.useRef(props)
+	live.current = props
+	React.useEffect(function()
+		return GamepadFocus.registerTabs({
+			getRoot = function() return rootRef.current end,
+			cycle = function(dir)
+				local p = live.current
+				local list = p.items or {}
+				local n = #list
+				if n == 0 or type(p.onChange) ~= "function" then return nil end
+				local idx = 1
+				for i, it in ipairs(list) do
+					if it.id == p.value then idx = i end
+				end
+				for step = 1, n - 1 do
+					local j = ((idx - 1 + dir * step) % n) + 1
+					if not list[j].locked then
+						p.onChange(list[j].id)
+						return list[j].id
+					end
+				end
+				return nil
+			end,
+		})
+	end, {})
+
 	local children = {
 		layout = e("UIListLayout", {
 			FillDirection     = Enum.FillDirection.Horizontal,
@@ -112,6 +147,7 @@ local function Tabs(props)
 		BorderSizePixel        = 0,
 		LayoutOrder            = props.layoutOrder,
 		ZIndex                 = z,
+		ref                    = rootRef,   -- §AGX/UI-P7
 	}
 
 	if chips then

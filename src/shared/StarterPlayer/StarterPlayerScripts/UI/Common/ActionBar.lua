@@ -76,6 +76,9 @@ local function Slot(props)
 		BorderSizePixel        = 0,
 		AutoButtonColor        = false,
 		Active                 = true,
+		-- §AGX/UI-P7: cast by the pad buttons, never a selection target (a
+		-- TextButton defaults to Selectable, which let the D-pad land here).
+		Selectable             = false,
 		Text                   = props.label,
 		TextColor3             = props.dimmed and C.textDim or C.text,
 		Font                   = F.bold,
@@ -153,6 +156,9 @@ local function ActionBar(props)
 
 	local platform = InputSystem.GetActiveInputType()
 	if platform == "Touch" then platform = "Keyboard" end
+	-- §AGX/UI-P7: a Console form factor always shows pad badges, even before
+	-- the first pad input (ten-foot UI with a stray keyboard / no input yet).
+	if ff.kind == "Console" or ff.input == "Gamepad" then platform = "Gamepad" end
 
 	local children = {
 		layout = e("UIListLayout", {

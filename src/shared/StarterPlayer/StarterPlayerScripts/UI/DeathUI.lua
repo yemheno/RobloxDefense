@@ -34,6 +34,7 @@ local Text         = require(Common:WaitForChild("Text"))
 local Button       = require(Common:WaitForChild("Button"))
 local Panel        = require(Common:WaitForChild("Panel"))
 local CurrencyPill = require(Common:WaitForChild("CurrencyPill"))
+local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-P7
 
 local e  = React.createElement
 local R  = Theme.Roles
@@ -194,6 +195,15 @@ local function DeathUI()
 		end
 	end, { deathState })
 
+	-- §AGX/UI-P7: gamepad only: select Revive (or Respawn) when it appears;
+	-- the key changes when the wipe offer swaps Respawn for Revive. Steals
+	-- from an open panel on purpose (death outranks menus).
+	local overlayRef = React.useRef(nil)
+	local hasButton = deathState == "Dead" and not (wipeOffer and wipeOffer.kind == "none")
+	GamepadFocus.useAutoSelect(overlayRef,
+		hasButton and ((wipeOffer and "revive") or "respawn") or nil,
+		{ prefer = { "ReviveButton", "RespawnButton" }, steal = true })
+
 	-- Nothing to render when alive
 	if deathState == "Alive" then
 		return nil
@@ -214,6 +224,13 @@ local function DeathUI()
 			Size                   = UDim2.fromScale(1, 1),
 			BackgroundTransparency = 1,
 			ZIndex                 = OVERLAY_Z,
+			-- §AGX/UI-P7: keep D-pad focus on the overlay's buttons.
+			ref                    = overlayRef,
+			SelectionGroup         = true,
+			SelectionBehaviorUp    = Enum.SelectionBehavior.Stop,
+			SelectionBehaviorDown  = Enum.SelectionBehavior.Stop,
+			SelectionBehaviorLeft  = Enum.SelectionBehavior.Stop,
+			SelectionBehaviorRight = Enum.SelectionBehavior.Stop,
 		}, {
 			tint = e("Frame", {
 				Name                   = "Tint",

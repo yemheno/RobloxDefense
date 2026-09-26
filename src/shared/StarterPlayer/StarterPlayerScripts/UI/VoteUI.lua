@@ -35,6 +35,7 @@ local UIScaleRoot = require(Common:WaitForChild("UIScaleRoot"))
 local Text        = require(Common:WaitForChild("Text"))
 local Bar         = require(Common:WaitForChild("Bar"))
 local Card        = require(Common:WaitForChild("Card"))
+local GamepadFocus = require(Common:WaitForChild("GamepadFocus"))   -- §AGX/UI-P7
 
 local e  = React.createElement
 local R  = Theme.Roles
@@ -342,6 +343,12 @@ local function VoteUI()
     -- open panels are suspended and new opens are refused (rail dimmed).
     PanelStackHooks.useModalPresence("vote", voteData ~= nil)
 
+    -- §AGX/UI-P7: gamepad only: focus the first card when the cards appear
+    -- (the §VG5 grace window below still eats an early A). The vote is a
+    -- modal presence, so taking the selection from a panel is intended.
+    local overlayRef = React.useRef(nil)
+    GamepadFocus.useAutoSelect(overlayRef, voteData, { steal = true })
+
     if not voteData then return nil end
 
     local cards = voteData.cards or {}
@@ -414,6 +421,13 @@ local function VoteUI()
         BackgroundColor3       = R.surface.scrim,
         BackgroundTransparency = 0.55,
         ZIndex                 = OVERLAY_Z,
+        -- §AGX/UI-P7: D-pad stays on the cards.
+        ref                    = overlayRef,
+        SelectionGroup         = true,
+        SelectionBehaviorUp    = Enum.SelectionBehavior.Stop,
+        SelectionBehaviorDown  = Enum.SelectionBehavior.Stop,
+        SelectionBehaviorLeft  = Enum.SelectionBehavior.Stop,
+        SelectionBehaviorRight = Enum.SelectionBehavior.Stop,
     }, {
         content = e(UIScaleRoot.Local, { name = "VoteContent", zIndex = z }, {
             -- Center container (design px)

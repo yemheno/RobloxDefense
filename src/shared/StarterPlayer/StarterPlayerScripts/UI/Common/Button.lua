@@ -32,6 +32,8 @@ local Common        = script.Parent
 local Theme         = require(Common:WaitForChild("Theme"))
 local useFormFactor = require(Common:WaitForChild("useFormFactor"))
 local Tooltip       = require(Common:WaitForChild("Tooltip"))
+-- §AGX/UI-P7: gamepad focus ring (drawn only around the selected object).
+local GamepadFocus  = require(Common:WaitForChild("GamepadFocus"))
 
 local e  = React.createElement
 local R  = Theme.Roles
@@ -172,6 +174,7 @@ local function Button(props)
 		AutoButtonColor        = false,
 		Active                 = not inert,
 		Selectable             = not inert,
+		SelectionImageObject   = GamepadFocus.ring("md"),   -- §AGX/UI-P7
 		Text                   = "",
 		LayoutOrder            = props.layoutOrder,
 		ZIndex                 = z,

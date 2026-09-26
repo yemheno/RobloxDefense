@@ -22,6 +22,8 @@ local React = require(ReplicatedStorage.Packages.React)
 local Common        = script.Parent
 local Theme         = require(Common:WaitForChild("Theme"))
 local useFormFactor = require(Common:WaitForChild("useFormFactor"))
+-- §AGX/UI-P7: gamepad focus ring (drawn only around the selected object).
+local GamepadFocus  = require(Common:WaitForChild("GamepadFocus"))
 
 local e = React.createElement
 local R = Theme.Roles
@@ -110,6 +112,7 @@ local function Card(props)
 		Text                   = tappable and "" or nil,
 		AutoButtonColor        = if tappable then false else nil,
 		Selectable             = tappable or nil,
+		SelectionImageObject   = if tappable then GamepadFocus.ring("lg") else nil,   -- §AGX/UI-P7
 		[React.Event.Activated] = tappable and props.onActivated or nil,
 	}, {
 		corner  = e("UICorner", { CornerRadius = Theme.Radius.lg }),
