@@ -431,3 +431,26 @@ nil-global errors are gone.
 | X38 | The 60 s cutoff was removed; the wait loop exits only when the character appears or the player leaves. |
 | X30b | **Pre-existing bug found in review:** a late `VoteCast` during the result grace window could re-run `_Resolve` and apply a second card. Fixed with a `voteResolved` flag. |
 | X16 | No change. Note that boot now fails **hard** when a `RequireLoaded` module's `Init()` throws. Check that every place still boots in Studio. |
+
+## Status after Pablo's decisions (2026-09-26)
+
+Every item is tagged `§AGX/X<n>` in code. None of it has been tested in Studio yet; the per-item test steps are in the commit messages.
+
+| Item(s) | Status | Commit |
+|---|---|---|
+| X1, X9, X13, X16, X17, X19, X20, X26, X29, X30(+b), X31, X33, X36, X38, X50 | ✅ freebies (+ review follow-ups) | f56fa3d, a1acbd2 |
+| X18 appearance change behind a flag (`GrantAppearanceChange`) | ✅ | 3b4d39d |
+| X40 wipe-revive: free 3/2/1 by difficulty, then 1 paid, no upsell under a countdown | ✅ | 3b4d39d |
+| X47 daily login = calendar + spree; X39 claim rollback | ✅ | 3b4d39d |
+| X2, X3, X8 session-locked saves, shutdown drain, keybind validation | ✅ + review hardening (r1–r12) | 09e4a5a, 8fd1301 |
+| X4, X6, X14, X15 reserved servers, trusted teleport data, teleport failure recovery | ✅ | 2329bbd |
+| X44 personal party drops; X12 DoT/Thorns kills rewarded; X22 (part) | ✅ | abdd002 |
+| X7, X10, X11, X24, X32, X34 | ✅ | 36cd218 |
+| X28 CentralBoss core (Iron Warden placeholder); boss kills credit the party | ✅ (mode hidden until tested) | b19cec8, 25c6784 |
+| X21, X22, X27, X35, X37 network/perf | ✅ | cc776f2 |
+| X23, X25, X41, X42, X43 economy pass + docs | ✅ | 78392c0 |
+| X5 pre-game wave farming | ✅ | d4cf212 |
+| X45 server-owned mob physics; X49 tools hygiene | ✅ | 668316b |
+| X46 PolicyService | ⏳ depends on the monetization decision (sell gameplay currency for Robux or not) | — |
+| X48 onboarding | 🅿️ parked by Pablo until all modes are final | — |
+| UI revamp + mobile layout | 🔄 audits done; P0 UI bug fixes in progress | — |
