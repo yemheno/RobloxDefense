@@ -162,6 +162,12 @@ After the tiers: the agency-checks round (X1–X50, `f56fa3d`…`b0bdbee`) and t
 
 One line each: id · what landed · commit. Open items are in [BACKLOG](BACKLOG.md).
 
+### Comment pass (2026-09-26)
+
+- `§DOCS/C11` · `ServerReady` / `GameStateChanged` manifest flags documented as lagging; ReadyGate call sites are the source of truth · `ecae33f`
+- `§DOCS/C12` · `BonusManager` header lists the `keystone` and `aura_<UserId>` sources and which are created on first write · `ecae33f`
+- `G23` · Stale `TODO_PARKING_LOT` comments removed from `ArmorManager` and `LobbyNPCRegistry` · `ed94abc`, `4058001`
+
 ### Follow-up rounds (2026-09-26)
 
 - `§AGX/D-FIX2` · Healer gear rolls and class-resource bonuses apply; Arcanist/Hunter armor roll mana/focus; no Horde vote over Defeat/Victory; start gate waits for data-ready; PartyAura finds the Lobby PartyManager · `24c4d7e`

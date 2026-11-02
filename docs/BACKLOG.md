@@ -97,9 +97,6 @@ Design calls and actions only Pablo can take. Agents don't implement these witho
 | `§SCALE-D2` *(new id; SCALING Deferred #2)* | Performance | `VitalsUpdate` sends a full P-entry snapshot to everyone at 1 Hz (O(P²)) | `PlaceLifecycle.lua:298` | HP to attributes + event-driven static fields; before any 30+ player mode |
 | `§SCALE-D3` *(new id; SCALING Deferred #3)* | Performance | `AttackFired` goes to every other player per swing | `AttackHandler/init.lua:359-363` | Range-scope like §SCALE/S2 |
 | `§SCALE-D4` *(new id; SCALING Deferred #4)* | Performance | Knockback creates/destroys a `LinearVelocity` per target per cast | `MobAI.lua:1120` | Pool one per character |
-| `§DOCS/C11` *(new id)* | Network | Manifest says `readyGated = false` for `ServerReady` and `GameStateChanged`, which are ReadyGate-fired at boot (`PlaceLifecycle`, Horde late-join). The flag is informational (`IsReadyGated` has no callers) | `NetworkManager.lua:88,194` | Fix the flags/comments (comment pass) |
-| `§DOCS/C12` *(new id)* | Stats | `BonusManager` header omits the `"keystone"` source that `KeystoneRules` writes; `SetupPlayer` omits `keystone`/`aura_*` (created on first write, so it works) | `BonusManager.lua:22-44,185-196`, `KeystoneRules.lua:582` | Add to the header (comment pass); init table optional |
-| `G23` | Docs | Two comments cite the deleted `TODO_PARKING_LOT` | `ArmorManager/init.lua:166`, `LobbyNPCRegistry.lua:236` | Comment pass |
 
 ## P3
 
